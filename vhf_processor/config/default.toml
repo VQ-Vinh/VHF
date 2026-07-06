@@ -1,0 +1,43 @@
+[general]
+session_prefix = "session"
+data_dir = "./data"
+log_level = "INFO"
+
+[audio]
+capture_mode = "loopback"
+sample_rate = 48000
+channels = 1
+dtype = "int16"
+frame_size = 2048
+device_index = -1
+
+[vad]
+backend = "silero"
+min_speech_duration_ms = 300
+min_silence_duration_ms = 2000
+threshold = 0.5
+energy_threshold = 500
+silero_model_path = ""
+
+[gemini]
+model = "gemini-2.5-flash"
+api_key_env = "GEMINI_API_KEY"
+project_id = ""
+location = "us-central1"
+timeout_seconds = 30
+max_retries = 3
+
+[translation]
+enabled = true
+source_language = "auto"
+target_language = "en"
+
+[storage.local]
+audio_dir = "./data/audio"
+result_dir = "./data/results"
+
+[storage.gcs]
+enabled = false
+bucket_name = "vhf-recordings"
+credentials_path = ""
+prefix = "vhf-recordings"

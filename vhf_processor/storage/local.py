@@ -1,0 +1,89 @@
+from __future__ import annotations
+
+import json
+from datetime import datetime
+from pathlib import Path
+
+import numpy as np
+import soundfile as sf
+
+from vhf_processor.config.schema import LocalStorageConfig
+from vhf_processor.models.result import ProcessingResult
+from vhf_processor.utils.logger import get_logger
+
+logger = get_logger(__name__)
+
+
+class LocalStorage:
+    def __init__(self, config: LocalStorageConfig):
+        self._config = config
+        self._audio_dir = Path(config.audio_dir)
+        self._result_dir = Path(config.result_dir)
+        self._ensure_dirs()
+
+    def _ensure_dirs(self) -> None:
+        self._audio_dir.mkdir(parents=True, exist_ok=True)
+        self._result_dir.mkdir(parents=True, exist_ok=True)
+
+    def save_audio(
+        self,
+        audio_data: np.ndarray,
+        sample_rate: int,
+        session_id: str,
+        sequence: int,
+    ) -> Path:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{timestamp}_{session_id}_{sequence:04d}.wav"
+        filepath = self._audio_dir / filename
+
+        if audio_data.dtype != np.int16:
+            if audio_data.dtype == np.float32:
+                audio_data = (audio_data * 32767).clip(-32768, 32767).astype(np.int16)
+            else:
+                audio_data = audio_data.astype(np.int16)
+
+        if audio_data.ndim > 1:
+            audio_data = audio_data.mean(axis=1).astype(np.int16)
+
+        sf.write(str(filepath), audio_data, sample_rate)
+        logger.info(f"Audio saved: {filepath.name} ({len(audio_data) / sample_rate:.1f}s)")
+
+        return filepath
+
+    def save_result(self, result: ProcessingResult) -> Path:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{timestamp}_{result.session_id}_{result.sequence:04d}.json"
+        filepath = self._result_dir / filename
+
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(result.model_dump(), f, ensure_ascii=False, indent=2, default=str)
+
+        logger.info(f"Result saved: {filepath}")
+        return filepath
+
+    def get_audio_path(self, session_id: str, sequence: int) -> Path | None:
+        pattern = f"*_{session_id}_{sequence:04d}.wav"
+        matches = list(self._audio_dir.glob(pattern))
+        return matches[0] if matches else None
+
+    def get_result_path(self, session_id: str, sequence: int) -> Path | None:
+        pattern = f"*_{session_id}_{sequence:04d}.json"
+        matches = list(self._result_dir.glob(pattern))
+        return matches[0] if matches else None
+
+    def cleanup_old_files(self, max_days: int = 30) -> int:
+        import time
+
+        now = time.time()
+        threshold = now - (max_days * 86400)
+        count = 0
+
+        for path in list(self._audio_dir.iterdir()) + list(self._result_dir.iterdir()):
+            if path.is_file() and path.stat().st_mtime < threshold:
+                path.unlink()
+                count += 1
+
+        if count:
+            logger.info(f"Cleaned up {count} old files (> {max_days} days)")
+
+        return count

@@ -1,0 +1,32 @@
+# Virtual environment
+venv/
+.Python
+
+# Runtime data (audio, results, logs)
+data/
+
+# Bytecode
+__pycache__/
+*.pyc
+
+# Secrets
+.env
+
+# Logs
+*.log
+vhf_processor/error.log
+vhf_processor/output.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Build
+dist/
+build/
+*.spec

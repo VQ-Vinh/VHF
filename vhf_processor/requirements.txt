@@ -1,0 +1,24 @@
+# Core
+pyaudiowpatch>=0.2.12
+soundfile>=0.12.1
+numpy>=1.26.0
+
+# VAD (Silero VAD primary)
+torch>=2.4.0
+silero-vad>=4.0
+
+# VAD fallback
+webrtcvad>=2.0.10
+
+# Gemini AI (new SDK)
+google-genai>=1.0.0
+
+# Google Cloud Storage
+google-cloud-storage>=2.16.0
+
+# Config
+pydantic>=2.7.0
+pydantic-settings>=2.2.0
+
+# Utils
+pydub>=0.25.1
