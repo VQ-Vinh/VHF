@@ -1,0 +1,28 @@
+[project]
+name = "vhf-processor"
+version = "1.0.0"
+description = "VHF Radio Processor / Gemini 2.5 — real-time audio transcription and translation"
+requires-python = ">=3.14"
+dependencies = [
+    "pyaudiowpatch>=0.2.12",
+    "soundfile>=0.12.1",
+    "numpy>=1.26.0",
+    "torch>=2.4.0",
+    "silero-vad>=4.0",
+    "webrtcvad>=2.0.10",
+    "google-genai>=1.0.0",
+    "google-cloud-storage>=2.16.0",
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.2.0",
+    "pydub>=0.25.1",
+]
+
+[project.scripts]
+vhf-processor = "vhf_processor.main:main"
+
+[tool.setuptools.packages.find]
+include = ["vhf_processor*"]
+
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.backends._legacy:_Backend"

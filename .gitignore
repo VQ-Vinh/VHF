@@ -14,8 +14,6 @@ __pycache__/
 
 # Logs
 *.log
-vhf_processor/error.log
-vhf_processor/output.log
 
 # IDE
 .vscode/
