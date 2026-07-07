@@ -2,6 +2,7 @@
 session_prefix = "session"
 data_dir = "./data"
 log_level = "INFO"
+num_workers = 4
 
 [audio]
 capture_mode = "loopback"
@@ -14,7 +15,7 @@ device_index = -1
 [vad]
 backend = "silero"
 min_speech_duration_ms = 300
-min_silence_duration_ms = 2000
+min_silence_duration_ms = 1200
 threshold = 0.5
 energy_threshold = 500
 silero_model_path = ""

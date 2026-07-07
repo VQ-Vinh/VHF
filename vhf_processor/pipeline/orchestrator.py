@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import queue
 import sys
 import time
@@ -8,6 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
+import soundfile as sf
 
 from vhf_processor.audio.recorder import AudioRecorder
 from vhf_processor.config.schema import AppConfig
@@ -57,7 +59,7 @@ class PipelineOrchestrator:
         self._running = False
         self._recorder: AudioRecorder | None = None
 
-        self._num_workers = 2
+        self._num_workers = config.general.num_workers
         self._job_queue: queue.Queue[SegmentJob | None] = queue.Queue(maxsize=32)
         self._executor: ThreadPoolExecutor | None = None
         self._worker_futures: list = []
@@ -95,7 +97,7 @@ class PipelineOrchestrator:
         for _ in range(self._num_workers):
             self._job_queue.put(None)
         if self._executor is not None:
-            self._executor.shutdown(wait=True, timeout=10)
+            self._executor.shutdown(wait=True)
 
         self._gemini.close()
         self._gcs.close()
@@ -203,9 +205,28 @@ class PipelineOrchestrator:
         indices = np.linspace(0, len(audio) - 1, new_len)
         return np.interp(indices, np.arange(len(audio)), audio).astype(audio.dtype)
 
+    @staticmethod
+    def _trim_trailing_silence(audio: np.ndarray, sample_rate: int) -> np.ndarray:
+        if len(audio) == 0:
+            return audio
+        threshold = 50
+        frame_length = int(sample_rate * 0.032)
+        if len(audio) <= frame_length:
+            return audio
+        audio_float = audio.astype(np.float32)
+        end = len(audio)
+        while end > frame_length:
+            frame = audio_float[end - frame_length:end]
+            if np.sqrt(np.mean(frame ** 2)) >= threshold:
+                break
+            end -= frame_length
+        return audio[:end]
+
     def _process_segment(self, job: SegmentJob) -> None:
         tracker = LatencyTracker()
         tracker.mark("segment_received")
+
+        queue_wait_ms = max(0.0, (time.time() - job.timestamp) * 1000)
 
         sid = job.session_id
         seq = job.sequence
@@ -225,15 +246,24 @@ class PipelineOrchestrator:
         if segment_rms < 50:
             return
 
-        tracker.mark("save_audio")
+        audio_data = self._trim_trailing_silence(audio_data, sr)
+        duration_ms = int(len(audio_data) / sr * 1000)
+        if duration_ms < 100:
+            return
+
+        buf = io.BytesIO()
+        sf.write(buf, audio_data, sr, subtype="PCM_16", format="WAV")
+        wav_bytes = buf.getvalue()
+
         audio_path = self._storage.save_audio(audio_data, sr, sid, seq)
-        tracker.mark("save_audio_done")
 
         tracker.mark("gemini_start")
-        result = self._gemini.process_audio(audio_path, sid, seq)
+        result = self._gemini.process_audio(audio_path, sid, seq, audio_bytes=wav_bytes)
         tracker.mark("gemini_done")
 
-        result.latency_ms = tracker.total_ms()
+        process_ms = tracker.total_ms()
+        result.latency_ms = process_ms + queue_wait_ms
+        result.queue_wait_ms = queue_wait_ms
 
         self._print_result(result)
 
@@ -244,7 +274,6 @@ class PipelineOrchestrator:
             self._gcs.upload_result(result)
 
         seg_duration = duration_ms / 1000
-        total_latency = result.latency_ms / 1000
         logger.info(
             "Segment processed",
             extra={
@@ -252,11 +281,12 @@ class PipelineOrchestrator:
                 "sequence": seq,
                 "audio": audio_path.name,
                 "duration_s": round(seg_duration, 1),
-                "latency_s": round(total_latency, 1),
+                "latency_s": round(result.latency_ms / 1000, 1),
+                "queue_wait_ms": round(queue_wait_ms, 1),
+                "process_ms": round(process_ms, 1),
                 "confidence": result.confidence,
                 "language": result.detected_language,
                 "error": result.error,
-                "total_latency_ms": round(result.latency_ms, 1),
             },
         )
 
@@ -276,18 +306,23 @@ class PipelineOrchestrator:
         lines = [f"\n{sep}"]
         lines.append(f"  [{result.session_id} #{result.sequence}] {result.timestamp.strftime('%H:%M:%S')}")
         lines.append(f"  LANG: {result.detected_language.upper() or '?'}  |  CONF: {result.confidence:.0%}")
-        if result.transcript_raw:
-            lines.append(f"  RAW:  {result.transcript_raw}")
         if result.transcript_restored:
             lines.append(f"  TXT:  {result.transcript_restored}")
         if result.translation:
             lines.append(f"  TRN:  {result.translation}")
+        if result.corrections:
+            for c in result.corrections:
+                lines.append(f"  ! {c}")
         if result.uncertain_segments:
             lines.append(f"  UNCERTAIN: {', '.join(result.uncertain_segments)}")
         if result.error:
             lines.append(f"  ERROR: {result.error}")
         if result.latency_ms:
-            lines.append(f"  LATENCY: {result.latency_ms:.0f}ms")
+            process_ms = result.latency_ms - result.queue_wait_ms
+            if result.queue_wait_ms > 0:
+                lines.append(f"  LATENCY: {result.latency_ms:.0f}ms (process: {process_ms:.0f}ms | queue: {result.queue_wait_ms:.0f}ms)")
+            else:
+                lines.append(f"  LATENCY: {result.latency_ms:.0f}ms")
         lines.append(f"{sep}\n")
         sys.stdout.write("\n".join(lines))
         sys.stdout.flush()
@@ -302,8 +337,6 @@ class PipelineOrchestrator:
                 audio_file=file_path.name,
                 error="file_not_found",
             )
-
-        import soundfile as sf
 
         audio, sr = sf.read(str(file_path))
 

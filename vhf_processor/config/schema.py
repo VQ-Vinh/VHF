@@ -12,6 +12,7 @@ class GeneralConfig(BaseModel):
     session_prefix: str = "session"
     data_dir: Path = Path("./data")
     log_level: str = "INFO"
+    num_workers: int = 4
 
 
 class AudioConfig(BaseModel):

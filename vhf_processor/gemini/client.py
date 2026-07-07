@@ -77,20 +77,23 @@ class GeminiClient:
         audio_path: str | Path,
         session_id: str,
         sequence: int,
+        audio_bytes: bytes | None = None,
     ) -> ProcessingResult:
         start_time = time.perf_counter()
         audio_path = Path(audio_path)
 
-        if not audio_path.exists():
-            elapsed = (time.perf_counter() - start_time) * 1000
-            return ProcessingResult(
-                session_id=session_id,
-                sequence=sequence,
-                audio_file=audio_path.name,
-                error="audio_file_not_found",
-                latency_ms=elapsed,
-                processing_notes=[f"Audio file not found: {audio_path}"],
-            )
+        if audio_bytes is None:
+            if not audio_path.exists():
+                elapsed = (time.perf_counter() - start_time) * 1000
+                return ProcessingResult(
+                    session_id=session_id,
+                    sequence=sequence,
+                    audio_file=audio_path.name,
+                    error="audio_file_not_found",
+                    latency_ms=elapsed,
+                    processing_notes=[f"Audio file not found: {audio_path}"],
+                )
+            audio_bytes = audio_path.read_bytes()
 
         system_prompt = self._prompt_builder.build_system_prompt()
         user_prompt = self._prompt_builder.build_user_prompt()
@@ -98,8 +101,6 @@ class GeminiClient:
         last_error: Exception | None = None
         for attempt in range(1, self._config.max_retries + 1):
             try:
-                audio_bytes = audio_path.read_bytes()
-
                 response = self._client.models.generate_content(
                     model=self._config.model,
                     contents=[
@@ -110,16 +111,28 @@ class GeminiClient:
                         system_instruction=system_prompt,
                         temperature=0.1,
                         max_output_tokens=2048,
+                        response_logprobs=True,
                     ),
                 )
 
                 elapsed = (time.perf_counter() - start_time) * 1000
+
+                avg_logprobs = None
+                token_logprobs = None
+                candidate = response.candidates[0] if response.candidates else None
+                if candidate is not None:
+                    avg_logprobs = candidate.avg_logprobs
+                    if candidate.logprobs_result is not None:
+                        token_logprobs = candidate.logprobs_result.chosen_candidates
+
                 result = self._response_parser.parse(
                     text=response.text,
                     session_id=session_id,
                     sequence=sequence,
                     audio_file=audio_path.name,
                     latency_ms=elapsed,
+                    avg_logprobs=avg_logprobs,
+                    token_logprobs=token_logprobs,
                 )
 
                 if result.has_error:

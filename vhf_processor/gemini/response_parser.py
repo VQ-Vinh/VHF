@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from pathlib import Path
 
@@ -10,11 +11,20 @@ from vhf_processor.utils.logger import get_logger
 logger = get_logger(__name__)
 
 MIN_CONFIDENCE_REQUIRED = 0.1
+LOGPROB_UNCERTAIN_THRESHOLD = -1.5
 
 
 class GeminiResponseParser:
     @staticmethod
-    def parse(text: str, session_id: str, sequence: int, audio_file: str, latency_ms: float) -> ProcessingResult:
+    def parse(
+        text: str,
+        session_id: str,
+        sequence: int,
+        audio_file: str,
+        latency_ms: float,
+        avg_logprobs: float | None = None,
+        token_logprobs: list | None = None,
+    ) -> ProcessingResult:
         json_str = GeminiResponseParser._extract_json(text)
         if not json_str:
             return ProcessingResult(
@@ -49,6 +59,22 @@ class GeminiResponseParser:
             )
 
         confidence = float(data.get("confidence", 0.0))
+        processing_notes = list(data.get("processing_notes", []))
+        uncertain_segments = list(data.get("uncertain_segments", []))
+
+        if avg_logprobs is not None and avg_logprobs <= 0.0:
+            confidence = math.exp(avg_logprobs)
+            processing_notes.append(f"Confidence from token logprobs (avg_logprob={avg_logprobs:.4f})")
+
+        if token_logprobs:
+            for tc in token_logprobs:
+                lp = getattr(tc, "log_probability", None)
+                token = getattr(tc, "token", None)
+                if lp is not None and lp < LOGPROB_UNCERTAIN_THRESHOLD:
+                    token_text = (token or "").strip()
+                    if token_text and token_text not in uncertain_segments:
+                        uncertain_segments.append(token_text)
+
         if confidence < MIN_CONFIDENCE_REQUIRED:
             return ProcessingResult(
                 session_id=session_id,
@@ -60,9 +86,9 @@ class GeminiResponseParser:
                 transcript_restored=data.get("transcript_restored", ""),
                 translation=data.get("translation", ""),
                 detected_language=data.get("detected_language", ""),
-                uncertain_segments=data.get("uncertain_segments", []),
+                uncertain_segments=uncertain_segments,
                 latency_ms=latency_ms,
-                processing_notes=["Confidence below minimum threshold"] + data.get("processing_notes", []),
+                processing_notes=["Confidence below minimum threshold"] + processing_notes,
             )
 
         return ProcessingResult(
@@ -74,8 +100,8 @@ class GeminiResponseParser:
             transcript_restored=data.get("transcript_restored", ""),
             translation=data.get("translation", ""),
             confidence=confidence,
-            uncertain_segments=data.get("uncertain_segments", []),
-            processing_notes=data.get("processing_notes", []),
+            uncertain_segments=uncertain_segments,
+            processing_notes=processing_notes,
             latency_ms=latency_ms,
         )
 
