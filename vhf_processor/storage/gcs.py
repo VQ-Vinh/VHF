@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from vhf_processor.config.schema import GCSStorageConfig, LocalStorageConfig
@@ -57,6 +57,25 @@ class GCSStorage:
     @staticmethod
     def _build_path(*parts: str) -> str:
         return "/".join(p for p in parts if p)
+
+    def cleanup_old_files(self, max_days: int) -> int:
+        if self._client is None or self._bucket is None:
+            return 0
+
+        threshold = datetime.now() - timedelta(days=max_days)
+        count = 0
+        prefixes = ["audio", "results"]
+
+        for subdir in prefixes:
+            prefix = self._build_path(self._config.prefix, subdir) + "/"
+            for blob in self._bucket.list_blobs(prefix=prefix):
+                if blob.time_created and blob.time_created.replace(tzinfo=None) < threshold:
+                    blob.delete()
+                    count += 1
+
+        if count:
+            logger.info(f"Cleaned up {count} old GCS files (> {max_days} days)")
+        return count
 
     def upload_file(self, local_path: str | Path, remote_path: str | None = None) -> bool:
         if self._client is None or self._bucket is None:

@@ -33,6 +33,10 @@ enabled = true
 source_language = "auto"
 target_language = "en"
 
+[storage]
+retention_days = 14
+cleanup_interval_hours = 24
+
 [storage.local]
 audio_dir = "./data/audio"
 result_dir = "./data/results"

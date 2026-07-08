@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import queue
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -63,6 +64,7 @@ class PipelineOrchestrator:
         self._job_queue: queue.Queue[SegmentJob | None] = queue.Queue(maxsize=32)
         self._executor: ThreadPoolExecutor | None = None
         self._worker_futures: list = []
+        self._cleanup_timer: threading.Timer | None = None
 
     def _create_vad(self) -> VADBackend:
         vad_cfg = self._config.vad
@@ -75,6 +77,8 @@ class PipelineOrchestrator:
         sid = self._session.session_id
         self._running = True
         logger.info("Pipeline started", extra={"session_id": sid, "workers": self._num_workers})
+
+        self._run_cleanup()
 
         self._executor = ThreadPoolExecutor(max_workers=self._num_workers)
         for i in range(self._num_workers):
@@ -90,6 +94,9 @@ class PipelineOrchestrator:
 
     def stop(self) -> None:
         self._running = False
+        if self._cleanup_timer is not None:
+            self._cleanup_timer.cancel()
+            self._cleanup_timer = None
         if self._recorder is not None:
             self._recorder.stop()
             self._recorder = None
@@ -108,6 +115,25 @@ class PipelineOrchestrator:
                 "sequences": self._session.sequence,
             },
         )
+
+    def _run_cleanup(self) -> None:
+        cfg = self._config.storage
+        try:
+            deleted_local = self._storage.cleanup_old_files(cfg.retention_days)
+            if deleted_local:
+                logger.info(f"Local cleanup: removed {deleted_local} files older than {cfg.retention_days} days")
+
+            if cfg.gcs.enabled:
+                deleted_gcs = self._gcs.cleanup_old_files(cfg.retention_days)
+                if deleted_gcs:
+                    logger.info(f"GCS cleanup: removed {deleted_gcs} files older than {cfg.retention_days} days")
+        except Exception as e:
+            logger.warning(f"Cleanup failed: {e}")
+
+        interval_hours = cfg.cleanup_interval_hours
+        self._cleanup_timer = threading.Timer(interval_hours * 3600, self._run_cleanup)
+        self._cleanup_timer.daemon = True
+        self._cleanup_timer.start()
 
     def _audio_callback(self, audio: np.ndarray) -> None:
         if not self._running:

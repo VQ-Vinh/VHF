@@ -67,6 +67,8 @@ class GCSStorageConfig(BaseModel):
 class StorageConfig(BaseModel):
     local: LocalStorageConfig = Field(default_factory=LocalStorageConfig)
     gcs: GCSStorageConfig = Field(default_factory=GCSStorageConfig)
+    retention_days: int = 14
+    cleanup_interval_hours: int = 24
 
 
 class AppConfig(BaseModel):
