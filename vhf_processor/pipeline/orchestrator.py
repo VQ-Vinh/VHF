@@ -181,6 +181,8 @@ class PipelineOrchestrator:
                         audio_data = np.concatenate(
                             self._vad_buffer, axis=0
                         )
+                        if audio_data.dtype != np.int16:
+                            audio_data = (audio_data * 32767).clip(-32768, 32767).astype(np.int16)
                         job = SegmentJob(
                             audio_data=audio_data,
                             session_id=self._session.session_id,
@@ -261,7 +263,6 @@ class PipelineOrchestrator:
         sid = job.session_id
         seq = job.sequence
         sr = job.sample_rate
-        duration_ms = int(len(job.audio_data) / sr * 1000)
 
         audio_data = job.audio_data
         peak = np.abs(audio_data).max()

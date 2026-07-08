@@ -76,5 +76,6 @@ class WebRTCVAD(VADBackend):
 
     @staticmethod
     def _downsample(audio: np.ndarray, orig_sr: int, target_sr: int) -> np.ndarray:
-        ratio = orig_sr // target_sr
-        return audio[::ratio]
+        new_len = int(len(audio) * target_sr / orig_sr)
+        indices = np.linspace(0, len(audio) - 1, new_len)
+        return np.interp(indices, np.arange(len(audio)), audio)

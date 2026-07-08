@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import threading
 from collections import deque
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from vhf_processor.config.schema import GCSStorageConfig, LocalStorageConfig
@@ -69,14 +69,14 @@ class GCSStorage:
         if self._client is None or self._bucket is None:
             return 0
 
-        threshold = datetime.now() - timedelta(days=max_days)
+        threshold = datetime.now(timezone.utc) - timedelta(days=max_days)
         count = 0
         prefixes = ["audio", "results"]
 
         for subdir in prefixes:
             prefix = self._build_path(self._config.prefix, subdir) + "/"
             for blob in self._bucket.list_blobs(prefix=prefix):
-                if blob.time_created and blob.time_created.replace(tzinfo=None) < threshold:
+                if blob.time_created and blob.time_created < threshold:
                     blob.delete()
                     count += 1
 

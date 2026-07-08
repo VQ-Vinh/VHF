@@ -72,15 +72,34 @@ class LocalStorage:
 
     def cleanup_old_files(self, max_days: int = 30) -> int:
         import time
+        from datetime import datetime, timedelta
 
         now = time.time()
-        threshold = now - (max_days * 86400) 
+        threshold_date = datetime.now() - timedelta(days=max_days)
+        threshold_ts = now - (max_days * 86400)
         count = 0
 
         for path in list(self._audio_dir.iterdir()) + list(self._result_dir.iterdir()):
-            if path.is_file() and path.stat().st_mtime < threshold:
-                path.unlink()
-                count += 1
+            if not path.is_file():
+                continue
+            try:
+                # Parse timestamp from filename: YYYYMMDD_HHMMSS_...
+                stem = path.stem
+                date_part = stem.split("_", 2)[:2]
+                if len(date_part) == 2:
+                    file_dt = datetime.strptime(f"{date_part[0]}_{date_part[1]}", "%Y%m%d_%H%M%S")
+                    if file_dt < threshold_date:
+                        path.unlink()
+                        count += 1
+                else:
+                    # Fallback to mtime if filename doesn't match pattern
+                    if path.stat().st_mtime < threshold_ts:
+                        path.unlink()
+                        count += 1
+            except (ValueError, OSError):
+                if path.stat().st_mtime < threshold_ts:
+                    path.unlink()
+                    count += 1
 
         if count:
             logger.info(f"Cleaned up {count} old files (> {max_days} days)")

@@ -10,8 +10,6 @@ from vhf_processor.gemini.prompt_builder import LANGUAGE_NAMES
 from vhf_processor.pipeline.orchestrator import PipelineOrchestrator
 from vhf_processor.utils.logger import get_logger, setup_logger
 
-sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-
 logger = get_logger(__name__)
 
 LANGUAGES = dict(sorted(LANGUAGE_NAMES.items()))
@@ -144,6 +142,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 
 def main() -> None:
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except (AttributeError, ValueError):
+        pass
+
     args = parse_args(sys.argv[1:])
 
     if args.list_languages:

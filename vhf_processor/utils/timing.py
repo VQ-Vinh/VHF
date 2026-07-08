@@ -4,12 +4,18 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 
+from vhf_processor.utils.logger import get_logger
+
+logger = get_logger(__name__)
+
 
 @dataclass
 class LatencyTracker:
     markers: dict[str, float] = field(default_factory=dict)
 
     def mark(self, name: str) -> None:
+        if name in self.markers:
+            logger.warning(f"Overwriting existing marker: {name}")
         self.markers[name] = time.perf_counter()
 
     def elapsed(self, from_name: str, to_name: str | None = None) -> float:
@@ -32,8 +38,5 @@ class LatencyTracker:
 
     @contextmanager
     def measure(self, name: str):
-        start = time.perf_counter()
-        try:
-            yield
-        finally:
-            self.markers[name] = time.perf_counter() - start
+        yield
+        self.markers[name] = time.perf_counter()
