@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -30,6 +31,7 @@ class GeminiClient:
         self._prompt_builder = prompt_builder
         self._response_parser = response_parser
         self._client: genai.Client | None = None
+        self._api_lock = threading.Lock()
         self._init_client()
 
     def _init_client(self) -> None:
@@ -101,19 +103,20 @@ class GeminiClient:
         last_error: Exception | None = None
         for attempt in range(1, self._config.max_retries + 1):
             try:
-                response = self._client.models.generate_content(
-                    model=self._config.model,
-                    contents=[
-                        user_prompt,
-                        types.Part.from_bytes(data=audio_bytes, mime_type="audio/wav"),
-                    ],
-                    config=types.GenerateContentConfig(
-                        system_instruction=system_prompt,
-                        temperature=0.1,
-                        max_output_tokens=2048,
-                        response_logprobs=True,
-                    ),
-                )
+                with self._api_lock:
+                    response = self._client.models.generate_content(
+                        model=self._config.model,
+                        contents=[
+                            user_prompt,
+                            types.Part.from_bytes(data=audio_bytes, mime_type="audio/wav"),
+                        ],
+                        config=types.GenerateContentConfig(
+                            system_instruction=system_prompt,
+                            temperature=0.1,
+                            max_output_tokens=2048,
+                            response_logprobs=True,
+                        ),
+                    )
 
                 elapsed = (time.perf_counter() - start_time) * 1000
 

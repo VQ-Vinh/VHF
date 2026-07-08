@@ -17,6 +17,7 @@ from vhf_processor.config.schema import AppConfig
 from vhf_processor.gemini.client import GeminiClient
 from vhf_processor.gemini.prompt_builder import PromptBuilder
 from vhf_processor.gemini.response_parser import GeminiResponseParser
+from vhf_processor.models.result import ProcessingResult
 
 from vhf_processor.storage.local import LocalStorage
 from vhf_processor.storage.gcs import GCSStorage

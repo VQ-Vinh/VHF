@@ -27,6 +27,7 @@ class GCSStorage:
             self._result_dir = Path(local_config.result_dir)
         self._retry_queue: deque[tuple[Path, str]] = deque()
         self._retry_timer: threading.Timer | None = None
+        self._lock = threading.RLock()
         if config.enabled:
             self._init_client()
 
@@ -86,43 +87,47 @@ class GCSStorage:
     def _process_retry_queue(self) -> None:
         if self._client is None or self._bucket is None:
             return
-        remaining: deque[tuple[Path, str]] = deque()
-        while self._retry_queue:
-            local_path, remote_path = self._retry_queue.popleft()
-            if not local_path.exists():
-                logger.warning(f"File removed before retry: {local_path.name}")
-                continue
-            try:
-                blob = self._bucket.blob(remote_path)
-                blob.upload_from_filename(str(local_path))
-                logger.info(f"Retry uploaded to GCS: gs://{self._config.bucket_name}/{remote_path}")
-            except Exception as e:
-                logger.warning(f"Retry upload failed for {local_path.name}: {e}")
-                remaining.append((local_path, remote_path))
+        with self._lock:
+            remaining: deque[tuple[Path, str]] = deque()
+            while self._retry_queue:
+                local_path, remote_path = self._retry_queue.popleft()
+                if not local_path.exists():
+                    logger.warning(f"File removed before retry: {local_path.name}")
+                    continue
+                try:
+                    blob = self._bucket.blob(remote_path)
+                    blob.upload_from_filename(str(local_path))
+                    logger.info(f"Retry uploaded to GCS: gs://{self._config.bucket_name}/{remote_path}")
+                except Exception as e:
+                    logger.warning(f"Retry upload failed for {local_path.name}: {e}")
+                    remaining.append((local_path, remote_path))
 
-        self._retry_queue = remaining
-        if self._retry_queue:
-            self._start_retry_timer()
-        else:
-            logger.info("GCS retry queue empty, timer stopped")
+            self._retry_queue = remaining
+            if self._retry_queue:
+                self._start_retry_timer()
+            else:
+                logger.info("GCS retry queue empty, timer stopped")
 
     def _start_retry_timer(self) -> None:
-        self._stop_retry_timer()
-        self._retry_timer = threading.Timer(RETRY_INTERVAL, self._retry_timer_tick)
-        self._retry_timer.daemon = True
-        self._retry_timer.start()
+        with self._lock:
+            self._stop_retry_timer()
+            self._retry_timer = threading.Timer(RETRY_INTERVAL, self._retry_timer_tick)
+            self._retry_timer.daemon = True
+            self._retry_timer.start()
 
     def _stop_retry_timer(self) -> None:
-        if self._retry_timer is not None:
-            self._retry_timer.cancel()
-            self._retry_timer = None
+        with self._lock:
+            if self._retry_timer is not None:
+                self._retry_timer.cancel()
+                self._retry_timer = None
 
     def _retry_timer_tick(self) -> None:
         self._process_retry_queue()
 
     @property
     def retry_queue_size(self) -> int:
-        return len(self._retry_queue)
+        with self._lock:
+            return len(self._retry_queue)
 
     def upload_file(self, local_path: str | Path, remote_path: str | None = None) -> bool:
         if self._client is None or self._bucket is None:
@@ -150,8 +155,8 @@ class GCSStorage:
             logger.error(f"GCS upload failed: {e}")
             return False
 
-    def upload_file_async(self, local_path: str | Path, remote_path: str | None = None) -> bool:
-        return self.upload_file(local_path, remote_path)
+    async def upload_file_async(self, local_path: str | Path, remote_path: str | None = None) -> bool:
+        return await asyncio.to_thread(self.upload_file, local_path, remote_path)
 
     def upload_result(self, result: ProcessingResult) -> tuple[bool, bool]:
         audio_file = (
@@ -169,18 +174,19 @@ class GCSStorage:
         audio_remote = self._build_path(self._config.prefix, "audio", date_path, audio_file.name)
         result_remote = self._build_path(self._config.prefix, "results", date_path, result_file.name)
 
-        self._process_retry_queue()
+        with self._lock:
+            self._process_retry_queue()
 
-        audio_ok = self.upload_file(audio_file, audio_remote)
-        if not audio_ok:
-            self._retry_queue.append((audio_file, audio_remote))
+            audio_ok = self.upload_file(audio_file, audio_remote)
+            if not audio_ok:
+                self._retry_queue.append((audio_file, audio_remote))
 
-        result_ok = self.upload_file(result_file, result_remote)
-        if not result_ok:
-            self._retry_queue.append((result_file, result_remote))
+            result_ok = self.upload_file(result_file, result_remote)
+            if not result_ok:
+                self._retry_queue.append((result_file, result_remote))
 
-        if not audio_ok or not result_ok:
-            self._start_retry_timer()
+            if not audio_ok or not result_ok:
+                self._start_retry_timer()
 
         return audio_ok, result_ok
 
