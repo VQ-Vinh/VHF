@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import threading
+from collections import deque
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -9,6 +11,8 @@ from vhf_processor.models.result import ProcessingResult
 from vhf_processor.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+RETRY_INTERVAL = 30
 
 
 class GCSStorage:
@@ -21,6 +25,8 @@ class GCSStorage:
         if local_config is not None:
             self._audio_dir = Path(local_config.audio_dir)
             self._result_dir = Path(local_config.result_dir)
+        self._retry_queue: deque[tuple[Path, str]] = deque()
+        self._retry_timer: threading.Timer | None = None
         if config.enabled:
             self._init_client()
 
@@ -77,6 +83,47 @@ class GCSStorage:
             logger.info(f"Cleaned up {count} old GCS files (> {max_days} days)")
         return count
 
+    def _process_retry_queue(self) -> None:
+        if self._client is None or self._bucket is None:
+            return
+        remaining: deque[tuple[Path, str]] = deque()
+        while self._retry_queue:
+            local_path, remote_path = self._retry_queue.popleft()
+            if not local_path.exists():
+                logger.warning(f"File removed before retry: {local_path.name}")
+                continue
+            try:
+                blob = self._bucket.blob(remote_path)
+                blob.upload_from_filename(str(local_path))
+                logger.info(f"Retry uploaded to GCS: gs://{self._config.bucket_name}/{remote_path}")
+            except Exception as e:
+                logger.warning(f"Retry upload failed for {local_path.name}: {e}")
+                remaining.append((local_path, remote_path))
+
+        self._retry_queue = remaining
+        if self._retry_queue:
+            self._start_retry_timer()
+        else:
+            logger.info("GCS retry queue empty, timer stopped")
+
+    def _start_retry_timer(self) -> None:
+        self._stop_retry_timer()
+        self._retry_timer = threading.Timer(RETRY_INTERVAL, self._retry_timer_tick)
+        self._retry_timer.daemon = True
+        self._retry_timer.start()
+
+    def _stop_retry_timer(self) -> None:
+        if self._retry_timer is not None:
+            self._retry_timer.cancel()
+            self._retry_timer = None
+
+    def _retry_timer_tick(self) -> None:
+        self._process_retry_queue()
+
+    @property
+    def retry_queue_size(self) -> int:
+        return len(self._retry_queue)
+
     def upload_file(self, local_path: str | Path, remote_path: str | None = None) -> bool:
         if self._client is None or self._bucket is None:
             logger.warning("GCS not configured, skipping upload")
@@ -122,8 +169,18 @@ class GCSStorage:
         audio_remote = self._build_path(self._config.prefix, "audio", date_path, audio_file.name)
         result_remote = self._build_path(self._config.prefix, "results", date_path, result_file.name)
 
+        self._process_retry_queue()
+
         audio_ok = self.upload_file(audio_file, audio_remote)
+        if not audio_ok:
+            self._retry_queue.append((audio_file, audio_remote))
+
         result_ok = self.upload_file(result_file, result_remote)
+        if not result_ok:
+            self._retry_queue.append((result_file, result_remote))
+
+        if not audio_ok or not result_ok:
+            self._start_retry_timer()
 
         return audio_ok, result_ok
 
@@ -131,6 +188,7 @@ class GCSStorage:
         return await asyncio.to_thread(self.upload_result, result)
 
     def close(self) -> None:
+        self._stop_retry_timer()
         if self._client:
             self._client.close()
             logger.info("GCS client closed")

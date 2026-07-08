@@ -298,9 +298,11 @@ class PipelineOrchestrator:
 
         gcs_audio = None
         gcs_result = None
+        gcs_pending = 0
         if self._config.storage.gcs.enabled:
             gcs_audio, gcs_result = self._gcs.upload_result(result)
-        self._print_gcs_status(gcs_audio, gcs_result)
+            gcs_pending = self._gcs.retry_queue_size
+        self._print_gcs_status(gcs_audio, gcs_result, gcs_pending)
 
         seg_duration = duration_ms / 1000
         logger.info(
@@ -357,11 +359,13 @@ class PipelineOrchestrator:
         sys.stdout.flush()
 
     @staticmethod
-    def _print_gcs_status(audio_ok: bool | None, result_ok: bool | None) -> None:
+    def _print_gcs_status(audio_ok: bool | None, result_ok: bool | None, queue_size: int = 0) -> None:
         if audio_ok is None:
             return
         parts = []
         parts.append(f"  GCS: audio={'OK' if audio_ok else 'FAIL'}, result={'OK' if result_ok else 'FAIL'}")
+        if queue_size:
+            parts.append(f"  GCS: {queue_size} file(s) pending retry")
         sys.stdout.write("\n".join(parts) + "\n")
         sys.stdout.flush()
 
@@ -417,9 +421,11 @@ class PipelineOrchestrator:
 
         gcs_audio = None
         gcs_result = None
+        gcs_pending = 0
         if self._config.storage.gcs.enabled:
             gcs_audio, gcs_result = self._gcs.upload_result(result)
-        self._print_gcs_status(gcs_audio, gcs_result)
+            gcs_pending = self._gcs.retry_queue_size
+        self._print_gcs_status(gcs_audio, gcs_result, gcs_pending)
 
         logger.info(
             "Batch file processed",
