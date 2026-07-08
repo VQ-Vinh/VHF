@@ -40,14 +40,18 @@ class RingBuffer:
         with self._lock:
             if self._count == 0:
                 return np.array([], dtype=self._buffer.dtype)
-            if n <= self._head:
+
+            if self._count <= self._head:
                 return self._buffer[self._head - n : self._head].copy()
-            result = np.empty(n, dtype=self._buffer.dtype)
-            tail = self._buffer[: self._head]
-            head = self._buffer[self._head - (n - len(tail)) : self._head]
-            result[: len(head)] = head
-            result[len(head) :] = tail
-            return result
+
+            newest = self._buffer[: self._head]
+            oldest = self._buffer[self._head :]
+
+            if n <= len(newest):
+                return newest[-n:].copy()
+
+            remaining = n - len(newest)
+            return np.concatenate([oldest[-remaining:], newest])
 
     def get_all(self) -> np.ndarray:
         return self.get_last(self._count)

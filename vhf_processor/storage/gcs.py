@@ -159,6 +159,13 @@ class GCSStorage:
         return await asyncio.to_thread(self.upload_file, local_path, remote_path)
 
     def upload_result(self, result: ProcessingResult) -> tuple[bool, bool]:
+        if not result.audio_file or not result.audio_file.strip():
+            logger.error(f"Empty audio_file in result (session={result.session_id}, seq={result.sequence})")
+            return False, False
+        if not result.json_path or not result.json_path.strip():
+            logger.error(f"Empty json_path in result (session={result.session_id}, seq={result.sequence})")
+            return False, False
+
         audio_file = (
             self._audio_dir / result.audio_file
             if self._audio_dir

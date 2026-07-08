@@ -20,21 +20,21 @@ class AudioConfig(BaseModel):
     sample_rate: int = 48000
     channels: int = 1
     dtype: str = "int16"
-    frame_size: int = 1024
+    frame_size: int = 2048
     device_index: int = -1
 
 
 class VADConfig(BaseModel):
     backend: Literal["silero", "webrtc"] = "silero"
     min_speech_duration_ms: int = 300
-    min_silence_duration_ms: int = 800
+    min_silence_duration_ms: int = 1200
     threshold: float = 0.5
-    energy_threshold: int = 50
+    energy_threshold: int = 500
     silero_model_path: str = ""
 
 
 class GeminiConfig(BaseModel):
-    model: str = "gemini-2.5-flash-001"
+    model: str = "gemini-2.5-flash"
     api_key_env: str = "GEMINI_API_KEY"
     project_id: str = ""
     location: str = "us-central1"
@@ -58,10 +58,10 @@ class LocalStorageConfig(BaseModel):
 
 
 class GCSStorageConfig(BaseModel):
-    enabled: bool = False
+    enabled: bool = True
     bucket_name: str = "vhf-recordings"
     credentials_path: str = ""
-    prefix: str = "vhf-recordings"
+    prefix: str = ""
 
 
 class StorageConfig(BaseModel):

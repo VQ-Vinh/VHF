@@ -39,7 +39,13 @@ class WebRTCVAD(VADBackend):
                 audio = self._downsample(audio, sample_rate, 16000)
                 sample_rate = 16000
 
-        audio_int16 = (audio * 32767).astype(np.int16) if audio.dtype == np.float32 else audio
+        import numpy as np
+
+        audio_int16: np.ndarray
+        if np.issubdtype(audio.dtype, np.floating):
+            audio_int16 = (audio * 32767).clip(-32768, 32767).astype(np.int16)
+        else:
+            audio_int16 = audio.astype(np.int16)
         frame_size = int(sample_rate * 0.03)
         if len(audio_int16) < frame_size:
             return VADState.SILENCE

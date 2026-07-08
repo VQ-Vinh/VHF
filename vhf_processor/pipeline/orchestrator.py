@@ -70,8 +70,11 @@ class PipelineOrchestrator:
     def _create_vad(self) -> VADBackend:
         vad_cfg = self._config.vad
         if vad_cfg.backend == "silero":
-            return SileroVAD(threshold=vad_cfg.threshold)
+            return SileroVAD(threshold=vad_cfg.threshold, model_path=vad_cfg.silero_model_path or None)
         return WebRTCVAD(threshold=vad_cfg.threshold)
+
+    def start_session(self) -> str:
+        return self._session.start_session()
 
     def start(self) -> None:
         self._session.start_session()

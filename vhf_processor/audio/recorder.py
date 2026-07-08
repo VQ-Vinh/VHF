@@ -63,6 +63,9 @@ class AudioRecorder:
 
         frames_per_buffer = self._config.frame_size
 
+        if self._config.dtype != "int16":
+            logger.warning(f"Only int16 capture supported, got '{self._config.dtype}'. Falling back to int16.")
+
         logger.info(
             "Starting audio capture",
             extra={
@@ -112,7 +115,7 @@ class AudioRecorder:
             try:
                 audio = np.frombuffer(in_data, dtype=np.int16).reshape(-1, channels)
                 if channels > 1 and self._config.channels == 1:
-                    audio = audio.mean(axis=1, keepdims=True)
+                    audio = audio.mean(axis=1)
                 if self._running and self._callback:
                     self._callback(audio)
             except Exception:

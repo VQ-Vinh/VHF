@@ -100,7 +100,7 @@ def run_batch(config_path: Path, files: list[Path], target: str | None = None) -
     print("=" * 60)
 
     orchestrator = PipelineOrchestrator(config)
-    orchestrator._session.start_session()
+    orchestrator.start_session()
 
     for f in files:
         if not f.exists():

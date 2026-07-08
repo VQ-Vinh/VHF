@@ -5,7 +5,7 @@ import os
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from datetime import timedelta
 
 import google.genai as genai
 from google.genai import types
@@ -115,6 +115,7 @@ class GeminiClient:
                             temperature=0.1,
                             max_output_tokens=2048,
                             response_logprobs=True,
+                            timeout=timedelta(seconds=self._config.timeout_seconds),
                         ),
                     )
 
@@ -147,12 +148,11 @@ class GeminiClient:
                             "attempt": attempt,
                         },
                     )
-
-                if result.has_error:
-                    logger.warning(
-                        f"Gemini response parse failed, raw preview: {response.text[:500]}",
-                        extra={"session": session_id, "sequence": sequence},
-                    )
+                    if result.error and ("json_decode" in result.error or "no_valid_json" in result.error):
+                        logger.warning(
+                            f"Gemini response parse failed, raw preview: {response.text[:500]}",
+                            extra={"session": session_id, "sequence": sequence},
+                        )
 
                 logger.info(
                     "Audio processed by Gemini",
