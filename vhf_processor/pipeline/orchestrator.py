@@ -46,7 +46,7 @@ class PipelineOrchestrator:
         self._config = config
         self._session = SessionManager(config.general.session_prefix)
         self._storage = LocalStorage(config.storage.local)
-        self._gcs = GCSStorage(config.storage.gcs)
+        self._gcs = GCSStorage(config.storage.gcs, config.storage.local)
         self._vad = self._create_vad()
 
         self._prompt_builder = PromptBuilder(config.translation)

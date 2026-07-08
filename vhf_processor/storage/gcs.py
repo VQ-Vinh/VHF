@@ -4,7 +4,7 @@ import asyncio
 from datetime import datetime
 from pathlib import Path
 
-from vhf_processor.config.schema import GCSStorageConfig
+from vhf_processor.config.schema import GCSStorageConfig, LocalStorageConfig
 from vhf_processor.models.result import ProcessingResult
 from vhf_processor.utils.logger import get_logger
 
@@ -12,10 +12,15 @@ logger = get_logger(__name__)
 
 
 class GCSStorage:
-    def __init__(self, config: GCSStorageConfig):
+    def __init__(self, config: GCSStorageConfig, local_config: LocalStorageConfig | None = None):
         self._config = config
         self._client = None
         self._bucket = None
+        self._audio_dir: Path | None = None
+        self._result_dir: Path | None = None
+        if local_config is not None:
+            self._audio_dir = Path(local_config.audio_dir)
+            self._result_dir = Path(local_config.result_dir)
         if config.enabled:
             self._init_client()
 
@@ -44,6 +49,15 @@ class GCSStorage:
             logger.warning(f"Failed to initialize GCS: {e}")
             self._client = None
 
+    @staticmethod
+    def _date_path() -> str:
+        now = datetime.now()
+        return f"{now.year:04d}/{now.month:02d}/{now.day:02d}"
+
+    @staticmethod
+    def _build_path(*parts: str) -> str:
+        return "/".join(p for p in parts if p)
+
     def upload_file(self, local_path: str | Path, remote_path: str | None = None) -> bool:
         if self._client is None or self._bucket is None:
             logger.warning("GCS not configured, skipping upload")
@@ -55,11 +69,10 @@ class GCSStorage:
             return False
 
         if remote_path is None:
-            now = datetime.now()
-            remote_path = (
-                f"{self._config.prefix}/"
-                f"{now.year:04d}/{now.month:02d}/{now.day:02d}/"
-                f"{local_path.name}"
+            remote_path = self._build_path(
+                self._config.prefix,
+                self._date_path(),
+                local_path.name,
             )
 
         try:
@@ -75,11 +88,23 @@ class GCSStorage:
         return self.upload_file(local_path, remote_path)
 
     def upload_result(self, result: ProcessingResult) -> tuple[bool, bool]:
-        audio_file = Path(result.audio_file)
-        result_file = Path(result.json_path)
+        audio_file = (
+            self._audio_dir / result.audio_file
+            if self._audio_dir
+            else Path(result.audio_file)
+        )
+        result_file = (
+            self._result_dir / result.json_path
+            if self._result_dir
+            else Path(result.json_path)
+        )
 
-        audio_ok = self.upload_file(audio_file)
-        result_ok = self.upload_file(result_file)
+        date_path = self._date_path()
+        audio_remote = self._build_path(self._config.prefix, "audio", date_path, audio_file.name)
+        result_remote = self._build_path(self._config.prefix, "results", date_path, result_file.name)
+
+        audio_ok = self.upload_file(audio_file, audio_remote)
+        result_ok = self.upload_file(result_file, result_remote)
 
         return audio_ok, result_ok
 

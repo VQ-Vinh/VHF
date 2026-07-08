@@ -51,8 +51,7 @@ class LocalStorage:
         return filepath
 
     def save_result(self, result: ProcessingResult) -> Path:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{timestamp}_{result.session_id}_{result.sequence:04d}.json"
+        filename = result.json_path
         filepath = self._result_dir / filename
 
         with open(filepath, "w", encoding="utf-8") as f:

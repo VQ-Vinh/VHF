@@ -38,7 +38,7 @@ audio_dir = "./data/audio"
 result_dir = "./data/results"
 
 [storage.gcs]
-enabled = false
+enabled = true
 bucket_name = "vhf-recordings"
 credentials_path = ""
-prefix = "vhf-recordings"
+prefix = ""

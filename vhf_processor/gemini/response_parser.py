@@ -58,9 +58,9 @@ class GeminiResponseParser:
                 processing_notes=[f"Gemini returned error: {data['error']}"],
             )
 
-        confidence = float(data.get("confidence", 0.0))
-        processing_notes = list(data.get("processing_notes", []))
-        uncertain_segments = list(data.get("uncertain_segments", []))
+        confidence = 0.0
+        uncertain_segments: list[str] = []
+        processing_notes: list[str] = []
 
         if avg_logprobs is not None and avg_logprobs <= 0.0:
             confidence = math.exp(avg_logprobs)
