@@ -5,7 +5,6 @@ import os
 import threading
 import time
 from pathlib import Path
-from datetime import timedelta
 
 import google.genai as genai
 from google.genai import types
@@ -115,7 +114,6 @@ class GeminiClient:
                             temperature=0.1,
                             max_output_tokens=2048,
                             response_logprobs=True,
-                            timeout=timedelta(seconds=self._config.timeout_seconds),
                         ),
                     )
 
