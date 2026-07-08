@@ -67,7 +67,7 @@ Edit `vhf_processor/config/default.toml`:
 **Local** — all runtime data saved in `data/` (gitignored):
 - `data/audio/` — WAV segments
 - `data/results/` — JSON results
-- `data/logs/` — runtime logs
+
 
 **GCS** — when `storage.gcs.enabled = true`:
 ```
