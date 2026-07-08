@@ -57,10 +57,22 @@ Edit `vhf_processor/config/default.toml`:
 | `target_language` | `en` | Translation output language |
 | `capture_mode` | `loopback` | `loopback`, `device`, or `auto` |
 | `model` | `gemini-2.5-flash` | Gemini model |
+| `storage.gcs.enabled` | `true` | Upload audio + JSON to GCS |
+| `storage.gcs.bucket_name` | `vhf-recordings` | GCS bucket name |
+| `storage.retention_days` | `14` | Auto-delete files older than N days |
+| `storage.cleanup_interval_hours` | `24` | Cleanup check frequency (h) |
 
 ## Data
 
-All runtime data saved in `data/` (gitignored):
+**Local** — all runtime data saved in `data/` (gitignored):
 - `data/audio/` — WAV segments
 - `data/results/` — JSON results
 - `data/logs/` — runtime logs
+
+**GCS** — when `storage.gcs.enabled = true`:
+```
+gs://vhf-recordings/audio/YYYY/MM/DD/   ← WAV segments
+gs://vhf-recordings/results/YYYY/MM/DD/ ← JSON results
+```
+
+**Auto-cleanup**: files older than `retention_days` are deleted from both local and GCS. Checked at startup and every `cleanup_interval_hours` thereafter (timer-based, suitable for 24/7 operation on RASPI).
