@@ -296,8 +296,11 @@ class PipelineOrchestrator:
         tracker.mark("save_result")
         self._storage.save_result(result)
 
+        gcs_audio = None
+        gcs_result = None
         if self._config.storage.gcs.enabled:
-            self._gcs.upload_result(result)
+            gcs_audio, gcs_result = self._gcs.upload_result(result)
+        self._print_gcs_status(gcs_audio, gcs_result)
 
         seg_duration = duration_ms / 1000
         logger.info(
@@ -353,6 +356,15 @@ class PipelineOrchestrator:
         sys.stdout.write("\n".join(lines))
         sys.stdout.flush()
 
+    @staticmethod
+    def _print_gcs_status(audio_ok: bool | None, result_ok: bool | None) -> None:
+        if audio_ok is None:
+            return
+        parts = []
+        parts.append(f"  GCS: audio={'OK' if audio_ok else 'FAIL'}, result={'OK' if result_ok else 'FAIL'}")
+        sys.stdout.write("\n".join(parts) + "\n")
+        sys.stdout.flush()
+
     def process_file(self, file_path: str | Path) -> ProcessingResult:
         file_path = Path(file_path)
         if not file_path.exists():
@@ -403,8 +415,11 @@ class PipelineOrchestrator:
         self._print_result(result)
         self._storage.save_result(result)
 
+        gcs_audio = None
+        gcs_result = None
         if self._config.storage.gcs.enabled:
-            self._gcs.upload_result(result)
+            gcs_audio, gcs_result = self._gcs.upload_result(result)
+        self._print_gcs_status(gcs_audio, gcs_result)
 
         logger.info(
             "Batch file processed",
