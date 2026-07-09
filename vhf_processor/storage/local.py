@@ -33,7 +33,7 @@ class LocalStorage:
         sequence: int,
     ) -> Path:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{timestamp}_{session_id}_{sequence:04d}.wav"
+        filename = f"{timestamp}_{sequence:04d}.wav"
         filepath = self._audio_dir / filename
 
         if audio_data.dtype != np.int16:
@@ -54,19 +54,31 @@ class LocalStorage:
         filename = result.json_path
         filepath = self._result_dir / filename
 
+        data = result.model_dump(exclude={
+            "session_id",
+            "sequence",
+            "uncertain_segments",
+            "processing_notes",
+            "latency_ms",
+            "queue_wait_ms",
+        })
+        if data.get("confidence") is not None:
+            data["confidence"] = round(data["confidence"], 2)
+        data.pop("corrections", None)
+
         with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(result.model_dump(), f, ensure_ascii=False, indent=2, default=str)
+            json.dump(data, f, ensure_ascii=False, indent=2, default=str)
 
         logger.info(f"Result saved: {filepath}")
         return filepath
 
     def get_audio_path(self, session_id: str, sequence: int) -> Path | None:
-        pattern = f"*_{session_id}_{sequence:04d}.wav"
+        pattern = f"*_{sequence:04d}.wav"
         matches = list(self._audio_dir.glob(pattern))
         return matches[0] if matches else None
 
     def get_result_path(self, session_id: str, sequence: int) -> Path | None:
-        pattern = f"*_{session_id}_{sequence:04d}.json"
+        pattern = f"*_{sequence:04d}.json"
         matches = list(self._result_dir.glob(pattern))
         return matches[0] if matches else None
 

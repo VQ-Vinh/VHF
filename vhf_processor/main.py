@@ -43,8 +43,7 @@ def print_status(orc: PipelineOrchestrator) -> None:
     status = orc.get_status()
     state = "[RECORDING]" if status["recording"] else "[LISTENING]"
     print(
-        f"  [{status['session_id']}] "
-        f"Seq: {status['sequences_processed']} | "
+        f"  Seq: {status['sequences_processed']} | "
         f"{state}",
         flush=True,
     )

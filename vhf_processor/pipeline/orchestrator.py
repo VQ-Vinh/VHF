@@ -340,7 +340,7 @@ class PipelineOrchestrator:
     def _print_result(result: ProcessingResult) -> None:
         sep = "-" * 60
         lines = [f"\n{sep}"]
-        lines.append(f"  [{result.session_id} #{result.sequence}] {result.timestamp.strftime('%H:%M:%S')}")
+        lines.append(f"  [#{result.sequence}] {result.timestamp.strftime('%H:%M:%S')}")
         lines.append(f"  LANG: {result.detected_language.upper() or '?'}  |  CONF: {result.confidence:.0%}")
         if result.transcript_restored:
             lines.append(f"  TXT:  {result.transcript_restored}")

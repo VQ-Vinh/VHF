@@ -1,10 +1,12 @@
-# Core
-pyaudiowpatch>=0.2.12
+# Core (platform-conditional audio backend)
+pyaudiowpatch>=0.2.12; sys_platform == 'win32'
+pyaudio>=0.2.14; sys_platform != 'win32'
 soundfile>=0.12.1
 numpy>=1.26.0
 
 # VAD (Silero VAD primary)
-torch>=2.4.0
+torch>=2.4.0; sys_platform == 'win32'
+torch>=2.4,<2.9; sys_platform != 'win32'
 silero-vad>=4.0
 
 # VAD fallback

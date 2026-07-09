@@ -28,3 +28,5 @@ Thumbs.db
 dist/
 build/
 *.spec
+*.egg-info/
+*.egg-info
