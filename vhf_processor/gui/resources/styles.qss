@@ -1,0 +1,247 @@
+/* ── PRANA ELEX Dark Theme ────────────────────────── */
+
+QMainWindow, QDialog {
+    background-color: #0D0D0F;
+    color: #E8E8E8;
+    font-family: "Segoe UI", "SF Pro Display", "Helvetica Neue", sans-serif;
+}
+
+QLabel {
+    color: #E8E8E8;
+    background: transparent;
+}
+
+/* ── Header ──────────────────────────────────── */
+#HeaderTitle {
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: #FFFFFF;
+}
+#HeaderSubtitle {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 4px;
+    color: #5A5A6E;
+}
+#RxBadge {
+    font-size: 12px;
+    font-weight: 700;
+    color: #00E5FF;
+    padding: 4px 8px;
+    border: 1px solid #00E5FF;
+    border-radius: 12px;
+}
+#RxDot {
+    font-size: 16px;
+    color: #00E5FF;
+}
+
+/* ── Language Block ──────────────────────────── */
+#LanguageCard {
+    background: #15151A;
+    border: 1px solid #22222A;
+    border-radius: 12px;
+    padding: 12px 16px;
+}
+#LangLabel {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    color: #5A5A6E;
+}
+#LangValue {
+    font-size: 16px;
+    font-weight: 600;
+    color: #FFFFFF;
+}
+#SwapButton {
+    background: transparent;
+    border: 2px solid #00E5FF;
+    border-radius: 20px;
+    min-width: 40px;
+    max-width: 40px;
+    min-height: 40px;
+    max-height: 40px;
+    font-size: 18px;
+    color: #00E5FF;
+}
+#SwapButton:hover {
+    background: #00E5FF22;
+}
+QComboBox {
+    background: #1E1E28;
+    color: #4FC3F7;
+    border: 1px solid #22222A;
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 14px;
+    font-weight: 600;
+    min-width: 120px;
+}
+QComboBox:hover {
+    border-color: #4FC3F7;
+}
+QComboBox::drop-down {
+    border: none;
+    width: 24px;
+}
+QComboBox QAbstractItemView {
+    background: #1E1E28;
+    color: #E8E8E8;
+    border: 1px solid #22222A;
+    selection-background-color: #00E5FF33;
+    selection-color: #FFFFFF;
+}
+
+/* ── Chat Feed ───────────────────────────────── */
+#FeedHeader {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: #5A5A6E;
+}
+#ChatScroll {
+    background: transparent;
+    border: none;
+}
+#ChatScroll QScrollBar:vertical {
+    background: #0D0D0F;
+    width: 6px;
+    margin: 0;
+}
+#ChatScroll QScrollBar::handle:vertical {
+    background: #22222A;
+    border-radius: 3px;
+    min-height: 30px;
+}
+#ChatScroll QScrollBar::add-line:vertical,
+#ChatScroll QScrollBar::sub-line:vertical {
+    height: 0;
+}
+
+/* chat bubble */
+#ChatBubble {
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid #1A1A24;
+    padding: 12px 0;
+}
+#ChatSource {
+    font-size: 10px;
+    font-weight: 600;
+    color: #4A4A5E;
+    letter-spacing: 0.5px;
+}
+#ChatTranscript {
+    font-size: 13px;
+    font-style: italic;
+    color: #8888A0;
+    margin-top: 4px;
+}
+#ChatTranslation {
+    font-size: 16px;
+    font-weight: 700;
+    color: #FFFFFF;
+    margin-top: 2px;
+}
+
+/* ── History Button ──────────────────────────── */
+#HistoryButton {
+    background: transparent;
+    border: 1px solid #22222A;
+    border-radius: 16px;
+    min-width: 32px;
+    max-width: 32px;
+    min-height: 32px;
+    max-height: 32px;
+    font-size: 14px;
+    color: #5A5A6E;
+}
+#HistoryButton:hover {
+    border-color: #00E5FF;
+    color: #00E5FF;
+}
+
+/* ── Listening Indicator ─────────────────────── */
+#ListeningLabel {
+    font-size: 11px;
+    font-weight: 600;
+    color: #4A4A5E;
+    letter-spacing: 1px;
+}
+#ListeningDot {
+    font-size: 10px;
+    color: #00E566;
+}
+
+/* ── Settings Dialog ─────────────────────────── */
+#SettingsGroup {
+    background: #15151A;
+    border: 1px solid #22222A;
+    border-radius: 10px;
+    padding: 16px;
+}
+#SettingsLabel {
+    font-size: 11px;
+    font-weight: 600;
+    color: #5A5A6E;
+    letter-spacing: 0.5px;
+}
+QPushButton {
+    background: #1E1E28;
+    color: #E8E8E8;
+    border: 1px solid #22222A;
+    border-radius: 8px;
+    padding: 8px 20px;
+    font-size: 13px;
+    font-weight: 600;
+}
+QPushButton:hover {
+    background: #28283A;
+    border-color: #00E5FF;
+    color: #00E5FF;
+}
+#PrimaryButton {
+    background: #00E5FF;
+    color: #0D0D0F;
+    border: none;
+    font-weight: 700;
+}
+#PrimaryButton:hover {
+    background: #00B8CC;
+}
+
+/* ── History Dialog ──────────────────────────── */
+#HistorySearch {
+    background: #15151A;
+    color: #E8E8E8;
+    border: 1px solid #22222A;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 13px;
+}
+QTableWidget {
+    background: #0D0D0F;
+    color: #E8E8E8;
+    border: none;
+    gridline-color: #1A1A24;
+    font-size: 12px;
+}
+QTableWidget::item {
+    padding: 6px;
+}
+QTableWidget::item:selected {
+    background: #00E5FF22;
+    color: #FFFFFF;
+}
+QHeaderView::section {
+    background: #15151A;
+    color: #5A5A6E;
+    border: none;
+    border-bottom: 1px solid #22222A;
+    padding: 8px;
+    font-weight: 600;
+    font-size: 10px;
+    letter-spacing: 0.5px;
+}

@@ -15,6 +15,9 @@ logger = get_logger(__name__)
 LANGUAGES = dict(sorted(LANGUAGE_NAMES.items()))
 LANG_LIST = list(LANGUAGES.items())
 
+_dot_count = 0
+_was_recording: bool | None = None
+
 
 def select_capture_mode() -> tuple[str, int]:
     print()
@@ -76,13 +79,28 @@ def select_language() -> str:
 
 
 def print_status(orc: PipelineOrchestrator) -> None:
+    global _dot_count, _was_recording
     status = orc.get_status()
-    state = "[RECORDING]" if status["recording"] else "[LISTENING]"
-    print(
-        f"  Seq: {status['sequences_processed']} | "
-        f"{state}",
-        flush=True,
-    )
+    seq = status["sequences_processed"]
+    recording = status["recording"]
+
+    if recording:
+        if _was_recording is not True:
+            if _was_recording is not None:
+                print()
+            print(f"  Recording.", end="", flush=True)
+            _dot_count = 1
+        else:
+            _dot_count += 1
+            print(f".", end="", flush=True)
+        _was_recording = True
+    else:
+        if _was_recording is not False:
+            if _was_recording is True:
+                print()
+            print(f"  Seq: {seq}  Listening...", flush=True)
+            _was_recording = False
+            _dot_count = 0
 
 
 def apply_target(config, target: str | None) -> None:
@@ -168,6 +186,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Target output language (default: prompt)",
     )
     parser.add_argument(
+        "--gui", "-g",
+        action="store_true",
+        help="Launch desktop GUI",
+    )
+    parser.add_argument(
         "--list-languages",
         action="store_true",
         help="List supported languages and exit",
@@ -194,6 +217,7 @@ def main() -> None:
             print(f"  {code}: {name}")
         return
 
+    use_gui = args.gui or sys.stdin is None
     target = args.target
     if args.batch and args.batch[0] == "batch":
         files = [Path(a) for a in args.batch[1:]]
@@ -205,18 +229,42 @@ def main() -> None:
         run_batch(Path("vhf_processor/config/default.toml"), files, target)
         return
 
+    if use_gui:
+        if sys.stdin is not None:
+            try:
+                mode, dev_idx = select_capture_mode()
+                if not target:
+                    target = select_language()
+            except (EOFError, OSError, RuntimeError):
+                mode, dev_idx = "device", -1
+                target = target or "en"
+        else:
+            mode, dev_idx = "device", -1
+            target = target or "en"
+
+        from vhf_processor.gui.app import run_gui
+        run_gui(
+            capture_mode=mode,
+            device_index=dev_idx,
+            target_language=target,
+        )
+        return
+
     mode, dev_idx = select_capture_mode()
     if not target:
         target = select_language()
 
-    if args.batch:
-        config_path = Path(args.batch[0])
-        if not config_path.exists():
-            print(f"Config not found: {config_path}")
-            sys.exit(1)
-        asyncio.run(run_realtime(config_path, target, mode, dev_idx))
-    else:
-        asyncio.run(run_realtime(Path("vhf_processor/config/default.toml"), target, mode, dev_idx))
+    try:
+        if args.batch:
+            config_path = Path(args.batch[0])
+            if not config_path.exists():
+                print(f"Config not found: {config_path}")
+                sys.exit(1)
+            asyncio.run(run_realtime(config_path, target, mode, dev_idx))
+        else:
+            asyncio.run(run_realtime(Path("vhf_processor/config/default.toml"), target, mode, dev_idx))
+    except KeyboardInterrupt:
+        pass
 
 
 if __name__ == "__main__":

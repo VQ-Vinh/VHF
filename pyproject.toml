@@ -16,6 +16,8 @@ dependencies = [
     "google-cloud-storage>=2.16.0",
     "pydantic>=2.7.0",
     "pydantic-settings>=2.2.0",
+    "pyside6>=6.7.0",
+    "qasync>=0.27.0",
 ]
 
 [project.scripts]

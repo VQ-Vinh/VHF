@@ -10,7 +10,7 @@ sample_rate = 48000
 channels = 1
 dtype = "int16"
 frame_size = 2048
-device_index = 17
+device_index = -1
 
 [vad]
 backend = "silero"

@@ -54,6 +54,10 @@ class PipelineOrchestrator:
         self._prompt_builder = PromptBuilder(config.translation)
         self._gemini = GeminiClient(config.gemini, self._prompt_builder, GeminiResponseParser)
 
+        self.on_result = None
+        self.on_status = None
+        self.on_detected_language = None
+
         self._vad_buffer: SpeechBuffer = []
         self._recording = False
         self._samples_since_speech = 0
@@ -295,6 +299,11 @@ class PipelineOrchestrator:
         process_ms = tracker.total_ms()
         result.latency_ms = process_ms + queue_wait_ms
         result.queue_wait_ms = queue_wait_ms
+
+        if self.on_result:
+            self.on_result(result)
+        if self.on_detected_language and result.detected_language:
+            self.on_detected_language(result.detected_language)
 
         self._print_result(result)
 

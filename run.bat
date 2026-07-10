@@ -10,5 +10,5 @@ if not exist "venv\Scripts\python.exe" (
 )
 
 set PYTHONPATH=%~dp0
-start /b /wait "" "%~dp0venv\Scripts\python.exe" -u "%~dp0vhf_processor\main.py" %*
-exit /b 0
+"%~dp0venv\Scripts\python.exe" -u "%~dp0vhf_processor\main.py" %*
+exit /b %errorlevel%
