@@ -46,7 +46,7 @@ class WASAPIBackend(AudioBackend):
         mode = config.capture_mode
         device_info = None
 
-        if mode in ("loopback", "auto"):
+        if mode == "loopback":
             device_info = self._find_loopback_device(pa)
             if device_info is None and mode == "loopback":
                 raise AudioDeviceNotFoundError(
@@ -188,6 +188,25 @@ class WASAPIBackend(AudioBackend):
                         "host_api": host_api["name"],
                     }
                 )
+            return devices
+        finally:
+            pa.terminate()
+
+    @staticmethod
+    def list_loopback_devices() -> list[dict]:
+        import pyaudiowpatch as paw
+
+        pa = paw.PyAudio()
+        try:
+            devices = []
+            for i in range(pa.get_device_count()):
+                info = pa.get_device_info_by_index(i)
+                if "loopback" in info["name"].lower():
+                    devices.append({
+                        "index": i,
+                        "name": info["name"],
+                        "sr": int(info["defaultSampleRate"]),
+                    })
             return devices
         finally:
             pa.terminate()

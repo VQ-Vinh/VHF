@@ -22,20 +22,9 @@ The setup script will:
 - Check Python 3.11+
 - Create a virtual environment (`venv/`)
 - Install all dependencies
-- Create `.env` from `.env.example` (if not exists)
 - Create `data/` directories
 
-### 2. Configure
-
-Edit `.env` with your Gemini API key:
-
-```
-GEMINI_API_KEY=your_api_key_here
-```
-
-Get a key at [Google AI Studio](https://aistudio.google.com).
-
-### 3. Run
+### 2. Run
 
 **Real-time mode** (captures from audio device and processes continuously):
 

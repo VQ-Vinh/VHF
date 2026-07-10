@@ -45,7 +45,7 @@ class PulseBackend(AudioBackend):
         pa = self._get_pa()
         mode = config.capture_mode
 
-        if mode in ("loopback", "auto"):
+        if mode == "loopback":
             logger.warning("Loopback not supported on this platform, falling back to device capture")
             mode = "device"
 

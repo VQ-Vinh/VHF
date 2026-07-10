@@ -49,45 +49,16 @@ if errorlevel 1 (
 )
 echo [OK] Dependencies installed
 
-:: 4. Tạo .env từ .env.example nếu chưa có
-if not exist ".env" (
-    if exist ".env.example" (
-        copy .env.example .env >nul
-        echo [*] Created .env from .env.example
-    ) else (
-        echo [WARNING] .env.example not found. Create .env manually with GEMINI_API_KEY=
-    )
-) else (
-    echo [*] .env already exists, keeping as-is
-)
-
-:: 5. Tạo thư mục data
+:: 4. Tạo thư mục data
 if not exist "data\audio" mkdir data\audio 2>nul
 if not exist "data\results" mkdir data\results 2>nul
 echo [OK] Data directories ready
-
-:: 6. Kiểm tra API key
-if exist ".env" (
-    set "key_set="
-    for /f "usebackq tokens=1,* delims==" %%a in (".env") do (
-        if "%%a"=="GEMINI_API_KEY" if not "%%b"=="" set "key_set=1"
-    )
-    if not defined key_set (
-        echo.
-        echo [WARNING] GEMINI_API_KEY is empty in .env
-    ) else (
-        echo [OK] GEMINI_API_KEY found
-    )
-)
 
 echo.
 echo ============================================================
 echo   Setup complete!
 echo ============================================================
 echo.
-echo   Next steps:
-echo     1. Edit .env and set your GEMINI_API_KEY
-echo        (Get key from https://aistudio.google.com)
-echo     2. Run: run.bat
+echo   Run: run.bat
 echo.
 pause

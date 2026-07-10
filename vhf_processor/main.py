@@ -16,6 +16,42 @@ LANGUAGES = dict(sorted(LANGUAGE_NAMES.items()))
 LANG_LIST = list(LANGUAGES.items())
 
 
+def select_capture_mode() -> tuple[str, int]:
+    print()
+    print("  Select capture mode:")
+    print("    1. Device      (USB SoundCard / microphone input)")
+    print("    2. Loopback    (capture system audio output)")
+    print()
+    while True:
+        choice = input("  Choice (1-2): ").strip()
+        if choice == "1":
+            return ("device", -1)
+        if choice == "2":
+            try:
+                from vhf_processor.audio.wasapi_backend import WASAPIBackend
+                devices = WASAPIBackend.list_loopback_devices()
+            except ImportError:
+                devices = []
+            if not devices:
+                print("  Loopback not supported on this platform.")
+                continue
+            print()
+            print("  Available loopback devices:")
+            for i, d in enumerate(devices, 1):
+                print(f"    {i}. [{d['index']}] {d['name']}")
+            print()
+            while True:
+                try:
+                    pick = input(f"  Choice (1-{len(devices)}): ").strip()
+                    idx = int(pick) - 1
+                    if 0 <= idx < len(devices):
+                        return ("loopback", devices[idx]["index"])
+                except ValueError:
+                    pass
+                print(f"  Invalid. Enter 1-{len(devices)}.")
+        print("  Invalid. Enter 1 or 2.")
+
+
 def print_banner() -> None:
     print("=" * 60)
     print("  VHF Radio Processor / Gemini 2.5")
@@ -54,14 +90,18 @@ def apply_target(config, target: str | None) -> None:
         config.translation.target_language = target
 
 
-async def run_realtime(config_path: Path, target: str | None = None) -> None:
+async def run_realtime(config_path: Path, target: str | None = None, capture_mode: str = "device", device_index: int = -1) -> None:
     config = load_config(config_path)
     apply_target(config, target)
+    config.audio.capture_mode = capture_mode
+    if device_index >= 0:
+        config.audio.device_index = device_index
     setup_logger(level=config.general.log_level, console_level="WARNING")
 
     tgt = config.translation.target_language
     print_banner()
     print(f"  Target: {LANGUAGES.get(tgt, tgt)}  |  Source: auto-detect")
+    print(f"  Capture: {config.audio.capture_mode}")
     print("  Press Ctrl+C to stop")
     print("=" * 60)
     logger.info("Starting real-time VHF processor", extra={"config": str(config_path), "target": tgt})
@@ -72,7 +112,7 @@ async def run_realtime(config_path: Path, target: str | None = None) -> None:
         orchestrator.start()
         while True:
             print_status(orchestrator)
-            await asyncio.sleep(5)
+            await asyncio.sleep(1)
 
     except asyncio.CancelledError:
         logger.info("Shutting down...")
@@ -163,18 +203,20 @@ def main() -> None:
         if not target:
             target = select_language()
         run_batch(Path("vhf_processor/config/default.toml"), files, target)
-    elif args.batch:
+        return
+
+    mode, dev_idx = select_capture_mode()
+    if not target:
+        target = select_language()
+
+    if args.batch:
         config_path = Path(args.batch[0])
         if not config_path.exists():
             print(f"Config not found: {config_path}")
             sys.exit(1)
-        if not target:
-            target = select_language()
-        asyncio.run(run_realtime(config_path, target))
+        asyncio.run(run_realtime(config_path, target, mode, dev_idx))
     else:
-        if not target:
-            target = select_language()
-        asyncio.run(run_realtime(Path("vhf_processor/config/default.toml"), target))
+        asyncio.run(run_realtime(Path("vhf_processor/config/default.toml"), target, mode, dev_idx))
 
 
 if __name__ == "__main__":

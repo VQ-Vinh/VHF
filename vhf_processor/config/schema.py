@@ -16,7 +16,7 @@ class GeneralConfig(BaseModel):
 
 
 class AudioConfig(BaseModel):
-    capture_mode: Literal["loopback", "device", "auto"] = "loopback"
+    capture_mode: Literal["loopback", "device"] = "loopback"
     sample_rate: int = 48000
     channels: int = 1
     dtype: str = "int16"

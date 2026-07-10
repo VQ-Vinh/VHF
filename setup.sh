@@ -44,40 +44,14 @@ echo "[*] Installing dependencies..."
 "$DIR/venv/bin/pip" install -e .
 echo "[OK] Dependencies installed"
 
-# 4. Create .env from .env.example if needed
-if [ ! -f "$DIR/.env" ]; then
-    if [ -f "$DIR/.env.example" ]; then
-        cp "$DIR/.env.example" "$DIR/.env"
-        echo "[*] Created .env from .env.example"
-    else
-        echo "[WARNING] .env.example not found. Create .env manually."
-    fi
-else
-    echo "[*] .env already exists, keeping as-is"
-fi
-
-# 5. Create data directories
+# 4. Create data directories
 mkdir -p "$DIR/data/audio" "$DIR/data/results"
 echo "[OK] Data directories ready"
-
-# 6. Check API key
-if [ -f "$DIR/.env" ]; then
-    source "$DIR/.env"
-    if [ -z "$GEMINI_API_KEY" ]; then
-        echo ""
-        echo "[WARNING] GEMINI_API_KEY is empty in .env"
-    else
-        echo "[OK] GEMINI_API_KEY found"
-    fi
-fi
 
 echo ""
 echo "============================================================"
 echo "  Setup complete!"
 echo "============================================================"
 echo ""
-echo "  Next steps:"
-echo "    1. Edit .env and set your GEMINI_API_KEY"
-echo "       (Get key from https://aistudio.google.com)"
-echo "    2. Run: ./run.sh"
+echo "  Run: ./run.sh"
 echo ""
