@@ -32,8 +32,7 @@ excludes = [
     "torch.export",
     "torch.ao",
     "torch.utils.tensorboard",
-    "torch.nn.attention",
-    "torch.nn.parallel",
+
     "torch.distributions",
     "sympy",
     "matplotlib",
