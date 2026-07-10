@@ -28,12 +28,6 @@ hiddenimports = [
 ]
 
 excludes = [
-    "torch.onnx",
-    "torch.export",
-    "torch.ao",
-    "torch.utils.tensorboard",
-
-    "torch.distributions",
     "sympy",
     "matplotlib",
     "PIL",
