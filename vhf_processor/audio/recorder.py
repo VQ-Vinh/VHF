@@ -42,6 +42,12 @@ class AudioRecorder:
     def is_running(self) -> bool:
         return self._backend is not None and self._backend.is_running
 
+    @property
+    def sample_rate(self) -> int:
+        if self._backend is not None:
+            return self._backend.sample_rate
+        return 0
+
     @staticmethod
     def list_devices() -> list[dict]:
         backend_cls = AudioRecorder._resolve_backend()

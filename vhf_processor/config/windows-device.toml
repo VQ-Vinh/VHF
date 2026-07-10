@@ -10,7 +10,7 @@ sample_rate = 48000
 channels = 1
 dtype = "int16"
 frame_size = 2048
-device_index = 17
+device_index = 1
 
 [vad]
 backend = "silero"
@@ -42,7 +42,7 @@ audio_dir = "./data/audio"
 result_dir = "./data/results"
 
 [storage.gcs]
-enabled = true
+enabled = false
 bucket_name = "vhf-recordings"
 credentials_path = ""
 prefix = ""

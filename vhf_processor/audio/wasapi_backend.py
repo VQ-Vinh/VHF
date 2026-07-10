@@ -20,10 +20,15 @@ class WASAPIBackend(AudioBackend):
     def __init__(self):
         self._stream = None
         self._running = False
+        self._sample_rate = 0
 
     @property
     def name(self) -> str:
         return "wasapi"
+
+    @property
+    def sample_rate(self) -> int:
+        return self._sample_rate
 
     @classmethod
     def _get_pa(cls):
@@ -56,7 +61,7 @@ class WASAPIBackend(AudioBackend):
         dev_name = device_info["name"]
         dev_sr = int(device_info["defaultSampleRate"])
 
-        sr = dev_sr if mode == "loopback" else config.sample_rate
+        sr = dev_sr
         channels = min(config.channels, device_info["maxInputChannels"])
         if channels < 1:
             channels = device_info["maxInputChannels"]
@@ -100,6 +105,7 @@ class WASAPIBackend(AudioBackend):
             )
             self._stream.start_stream()
             self._running = True
+            self._sample_rate = sr
         except Exception as e:
             raise AudioStreamError(f"Failed to open audio stream: {e}") from e
 

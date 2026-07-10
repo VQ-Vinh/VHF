@@ -145,7 +145,7 @@ class PipelineOrchestrator:
         self._process_vad_frame(audio)
 
     def _process_vad_frame(self, audio: np.ndarray) -> None:
-        sr = self._config.audio.sample_rate
+        sr = self._recorder.sample_rate if self._recorder and self._recorder.sample_rate > 0 else self._config.audio.sample_rate
         frame_size = self._config.audio.frame_size
         vad_cfg = self._config.vad
 

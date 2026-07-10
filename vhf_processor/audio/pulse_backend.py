@@ -20,10 +20,15 @@ class PulseBackend(AudioBackend):
     def __init__(self):
         self._stream = None
         self._running = False
+        self._sample_rate = 0
 
     @property
     def name(self) -> str:
         return "pulse"
+
+    @property
+    def sample_rate(self) -> int:
+        return self._sample_rate
 
     @classmethod
     def _get_pa(cls):
@@ -48,7 +53,7 @@ class PulseBackend(AudioBackend):
 
         dev_index = device_info["index"]
         dev_name = device_info["name"]
-        sr = config.sample_rate
+        sr = int(device_info["defaultSampleRate"])
         channels = min(config.channels, device_info["maxInputChannels"])
         if channels < 1:
             channels = device_info["maxInputChannels"]
@@ -88,6 +93,7 @@ class PulseBackend(AudioBackend):
             )
             self._stream.start_stream()
             self._running = True
+            self._sample_rate = sr
         except Exception as e:
             raise AudioStreamError(f"Failed to open audio stream: {e}") from e
 

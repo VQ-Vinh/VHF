@@ -22,3 +22,7 @@ class AudioBackend(ABC):
     @property
     @abstractmethod
     def is_running(self) -> bool: ...
+
+    @property
+    @abstractmethod
+    def sample_rate(self) -> int: ...
