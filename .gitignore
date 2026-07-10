@@ -15,6 +15,11 @@ __pycache__/
 # Logs
 *.log
 
+# Runtime artifacts
+stdin.txt
+err.txt
+out.txt
+
 # IDE
 .vscode/
 .idea/

@@ -226,7 +226,7 @@ def main() -> None:
             sys.exit(1)
         if not target:
             target = select_language()
-        run_batch(Path("vhf_processor/config/default.toml"), files, target)
+        run_batch(Path("config/default.toml"), files, target)
         return
 
     if use_gui:
@@ -262,7 +262,7 @@ def main() -> None:
                 sys.exit(1)
             asyncio.run(run_realtime(config_path, target, mode, dev_idx))
         else:
-            asyncio.run(run_realtime(Path("vhf_processor/config/default.toml"), target, mode, dev_idx))
+            asyncio.run(run_realtime(Path("config/default.toml"), target, mode, dev_idx))
     except KeyboardInterrupt:
         pass
 

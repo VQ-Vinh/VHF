@@ -16,8 +16,12 @@ from vhf_processor.utils.logger import get_logger, setup_logger
 
 logger = get_logger(__name__)
 
+def _is_frozen() -> bool:
+    return getattr(sys, "frozen", False) or getattr(sys, "_MEIPASS", None) is not None
+
+
 def _bundle_root() -> Path:
-    if getattr(sys, "frozen", False):
+    if _is_frozen():
         meipass = getattr(sys, "_MEIPASS", None)
         if meipass:
             return Path(meipass)
@@ -26,15 +30,16 @@ def _bundle_root() -> Path:
         if (internal / "vhf_processor").is_dir():
             return internal
         return exe_dir
-    return Path(__file__).parent.parent.parent.resolve()
+    return Path(__file__).parent.parent.parent.parent.resolve()
 
 
 def _find_config() -> Path:
     root = _bundle_root()
     candidates = [
-        root / "vhf_processor" / "config" / "default.toml",
-        root.parent / "vhf_processor" / "config" / "default.toml",
+        root / "config" / "default.toml",
     ]
+    if not _is_frozen():
+        candidates.append(root / "vhf_processor" / "config" / "default.toml")
     for p in candidates:
         if p.exists():
             return p
@@ -42,7 +47,9 @@ def _find_config() -> Path:
 
 
 def _load_styles(app: QApplication) -> None:
-    qss_path = _bundle_root() / "vhf_processor" / "gui" / "resources" / "styles.qss"
+    root = _bundle_root()
+    prefix = "src" if not _is_frozen() else ""
+    qss_path = root / prefix / "vhf_processor" / "gui" / "resources" / "styles.qss"
     if qss_path.exists():
         with open(qss_path, encoding="utf-8") as f:
             app.setStyleSheet(f.read())

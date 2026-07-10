@@ -2,6 +2,8 @@
 chcp 65001 >nul
 title PRANA ELEX — Build
 
+cd /d "%~dp0.."
+
 if not exist "venv\Scripts\python.exe" (
     echo [ERROR] venv not found. Run setup.bat first.
     pause
@@ -16,7 +18,7 @@ if exist "dist\PRANA_ELEX" rmdir /s /q "dist\PRANA_ELEX"
 if exist "dist\PRANA_ELEX.exe" del "dist\PRANA_ELEX.exe"
 
 echo [3/3] Building PRANA_ELEX.exe (cached build/)...
-call .\venv\Scripts\pyinstaller.exe PRANA_ELEX.spec
+call .\venv\Scripts\pyinstaller.exe scripts\PRANA_ELEX.spec
 
 echo.
 echo Done! Output: dist\PRANA_ELEX\PRANA_ELEX.exe

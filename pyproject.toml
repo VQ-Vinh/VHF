@@ -24,6 +24,7 @@ dependencies = [
 vhf-processor = "vhf_processor.main:main"
 
 [tool.setuptools.packages.find]
+where = ["src"]
 include = ["vhf_processor*"]
 
 [build-system]

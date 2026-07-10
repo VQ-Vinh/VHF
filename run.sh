@@ -11,9 +11,9 @@ if [ ! -d "$DIR/venv" ]; then
     exit 1
 fi
 
-export PYTHONPATH="$DIR"
+export PYTHONPATH="$DIR/src"
 if [ $# -eq 0 ]; then
-    exec "$DIR/venv/bin/python" -u "$DIR/vhf_processor/main.py" "$DIR/vhf_processor/config/rpi.toml"
+    exec "$DIR/venv/bin/python" -u "$DIR/src/vhf_processor/main.py" "$DIR/config/rpi.toml"
 else
-    exec "$DIR/venv/bin/python" -u "$DIR/vhf_processor/main.py" "$@"
+    exec "$DIR/venv/bin/python" -u "$DIR/src/vhf_processor/main.py" "$@"
 fi

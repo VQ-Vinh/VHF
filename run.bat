@@ -9,6 +9,6 @@ if not exist "venv\Scripts\python.exe" (
     exit /b 1
 )
 
-set PYTHONPATH=%~dp0
-"%~dp0venv\Scripts\python.exe" -u "%~dp0vhf_processor\main.py" %*
+set PYTHONPATH=%~dp0src
+"%~dp0venv\Scripts\python.exe" -u "%~dp0src\vhf_processor\main.py" %*
 exit /b %errorlevel%
