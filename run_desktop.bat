@@ -10,5 +10,5 @@ if not exist "venv\Scripts\python.exe" (
 )
 
 set PYTHONPATH=%~dp0src
-"%~dp0venv\Scripts\python.exe" -u -m prana_elex.app.cli %*
+"%~dp0venv\Scripts\python.exe" -u -m prana_elex.app.desktop %*
 exit /b %errorlevel%

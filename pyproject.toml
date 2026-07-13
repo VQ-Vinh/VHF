@@ -1,7 +1,7 @@
 [project]
-name = "vhf-processor"
+name = "prana-elex"
 version = "1.0.0"
-description = "VHF Radio Processor / Gemini 2.5 — real-time audio transcription and translation"
+description = "PRANA ELEX — VHF Marine Radio transcription and translation using Gemini 2.5"
 requires-python = ">=3.11"
 dependencies = [
     "pyaudiowpatch>=0.2.12; sys_platform == 'win32'",
@@ -21,11 +21,11 @@ dependencies = [
 ]
 
 [project.scripts]
-vhf-processor = "vhf_processor.main:main"
+prana-elex = "prana_elex:cli"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["vhf_processor*"]
+include = ["prana_elex*"]
 
 [build-system]
 requires = ["setuptools>=75.0"]

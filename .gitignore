@@ -36,3 +36,6 @@ build/
 !scripts/PRANA_ELEX.spec
 *.egg-info/
 *.egg-info
+
+# Old structure (removed)
+src/vhf_processor/
