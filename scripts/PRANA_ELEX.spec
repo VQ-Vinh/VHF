@@ -8,19 +8,17 @@ block_cipher = None
 
 datas = collect_data_files("PySide6", include_py_files=True)
 
+datas += collect_data_files("silero_vad")
 datas += [
-    ("..\\src\\vhf_processor\\gui\\resources\\styles.qss", "vhf_processor\\gui\\resources"),
+    ("..\\src\\prana_elex\\ui\\resources\\styles.qss", "prana_elex\\ui\\resources"),
     ("..\\config\\default.toml", "config"),
 ]
 
 hiddenimports = [
     "qasync",
-    "PySide6.QtSvg",
-    "PySide6.QtSvgWidgets",
-    "google.cloud.storage",
-    "google.cloud.storage._http",
     "google.genai",
     "silero_vad",
+    "silero_vad.data",
     "webrtcvad",
     "pyaudiowpatch",
     "pydantic",
@@ -35,7 +33,7 @@ excludes = [
 ]
 
 a = Analysis(
-    ["..\\src\\vhf_processor\\main.py"],
+    ["..\\src\\prana_elex\\__main__.py"],
     pathex=["..\\src", ".."],
     binaries=[],
     datas=datas,
