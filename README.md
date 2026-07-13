@@ -1,12 +1,12 @@
-# VHF Radio Processor / Gemini 2.5
+# PRANA ELEX
 
-Real-time VHF marine radio transcription and translation using Google Gemini 2.5.
+**Nghe và dịch liên lạc VHF hàng hải** — bắt âm thanh từ thiết bị thu, tự động nhận diện giọng nói, phiên dịch và hiển thị kết quả real-time.
 
-Captures audio from a USB SoundCard (or any input device), detects speech via Silero VAD, transcribes and translates using Gemini, then saves results locally and optionally uploads to Google Cloud Storage.
+---
 
-## Quick Start
+## Dành cho người mới bắt đầu
 
-### 1. Setup (one-time)
+### Bước 1: Cài đặt (làm một lần)
 
 **Windows:**
 ```cmd
@@ -18,45 +18,84 @@ setup.bat
 ./setup.sh
 ```
 
-The setup script will:
-- Check Python 3.11+
-- Create a virtual environment (`venv/`)
-- Install all dependencies
-- Create `data/` directories
+Script sẽ tự tạo môi trường ảo, cài đặt thư viện, tạo thư mục lưu dữ liệu.
 
-### 2. Run
+### Bước 2: Nhập API Key
 
-**Real-time mode** (captures from audio device and processes continuously):
+Bạn cần một key của Google Gemini. Đặt nó trước khi chạy app:
 
+```cmd
+set GOOGLE_API_KEY=AIzaSy...
+```
+
+Hoặc set trong biến môi trường Windows luôn để khỏi phải gõ lại.
+
+### Bước 3: Chạy thôi
+
+**Có giao diện đồ hoạ (GUI):**
+```cmd
+run_desktop.bat
+```
+
+**Chạy trên console (không cần màn hình):**
 ```cmd
 run.bat
 ```
 
-**Batch mode** (process existing WAV files):
-
+**Nếu có file WAV muốn xử lý sẵn:**
 ```cmd
-run.bat batch input.wav
+run.bat batch file1.wav file2.wav
 ```
 
-**Options:**
+### Dùng file .exe có sẵn (không cần cài Python)
 
-| Flag | Example | Description |
-|---|---|---|
-| `-t` | `run.bat -t vi` | Set target translation language |
-| `--list-languages` | `run.bat --list-languages` | Show supported languages |
-| config path | `run.bat config.toml` | Use a custom config file |
-
-## Audio Device Setup
-
-The program captures from an audio input device (USB SoundCard, line-in, microphone).
-
-First-time users should list available devices:
+File `dist\PRANA_ELEX.exe` là bản đóng gói sẵn — copy ra máy khác chạy được luôn:
 
 ```cmd
-run.bat --list-devices
+set GOOGLE_API_KEY=AIzaSy...
+dist\PRANA_ELEX.exe
 ```
 
-Or manually check using Python:
+---
+
+## Có gì bên trong?
+
+App có 2 chế độ:
+
+### Màn hình desktop (GUI)
+
+Giao diện đồ hoạ cho Windows — bạn sẽ thấy:
+
+- **Luồng dịch real-time** — từng câu nói được hiển thị dưới dạng bubble, kèm transcript gốc + bản dịch
+- **Chọn ngôn ngữ đầu ra** — muốn dịch ra tiếng Việt, Anh, Trung, Nhật, Hàn? Bấm một cái là xong
+- **Cài đặt thiết bị thu** — chọn đầu vào là USB SoundCard hay loopback (bắt âm thanh từ loa máy tính)
+- **Lịch sử** — coi lại các phiên trước, tìm kiếm nội dung
+- **Thu nhỏ xuống khay hệ thống** — để đó chạy ngầm
+
+### Console (CLI)
+
+Dành cho ai thích gõ lệnh hoặc chạy trên máy không màn hình (Raspberry Pi chẳng hạn):
+
+- Lần đầu chạy sẽ hỏi bạn muốn dùng thiết bị nào, ngôn ngữ nào
+- Hiển thị real-time trên terminal với thông tin chi tiết (confidence, latency,...)
+- Hỗ trợ xử lý batch từ file WAV có sẵn
+
+---
+
+## Thiết bị âm thanh
+
+App bắt âm thanh từ **USB SoundCard** hoặc **loopback** (âm thanh từ loa máy tính).
+
+Mặc định dùng device index 17 trong file config. Nếu cần đổi:
+
+```toml
+# config/default.toml
+[audio]
+capture_mode = "device"       # "device" hoặc "loopback"
+device_index = 17              # số thiết bị của bạn
+```
+
+Để xem danh sách thiết bị, dùng lệnh sau trong Python:
 
 ```python
 import pyaudiowpatch as pyaudio
@@ -67,139 +106,62 @@ for i in range(pa.get_device_count()):
 pa.terminate()
 ```
 
-Set the correct device index in `vhf_processor/config/default.toml`:
+---
 
-```toml
-[audio]
-capture_mode = "device"
-device_index = 17          # ← change to your device index
-```
+## Dữ liệu lưu ở đâu?
 
-## Output
+Mọi thứ được lưu trong thư mục `data/`:
 
-```
-------------------------------------------------------------
-  [#1] 19:31:55
-  LANG: VI  |  CONF: 74%
-  TXT:  Các đài tàu, Đài Thông tin Duyên hải Hồ Chí Minh gọi các đài tàu.
-  TRN:  All ship stations, Ho Chi Minh Coast Radio calling all ship stations.
-  ! "Người Chi Minh" -> "Hồ Chí Minh"
-  LATENCY: 11057ms (process: 9823ms | queue: 1234ms)
-------------------------------------------------------------
-```
-
-| Field | Description |
-|---|---|
-| **TXT** | Restored transcription with punctuation |
-| **TRN** | Translation to target language |
-| **!** | Model auto-corrected a word (raw → restored) |
-| **CONF** | Objective confidence score (0-100%) from token logprobs |
-| **LATENCY** | Total time from speech end to result |
-
-## Configuration
-
-Edit `vhf_processor/config/default.toml` (or use a custom config file).
-
-### Audio
-
-| Key | Default | Description |
-|---|---|---|
-| `capture_mode` | `"device"` | `"device"`=input device, `"loopback"`=system audio, `"auto"`=try loopback first |
-| `sample_rate` | `48000` | Auto-detected from device (this is fallback) |
-| `channels` | `1` | Mono capture |
-| `frame_size` | `2048` | Samples per callback (~43ms @ 48kHz) |
-| `device_index` | `17` | Audio input device index (`-1` for auto) |
-
-### Voice Activity Detection (VAD)
-
-| Key | Default | Description |
-|---|---|---|
-| `backend` | `"silero"` | `"silero"` (AI) or `"webrtc"` (lightweight) |
-| `min_speech_duration_ms` | `300` | Minimum speech before segment is valid |
-| `min_silence_duration_ms` | `1200` | Silence duration before cutting a segment |
-| `threshold` | `0.5` | VAD sensitivity (lower = more sensitive) |
-| `energy_threshold` | `500` | Pre-filter RMS energy (skip VAD for silence) |
-
-### Gemini
-
-| Key | Default | Description |
-|---|---|---|
-| `model` | `"gemini-2.5-flash"` | Gemini model to use |
-| `timeout_seconds` | `30` | API timeout |
-| `max_retries` | `3` | Retry count on failure |
-
-### Translation
-
-| Key | Default | Description |
-|---|---|---|
-| `target_language` | `"en"` | Output language (vi, en, zh, ja, ko) |
-| `source_language` | `"auto"` | `"auto"` for automatic detection |
-
-### Storage
-
-| Key | Default | Description |
-|---|---|---|
-| `storage.gcs.enabled` | `true` | Upload audio + JSON to GCS |
-| `storage.gcs.bucket_name` | `"vhf-recordings"` | GCS bucket name |
-| `storage.retention_days` | `14` | Auto-delete files older than N days |
-| `storage.cleanup_interval_hours` | `24` | Cleanup check frequency |
-
-## Preset Configs
-
-The `vhf_processor/config/` directory includes ready-to-use presets:
-
-| File | Platform | Notes |
-|---|---|---|
-| `default.toml` | Windows | USB SoundCard, device_index=17, GCS enabled |
-| `rpi.toml` | Raspberry Pi | Auto device, lower VAD threshold, GCS enabled |
-| `windows-device.toml` | Windows | Device capture, GCS disabled |
-
-Use a preset with:
-
-```cmd
-run.bat vhf_processor/config/rpi.toml
-```
-
-## Data
-
-**Local** — all runtime data saved in `data/` (gitignored):
 ```
 data/
-├── audio/        ← WAV segments (YYYYMMDD_HHMMSS_0001.wav)
-└── results/      ← JSON results (YYYYMMDD_HHMMSS_0001.json)
+├── audio/        ← file WAV từng đoạn hội thoại
+└── results/      ← file JSON kết quả (transcript + bản dịch)
 ```
 
-**GCS** — when `storage.gcs.enabled = true`:
-```
-gs://vhf-recordings/audio/YYYY/MM/DD/
-gs://vhf-recordings/results/YYYY/MM/DD/
-```
+Mỗi file có tên theo thời gian, dễ tra cứu. Thư mục `data/` đã được git bỏ qua, không sợ lỡ commit.
 
-**Auto-cleanup:** Files older than `retention_days` are deleted from both local and GCS at startup and every `cleanup_interval_hours` thereafter.
+---
 
-## Architecture
+## Một số cài đặt hay ho
 
-```
-USB SoundCard
-    ↓ (PCM audio via WASAPI/PulseAudio)
-AudioRecorder → callback → VAD (Silero)
-    ↓ speech segment detected
-PipelineOrchestrator (thread pool)
-    ├── Normalize gain
-    ├── Resample to 16kHz
-    ├── Trim trailing silence
-    ├── Save WAV (local)
-    └── Gemini API → JSON result
-         ├── Print to console
-         ├── Save JSON (local)
-         └── Upload WAV + JSON (GCS)
+**Ngôn ngữ dịch** — trong file `config/default.toml`:
+
+```toml
+[translation]
+target_language = "vi"    # vi, en, zh, ja, ko
+source_language = "auto"  # tự động phát hiện
 ```
 
-## Requirements
+**AI model** — dùng Gemini 2.5 Flash:
 
-- Python 3.11+
-- Windows (WASAPI) or Linux (PulseAudio)
+```toml
+[gemini]
+model = "gemini-2.5-flash"
+```
+
+**VAD (Voice Activity Detection)** — phát hiện giọng nói:
+
+```toml
+[vad]
+backend = "silero"          # silero (AI) hoặc webrtc (nhẹ hơn)
+threshold = 0.5              # nhạy hơn nếu giảm (ví dụ 0.3)
+min_speech_duration_ms = 300 # bao nhiêu ms thì coi là có người nói
+```
+
+---
+
+## Cấu trúc thư mục
+
+```
+src/prana_elex/
+├── app/              # điểm vào: cli, desktop
+├── core/             # xử lý chính: audio, config, gemini, pipeline, vad...
+├── ui/               # giao diện desktop (PySide6)
+└── __main__.py       # chạy từ dòng lệnh: python -m prana_elex
+```
+
+## Yêu cầu
+
+- Windows (WASAPI) hoặc Linux (PulseAudio)
 - Google Gemini API key
-- Internet connection (for Gemini API + optional GCS)
-
-See `pyproject.toml` for full dependency list.
+- Kết nối internet (để gọi Gemini API)
