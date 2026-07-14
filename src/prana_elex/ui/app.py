@@ -9,7 +9,7 @@ from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QApplication
 
 from prana_elex.config.schema import AppConfig
-from prana_elex.config.user_settings import load_settings, save_settings
+from prana_elex.config.user_settings import load_settings
 from prana_elex.pipeline.events import event_bus
 from prana_elex.pipeline.orchestrator import PipelineOrchestrator, PipelineState
 from prana_elex.ui.main_window import MainWindow
@@ -89,19 +89,12 @@ def run_app(
     app = QApplication([])
 
     if _is_frozen():
-        from PySide6.QtWidgets import QFileDialog
         settings = load_settings()
-        if not settings.get("data_dir"):
-            folder = QFileDialog.getExistingDirectory(
-                None,
-                "Select data save location",
-                str(Path.home() / "Desktop"),
-            )
-            if not folder:
-                folder = str(Path.home() / "Desktop")
-            save_settings(folder)
-            settings["data_dir"] = folder
-        config.general.data_dir = Path(settings["data_dir"])
+        data_dir = settings.get("data_dir") or str(Path.home() / "Documents" / "PRANA ELEX Data")
+        config.general.data_dir = Path(data_dir)
+        credentials_path = settings.get("credentials_path", "").strip()
+        if credentials_path:
+            config.google_cloud.credentials_path = credentials_path
 
     config.resolve_paths()
     config.audio.capture_mode = capture_mode

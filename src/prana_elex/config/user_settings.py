@@ -19,18 +19,33 @@ def load_settings() -> dict:
     path = _get_settings_path()
     if path.exists():
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            if isinstance(data, dict) and isinstance(data.get("data_dir"), str):
-                return data
+            # Inno Setup may write UTF-8 with a BOM. utf-8-sig accepts both
+            # BOM and regular UTF-8 files.
+            data = json.loads(path.read_text(encoding="utf-8-sig"))
+            if isinstance(data, dict):
+                result = {}
+                if isinstance(data.get("data_dir"), str):
+                    result["data_dir"] = data["data_dir"]
+                if isinstance(data.get("credentials_path"), str):
+                    result["credentials_path"] = data["credentials_path"]
+                if result:
+                    return result
         except Exception:
             pass
-    return {"data_dir": ""}
+    return {"data_dir": "", "credentials_path": ""}
 
 
-def save_settings(data_dir: str) -> None:
+def save_settings(data_dir: str, credentials_path: str = "") -> None:
     path = _get_settings_path()
     path.write_text(
-        json.dumps({"data_dir": data_dir}, ensure_ascii=False, indent=2),
+        json.dumps(
+            {
+                "data_dir": data_dir,
+                "credentials_path": credentials_path,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
         encoding="utf-8",
     )
 
