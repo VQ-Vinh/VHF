@@ -13,6 +13,7 @@ from prana_elex.config.user_settings import load_settings, save_settings
 from prana_elex.pipeline.events import event_bus
 from prana_elex.pipeline.orchestrator import PipelineOrchestrator, PipelineState
 from prana_elex.ui.main_window import MainWindow
+from prana_elex.ui.icons import phosphor_icon
 from prana_elex.ui.tray import TrayManager
 from prana_elex.common.logger import get_logger, setup_logger
 
@@ -112,6 +113,14 @@ def run_app(
 
     app.setApplicationName("PRANA ELEX")
     app.setOrganizationName("PRANA")
+    app.setWindowIcon(
+        phosphor_icon(
+            "ph.radio",
+            color="#00D7ED",
+            active_color="#00D7ED",
+            scale_factor=0.9,
+        )
+    )
     _load_styles(app)
 
     bridge = _EventBusBridge()

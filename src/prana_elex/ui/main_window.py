@@ -1,7 +1,7 @@
 import logging as _logging
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtWidgets import QHBoxLayout, QMainWindow, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget
 
 from prana_elex.ui.components.chat_feed import ChatFeed
@@ -9,6 +9,7 @@ from prana_elex.ui.components.header_bar import HeaderBar
 from prana_elex.ui.dialogs.history import HistoryDialog
 from prana_elex.ui.components.language_block import LanguageBlock
 from prana_elex.ui.dialogs.settings import SettingsDialog
+from prana_elex.ui.icons import phosphor_icon
 from prana_elex.pipeline.orchestrator import PipelineState
 from prana_elex.common.logger import get_logger
 
@@ -68,18 +69,33 @@ class MainWindow(QMainWindow):
         self._console_output.setObjectName("ConsoleOutput")
         self._console_output.setReadOnly(True)
         self._console_output.setMaximumBlockCount(_CONSOLE_MAX_LINES)
+        self._console_output.setMaximumHeight(160)
         self._console_output.setVisible(False)
 
-        self._console_toggle = QPushButton("\u25B6 Console")
+        self._console_toggle = QPushButton("Developer Console")
         self._console_toggle.setObjectName("ConsoleToggle")
         self._console_toggle.setCursor(Qt.PointingHandCursor)
+        self._console_toggle.setIcon(phosphor_icon("ph.terminal", scale_factor=0.9))
+        self._console_toggle.setIconSize(QSize(15, 15))
         self._console_toggle.clicked.connect(self._toggle_console)
-        self._console_toggle.setFixedHeight(24)
+        self._console_toggle.setFixedHeight(30)
+
+        self._console_clear = QPushButton()
+        self._console_clear.setObjectName("ConsoleClearButton")
+        self._console_clear.setIcon(phosphor_icon("ph.trash", scale_factor=0.9))
+        self._console_clear.setIconSize(QSize(15, 15))
+        self._console_clear.setFixedSize(30, 30)
+        self._console_clear.setCursor(Qt.PointingHandCursor)
+        self._console_clear.setToolTip("Clear developer console")
+        self._console_clear.setAccessibleName("Clear developer console")
+        self._console_clear.clicked.connect(self._console_output.clear)
+        self._console_clear.setVisible(False)
 
         console_header = QHBoxLayout()
         console_header.setContentsMargins(20, 0, 20, 0)
         console_header.addWidget(self._console_toggle)
         console_header.addStretch()
+        console_header.addWidget(self._console_clear)
         layout.addLayout(console_header)
         layout.addWidget(self._console_output)
 
@@ -97,7 +113,9 @@ class MainWindow(QMainWindow):
             transcript=result.transcript_restored,
             translation=result.translation,
             timestamp=result.timestamp,
+            confidence=result.confidence,
         )
+        self._chat.set_latency(result.latency_ms)
         self._history_dialog().add_result(result)
         self._log_console(result)
 
@@ -107,21 +125,26 @@ class MainWindow(QMainWindow):
     def _on_state_changed(self, state: PipelineState, message: str):
         if state == PipelineState.IDLE:
             self._header.set_pipeline_running(False)
+            self._header.set_rx_mode("off")
             self._chat.set_state("stopped")
         elif state == PipelineState.STARTING:
-            self._header.set_pipeline_transitioning(True, "Starting...")
+            self._header.set_pipeline_transitioning(True, "Starting…")
+            self._header.set_rx_mode("starting")
             self._chat.set_state("starting", message)
         elif state == PipelineState.RUNNING:
             self._header.set_pipeline_running(True)
+            self._header.set_rx_mode("active")
             self._chat.set_state("listening")
         elif state == PipelineState.STOPPING:
-            self._header.set_pipeline_transitioning(True, "Stopping...")
+            self._header.set_pipeline_transitioning(True, "Stopping…")
             self._chat.set_state("stopping")
         elif state == PipelineState.ERROR:
             self._header.set_pipeline_running(False)
+            self._header.set_rx_mode("error", message)
             self._chat.set_state("error", message)
 
     def _on_error(self, message: str):
+        self._header.set_rx_mode("error", message)
         self._chat.set_state("error", message)
 
     def _on_lang_changed(self, code: str) -> None:
@@ -138,35 +161,23 @@ class MainWindow(QMainWindow):
             self._orchestrator.start()
 
     def _log_console(self, result) -> None:
-        sep = "-" * 60
-        lines = [f"\n{sep}"]
-        lines.append(f"  [#{result.sequence}] {result.timestamp.strftime('%H:%M:%S')}")
-        lines.append(f"  LANG: {result.detected_language.upper() or '?'}  |  CONF: {result.confidence:.0%}")
-        if result.transcript_restored:
-            lines.append(f"  TXT:  {result.transcript_restored}")
-        if result.translation:
-            lines.append(f"  TRN:  {result.translation}")
-        if result.corrections:
-            for c in result.corrections:
-                lines.append(f"  ! {c}")
-        if result.uncertain_segments:
-            lines.append(f"  UNCERTAIN: {', '.join(result.uncertain_segments)}")
-        if result.error:
-            lines.append(f"  ERROR: {result.error}")
-        if result.latency_ms:
-            process_ms = result.latency_ms - result.queue_wait_ms
-            if result.queue_wait_ms > 0:
-                lines.append(f"  LATENCY: {result.latency_ms:.0f}ms (process: {process_ms:.0f}ms | queue: {result.queue_wait_ms:.0f}ms)")
-            else:
-                lines.append(f"  LATENCY: {result.latency_ms:.0f}ms")
-        lines.append(f"{sep}\n")
-        text = "\n".join(lines)
-        self._console_output.appendPlainText(text)
+        status = f"ERROR {result.error}" if result.error else "OK"
+        self._console_output.appendPlainText(
+            f"{result.timestamp.strftime('%H:%M:%S')}  "
+            f"#{result.sequence:04d}  "
+            f"{result.detected_language.upper() or '?':<3}  "
+            f"{result.confidence:>4.0%}  "
+            f"{result.latency_ms:>6.0f}ms  "
+            f"{status}"
+        )
 
     def _toggle_console(self) -> None:
         self._console_visible = not self._console_visible
         self._console_output.setVisible(self._console_visible)
-        self._console_toggle.setText("\u25BC Console" if self._console_visible else "\u25B6 Console")
+        self._console_clear.setVisible(self._console_visible)
+        self._console_toggle.setProperty("expanded", self._console_visible)
+        self._console_toggle.style().unpolish(self._console_toggle)
+        self._console_toggle.style().polish(self._console_toggle)
 
     def _poll_status(self) -> None:
         if self._orchestrator is None:

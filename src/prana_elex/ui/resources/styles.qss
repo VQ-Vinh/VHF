@@ -1,98 +1,125 @@
-/* ── PRANA ELEX Dark Theme v2 ───────────────────── */
+/* PRANA ELEX Dark Cockpit Theme */
 
 QMainWindow, QDialog {
     background-color: #0D0D0F;
-    color: #E8E8E8;
-    font-family: "Segoe UI", "SF Pro Display", "Helvetica Neue", sans-serif;
+    color: #F2F2F5;
+    font-family: "Segoe UI";
 }
 
 QLabel {
-    color: #E8E8E8;
+    color: #F2F2F5;
     background: transparent;
 }
 
-/* ── Header ──────────────────────────────────── */
+QToolTip {
+    background: #24242E;
+    color: #F2F2F5;
+    border: 1px solid #343442;
+    border-radius: 6px;
+    padding: 5px 8px;
+}
+
+/* Header */
 #HeaderBar {
     background: #141418;
-    border-bottom: 1px solid #1E1E28;
+    border-bottom: 1px solid #24242E;
 }
 #HeaderTitle {
     font-size: 22px;
     font-weight: 700;
-    letter-spacing: 2px;
+    letter-spacing: 1.5px;
     color: #FFFFFF;
 }
 #HeaderSubtitle {
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 600;
-    letter-spacing: 4px;
-    color: #6A6A7E;
+    letter-spacing: 2.2px;
+    color: #777789;
 }
 #RxBadge {
-    font-size: 11px;
-    font-weight: 700;
-    color: #00E5FF;
-    padding: 3px 8px;
-    border: 1px solid #00E5FF;
+    min-width: 96px;
+    background: #111116;
+    border: 1px solid #343442;
     border-radius: 10px;
-    background: #0A1A1E;
+}
+#RxLabel {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    color: #777789;
 }
 #RxDot {
-    font-size: 14px;
-    color: #00E5FF;
+    font-size: 9px;
+    color: #777789;
+}
+QFrame#RxBadge[state="starting"] {
+    background: #1D1910;
+    border-color: #6E562B;
+}
+QFrame#RxBadge[state="starting"] QLabel {
+    color: #F2B84B;
+}
+QFrame#RxBadge[state="active"] {
+    background: #0C1D15;
+    border-color: #235C3D;
+}
+QFrame#RxBadge[state="active"] QLabel {
+    color: #00DF72;
+}
+QFrame#RxBadge[state="receiving"] {
+    background: #091D21;
+    border-color: #176273;
+}
+QFrame#RxBadge[state="receiving"] QLabel {
+    color: #00D7ED;
+}
+QFrame#RxBadge[state="error"] {
+    background: #211013;
+    border-color: #70333A;
+}
+QFrame#RxBadge[state="error"] QLabel {
+    color: #FF5D68;
 }
 
-/* ── Language Block ──────────────────────────── */
+/* Language strip */
 #LanguageCard {
     background: #141418;
-    border-bottom: 1px solid #1E1E28;
+    border-bottom: 1px solid #24242E;
     border-radius: 0;
-    padding: 10px 20px;
 }
 #LangLabel {
     font-size: 10px;
     font-weight: 700;
-    letter-spacing: 1.5px;
-    color: #7A7A8E;
+    letter-spacing: 0.8px;
+    color: #777789;
 }
 #LangValue {
     font-size: 15px;
     font-weight: 600;
-    color: #E8E8E8;
+    color: #F2F2F5;
 }
-#SwapButton {
-    background: transparent;
-    border: 2px solid #00E5FF;
-    border-radius: 20px;
-    min-width: 38px;
-    max-width: 38px;
-    min-height: 38px;
-    max-height: 38px;
-    font-size: 16px;
-    color: #00E5FF;
-}
-#SwapButton:hover {
-    background: #00E5FF18;
-}
-#SwapButton:pressed {
-    background: #00E5FF30;
+#LanguageDirection {
+    font-size: 18px;
+    font-weight: 500;
+    color: #4D4D60;
 }
 QComboBox {
+    min-height: 28px;
+    min-width: 150px;
     background: #1A1A24;
-    color: #A0E0FF;
-    border: 1px solid #2A2A38;
-    border-radius: 6px;
-    padding: 5px 10px;
+    color: #A8E9F2;
+    border: 1px solid #343442;
+    border-radius: 8px;
+    padding: 3px 10px;
     font-size: 13px;
     font-weight: 600;
-    min-width: 130px;
 }
-QComboBox:hover {
-    border-color: #4FC3F7;
+QComboBox:hover, QComboBox:focus {
+    border-color: #00D7ED;
 }
 QComboBox::drop-down {
     border: none;
-    width: 22px;
+    width: 24px;
 }
 QComboBox::down-arrow {
     width: 10px;
@@ -100,204 +127,216 @@ QComboBox::down-arrow {
 }
 QComboBox QAbstractItemView {
     background: #1A1A24;
-    color: #C8C8D8;
-    border: 1px solid #2A2A38;
-    selection-background-color: #00E5FF25;
+    color: #C8C8D4;
+    border: 1px solid #343442;
+    selection-background-color: #15373D;
     selection-color: #FFFFFF;
     padding: 4px;
     outline: none;
 }
 
-/* ── Chat Feed ───────────────────────────────── */
+/* Translation feed */
+#ChatFeed, #ChatScroll, #ChatScroll > QWidget, #ChatContent {
+    background: #0D0D0F;
+    border: none;
+}
 #FeedHeader {
     font-size: 11px;
     font-weight: 700;
-    letter-spacing: 2px;
-    color: #6A6A7E;
+    letter-spacing: 1.2px;
+    color: #777789;
     padding: 8px 0;
 }
-#ChatScroll, #ChatScroll > QWidget {
-    background: #0D0D0F;
-    border: none;
-}
-#ChatScroll QScrollBar:vertical {
-    background: #0D0D0F;
-    width: 5px;
-    margin: 0;
-}
-#ChatScroll QScrollBar::handle:vertical {
-    background: #2A2A38;
-    border-radius: 2px;
-    min-height: 30px;
-}
-#ChatScroll QScrollBar::handle:vertical:hover {
-    background: #3A3A4A;
-}
-#ChatScroll QScrollBar::add-line:vertical,
-#ChatScroll QScrollBar::sub-line:vertical {
-    height: 0;
-}
-
-/* chat bubble */
 #ChatBubble {
     background: transparent;
     border: none;
-    border-bottom: 1px solid #181820;
-    padding: 14px 0;
+    border-bottom: 1px solid #1B1B22;
 }
 #ChatSource {
     font-size: 10px;
     font-weight: 600;
-    color: #5A5A6E;
-    letter-spacing: 0.8px;
-    margin-bottom: 2px;
+    color: #777789;
+    letter-spacing: 0.3px;
 }
 #ChatTranscript {
-    font-size: 14px;
-    font-weight: 500;
-    color: #B8B8CC;
-    margin-top: 4px;
-    line-height: 1.4;
+    font-size: 15px;
+    font-weight: 400;
+    color: #B8B8C8;
 }
 #ChatTranslation {
-    font-size: 16px;
-    font-weight: 700;
-    color: #FFFFFF;
-    margin-top: 4px;
-    line-height: 1.3;
+    font-size: 17px;
+    font-weight: 600;
+    color: #F7F7FA;
 }
 
-/* ── History Button ──────────────────────────── */
 #HistoryButton {
+    min-width: 32px;
+    max-width: 32px;
+    min-height: 32px;
+    max-height: 32px;
+    padding: 0;
     background: transparent;
-    border: none;
-    min-width: 30px;
-    max-width: 30px;
-    min-height: 30px;
-    max-height: 30px;
-    font-size: 16px;
-    color: #5A5A6E;
+    border: 1px solid transparent;
+    border-radius: 8px;
 }
 #HistoryButton:hover {
-    color: #00E5FF;
+    background: #1A1A24;
+    border-color: #343442;
+}
+#HistoryButton:pressed {
+    background: #15373D;
+    border-color: #00D7ED;
 }
 
-/* ── Listening Indicator ─────────────────────── */
-#ListeningLabel {
+/* Status bar */
+#StatusBar {
+    background: #0D0D0F;
+    border-top: 1px solid #1B1B22;
+}
+#ListeningDot, #GcsDot {
+    font-size: 8px;
+}
+#ListeningLabel, #GcsLabel, #LatencyLabel {
     font-size: 10px;
     font-weight: 700;
-    color: #6A6A7E;
-    letter-spacing: 1.5px;
+    letter-spacing: 0.5px;
+    color: #777789;
 }
-#ListeningDot {
-    font-size: 9px;
-    color: #00E566;
-}
-
-/* ── GCS Status ──────────────────────────────── */
-#GcsLabel {
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 1px;
-    padding: 2px 8px;
-    border-radius: 4px;
+#LatencyLabel {
+    font-weight: 600;
+    color: #8E8EA0;
 }
 
-/* ── Buttons ─────────────────────────────────── */
+/* Scrollbars */
+QScrollBar:vertical {
+    width: 7px;
+    margin: 2px 0;
+    background: transparent;
+}
+QScrollBar::handle:vertical {
+    min-height: 36px;
+    background: #30303C;
+    border-radius: 3px;
+}
+QScrollBar::handle:vertical:hover {
+    background: #176273;
+}
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+    height: 0;
+    background: transparent;
+}
+QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical {
+    background: transparent;
+}
+
+/* Buttons */
 QPushButton {
     background: #1E1E28;
-    color: #C8C8D8;
-    border: 1px solid #2A2A38;
-    border-radius: 6px;
+    color: #C8C8D4;
+    border: 1px solid #343442;
+    border-radius: 8px;
     padding: 7px 18px;
     font-size: 12px;
     font-weight: 600;
 }
 QPushButton:hover {
-    background: #282838;
-    border-color: #00E5FF;
-    color: #E8E8E8;
+    background: #282834;
+    border-color: #00D7ED;
+    color: #F2F2F5;
 }
 QPushButton:pressed {
-    background: #00E5FF15;
+    background: #15373D;
 }
-#PrimaryButton {
-    background: #00E5FF;
-    color: #0A0A0C;
-    border: none;
+QPushButton:disabled {
+    color: #777789;
+    border-color: #343442;
+    background: #191920;
+}
+#PrimaryButton,
+QPushButton#StartStopButton[mode="start"] {
+    background: #00D7ED;
+    color: #081012;
+    border: 1px solid #00D7ED;
     font-weight: 700;
-    padding: 8px 24px;
 }
-#PrimaryButton:hover {
-    background: #00CCE0;
+#PrimaryButton:hover,
+QPushButton#StartStopButton[mode="start"]:hover {
+    background: #25E1F4;
+    border-color: #25E1F4;
 }
 #StartStopButton {
-    background: transparent;
-    border: 1px solid #00E566;
-    border-radius: 5px;
+    min-width: 72px;
+    border-radius: 8px;
     padding: 4px 14px;
     font-size: 12px;
     font-weight: 700;
-    color: #00E566;
 }
-#StartStopButton:hover {
-    background: #00E56618;
-    border-color: #00FF88;
-    color: #00FF88;
+QPushButton#StartStopButton[mode="stop"] {
+    background: #1D1910;
+    color: #F2B84B;
+    border: 1px solid #6E562B;
+}
+QPushButton#StartStopButton[mode="stop"]:hover {
+    background: #292113;
+    border-color: #F2B84B;
+}
+QPushButton#StartStopButton[mode="transition"] {
+    background: #191920;
+    color: #8E8EA0;
+    border: 1px solid #343442;
 }
 #SettingsButton {
     background: transparent;
-    border: none;
-    border-radius: 6px;
-    color: #B8B8C8;
+    border: 1px solid transparent;
+    border-radius: 8px;
     padding: 0;
 }
 #SettingsButton:hover {
-    background: #282838;
-    color: #FFFFFF;
+    background: #282834;
+    border-color: #343442;
 }
 #SettingsButton:pressed {
-    background: #20202C;
-    color: #00E5FF;
+    background: #15373D;
+    border-color: #00D7ED;
 }
 
-/* ── Settings Dialog ─────────────────────────── */
+/* Settings and history dialogs */
 #SettingsDialog {
     background: #0D0D0F;
 }
 #SettingsLabel {
     font-size: 11px;
     font-weight: 600;
-    color: #7A7A8E;
-    letter-spacing: 0.8px;
+    color: #777789;
+    letter-spacing: 0.6px;
 }
-
-/* ── History Dialog ──────────────────────────── */
 #HistorySearch {
     background: #15151A;
-    color: #C8C8D8;
-    border: 1px solid #2A2A38;
-    border-radius: 6px;
+    color: #C8C8D4;
+    border: 1px solid #343442;
+    border-radius: 8px;
     padding: 8px 12px;
     font-size: 13px;
 }
 #HistorySearch:focus {
-    border-color: #00E5FF;
+    border-color: #00D7ED;
 }
 QTableWidget {
     background: #0D0D0F;
-    color: #C8C8D8;
-    border: 1px solid #1E1E28;
-    border-radius: 4px;
-    gridline-color: #181820;
+    color: #C8C8D4;
+    border: 1px solid #24242E;
+    border-radius: 8px;
+    gridline-color: #1B1B22;
     font-size: 12px;
 }
 QTableWidget::item {
     padding: 8px 10px;
-    border-bottom: 1px solid #14141A;
+    border-bottom: 1px solid #1B1B22;
 }
 QTableWidget::item:selected {
-    background: #00E5FF18;
+    background: #15373D;
     color: #FFFFFF;
 }
 QTableWidget::item:hover {
@@ -305,39 +344,50 @@ QTableWidget::item:hover {
 }
 QHeaderView::section {
     background: #141418;
-    color: #6A6A7E;
+    color: #777789;
     border: none;
-    border-bottom: 1px solid #2A2A38;
-    padding: 10px 10px;
+    border-bottom: 1px solid #343442;
+    padding: 10px;
     font-weight: 700;
     font-size: 10px;
-    letter-spacing: 0.8px;
+    letter-spacing: 0.6px;
 }
 
-/* ── Console Panel ──────────────────────────── */
+/* Developer console */
 #ConsoleToggle {
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 1px;
-    color: #5A5A6E;
     background: transparent;
     border: none;
-    padding: 4px 12px;
+    padding: 4px 8px;
     text-align: left;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.6px;
+    color: #777789;
 }
-#ConsoleToggle:hover {
-    color: #00E5FF;
+#ConsoleToggle:hover,
+QPushButton#ConsoleToggle[expanded="true"] {
+    color: #00D7ED;
+}
+#ConsoleClearButton {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 0;
+}
+#ConsoleClearButton:hover {
+    background: #282834;
+    border-color: #343442;
 }
 #ConsoleOutput {
+    max-height: 160px;
     background: #0A0A0C;
-    color: #8888A0;
+    color: #8E8EA0;
     border: none;
-    border-top: 1px solid #1A1A24;
+    border-top: 1px solid #24242E;
     padding: 8px 20px;
-    font-family: "Cascadia Code", "Consolas", "Courier New", monospace;
+    font-family: "Consolas";
     font-size: 11px;
-    max-height: 200px;
 }
 #ConsoleOutput:focus {
-    border: none;
+    border-top: 1px solid #24242E;
 }
