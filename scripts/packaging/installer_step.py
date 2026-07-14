@@ -5,7 +5,8 @@ from pathlib import Path
 from tkinter import filedialog, messagebox
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-TARGET = SCRIPT_DIR.parent / "dist" / "settings.json"
+PROJECT_ROOT = SCRIPT_DIR.parents[1]
+TARGET = PROJECT_ROOT / "dist" / "settings.json"
 DEFAULT = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "PRANA_ELEX"
 
 

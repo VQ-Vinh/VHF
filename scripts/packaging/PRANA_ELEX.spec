@@ -1,18 +1,19 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-import sys
+from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_data_files
 
 block_cipher = None
+PROJECT_ROOT = Path(SPECPATH).resolve().parents[1]
 
 datas = collect_data_files("PySide6", include_py_files=True)
 
 datas += collect_data_files("silero_vad")
 datas += collect_data_files("qtawesome")
 datas += [
-    ("..\\src\\prana_elex\\ui\\resources\\styles.qss", "prana_elex\\ui\\resources"),
-    ("..\\config\\default.toml", "config"),
+    (str(PROJECT_ROOT / "src/prana_elex/ui/resources/styles.qss"), "prana_elex/ui/resources"),
+    (str(PROJECT_ROOT / "config/default.toml"), "config"),
 ]
 
 hiddenimports = [
@@ -39,14 +40,14 @@ excludes = [
 ]
 
 a = Analysis(
-    ["..\\src\\prana_elex\\__main_window__.py"],
-    pathex=["..\\src", ".."],
+    [str(PROJECT_ROOT / "src/prana_elex/app/frozen_entry.py")],
+    pathex=[str(PROJECT_ROOT / "src"), str(PROJECT_ROOT)],
     binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=["scripts\\pyi_rth_hide_subprocess_console.py"],
+    runtime_hooks=[str(PROJECT_ROOT / "scripts/packaging/hooks/hide_subprocess_console.py")],
     excludes=excludes,
     noarchive=False,
     optimize=0,
