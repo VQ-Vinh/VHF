@@ -5,11 +5,11 @@ import asyncio
 import sys
 from pathlib import Path
 
-from prana_elex.core.config.schema import load_config
-from prana_elex.core.config.user_settings import load_settings
-from prana_elex.core.gemini.prompt_builder import LANGUAGE_NAMES
-from prana_elex.core.pipeline.orchestrator import PipelineOrchestrator
-from prana_elex.core.utils.logger import get_logger, setup_logger
+from prana_elex.config.schema import load_config
+from prana_elex.config.user_settings import load_settings
+from prana_elex.ai.gemini.prompts import LANGUAGE_NAMES
+from prana_elex.pipeline.orchestrator import PipelineOrchestrator
+from prana_elex.common.logger import get_logger, setup_logger
 
 logger = get_logger(__name__)
 
@@ -32,7 +32,7 @@ def select_capture_mode() -> tuple[str, int]:
             return ("device", -1)
         if choice == "2":
             try:
-                from prana_elex.core.audio.wasapi_backend import WASAPIBackend
+                from prana_elex.audio.wasapi import WASAPIBackend
                 devices = WASAPIBackend.list_loopback_devices()
             except ImportError:
                 devices = []

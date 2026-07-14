@@ -2,8 +2,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
-from prana_elex.core.pipeline.orchestrator import PipelineState
-from prana_elex.core.utils.logger import get_logger
+from prana_elex.pipeline.orchestrator import PipelineState
+from prana_elex.common.logger import get_logger
 
 logger = get_logger(__name__)
 

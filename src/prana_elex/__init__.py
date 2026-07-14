@@ -1,4 +1,4 @@
-from prana_elex.core.pipeline.events import event_bus
+from prana_elex.pipeline.events import event_bus
 
 
 def cli():

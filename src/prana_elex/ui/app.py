@@ -8,13 +8,13 @@ import qasync
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QApplication
 
-from prana_elex.core.config.schema import AppConfig
-from prana_elex.core.config.user_settings import load_settings, save_settings
-from prana_elex.core.pipeline.events import event_bus
-from prana_elex.core.pipeline.orchestrator import PipelineOrchestrator, PipelineState
+from prana_elex.config.schema import AppConfig
+from prana_elex.config.user_settings import load_settings, save_settings
+from prana_elex.pipeline.events import event_bus
+from prana_elex.pipeline.orchestrator import PipelineOrchestrator, PipelineState
 from prana_elex.ui.main_window import MainWindow
 from prana_elex.ui.tray import TrayManager
-from prana_elex.core.utils.logger import get_logger, setup_logger
+from prana_elex.common.logger import get_logger, setup_logger
 
 logger = get_logger(__name__)
 

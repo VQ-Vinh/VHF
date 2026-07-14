@@ -4,13 +4,13 @@ from datetime import datetime
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QHBoxLayout, QMainWindow, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget
 
-from prana_elex.ui.chat_feed import ChatFeed
-from prana_elex.ui.header_bar import HeaderBar
-from prana_elex.ui.history_dialog import HistoryDialog
-from prana_elex.ui.language_block import LanguageBlock
-from prana_elex.ui.settings_dialog import SettingsDialog
-from prana_elex.core.pipeline.orchestrator import PipelineState
-from prana_elex.core.utils.logger import get_logger
+from prana_elex.ui.components.chat_feed import ChatFeed
+from prana_elex.ui.components.header_bar import HeaderBar
+from prana_elex.ui.dialogs.history import HistoryDialog
+from prana_elex.ui.components.language_block import LanguageBlock
+from prana_elex.ui.dialogs.settings import SettingsDialog
+from prana_elex.pipeline.orchestrator import PipelineState
+from prana_elex.common.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -204,14 +204,14 @@ class MainWindow(QMainWindow):
         self._history_dialog().raise_()
 
     def open_settings(self):
-        from prana_elex.core.audio.recorder import AudioRecorder
+        from prana_elex.audio.recorder import AudioRecorder
         try:
             devices = AudioRecorder.list_devices()
         except Exception as e:
             logger.warning("Failed to list devices", exc_info=e)
             devices = []
         try:
-            from prana_elex.core.audio.wasapi_backend import WASAPIBackend
+            from prana_elex.audio.wasapi import WASAPIBackend
             loopbacks = WASAPIBackend.list_loopback_devices()
         except Exception:
             loopbacks = []

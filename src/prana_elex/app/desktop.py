@@ -3,10 +3,10 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from prana_elex.core.config.schema import load_config
-from prana_elex.core.gemini.prompt_builder import LANGUAGE_NAMES
+from prana_elex.config.schema import load_config
+from prana_elex.ai.gemini.prompts import LANGUAGE_NAMES
 from prana_elex.ui.app import run_app
-from prana_elex.core.utils.logger import get_logger
+from prana_elex.common.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -26,7 +26,7 @@ def select_capture_mode() -> tuple[str, int]:
             return ("device", -1)
         if choice == "2":
             try:
-                from prana_elex.core.audio.wasapi_backend import WASAPIBackend
+                from prana_elex.audio.wasapi import WASAPIBackend
                 devices = WASAPIBackend.list_loopback_devices()
             except ImportError:
                 devices = []
