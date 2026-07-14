@@ -409,8 +409,6 @@ class PipelineOrchestrator:
         if result.detected_language:
             event_bus.emit("language_detected", result.detected_language)
 
-        self._print_result(result)
-
         tracker.mark("save_result")
         self._storage.save_result(result)
 
@@ -420,6 +418,8 @@ class PipelineOrchestrator:
         if self._config.storage.gcs.enabled:
             gcs_audio, gcs_result = self._gcs.upload_result(result)
             gcs_pending = self._gcs.retry_queue_size
+
+        self._print_result(result)
         self._print_gcs_status(gcs_audio, gcs_result, gcs_pending)
 
         seg_duration = duration_ms / 1000
@@ -573,4 +573,7 @@ class PipelineOrchestrator:
             "recording": self._recording,
             "queue_size": self._job_queue.qsize(),
             "vad_backend": self._vad.name,
+            "gcs_ready": self._gcs.ready,
+            "gcs_error": self._gcs.last_error,
+            "gcs_retry_queue": self._gcs.retry_queue_size,
         }

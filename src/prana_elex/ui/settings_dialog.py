@@ -26,7 +26,7 @@ class SettingsDialog(QDialog):
     ):
         super().__init__(parent)
         self.setWindowTitle("Settings")
-        self.setFixedSize(520, 380)
+        self.setFixedSize(520, 440)
         self.setObjectName("SettingsDialog")
 
         self._devices = devices

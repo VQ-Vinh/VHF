@@ -80,6 +80,10 @@ class ChatFeed(QWidget):
         status_layout.addWidget(self._listening_dot)
         status_layout.addWidget(self._listening_label)
         status_layout.addStretch()
+        self._gcs_label = QLabel()
+        self._gcs_label.setObjectName("GcsLabel")
+        self._gcs_label.hide()
+        status_layout.addWidget(self._gcs_label)
         layout.addLayout(status_layout)
 
         self._pulse_timer = QTimer(self)
@@ -125,6 +129,22 @@ class ChatFeed(QWidget):
             self._listening_label.setText("STOPPING...")
         else:
             self._listening_label.setText("IDLE")
+
+    def set_gcs_status(self, ready: bool, error: str | None, retry_queue: int) -> None:
+        if ready:
+            self._gcs_label.setStyleSheet("color: #00E566; font-size: 10px; font-weight: 700; letter-spacing: 1px;")
+            text = f"\u25CF GCS OK"
+            if retry_queue:
+                text += f" ({retry_queue} pending)"
+            self._gcs_label.setText(text)
+            self._gcs_label.show()
+        elif error:
+            self._gcs_label.setStyleSheet("color: #FF3B30; font-size: 10px; font-weight: 700; letter-spacing: 1px;")
+            lines = error.split("\n")
+            self._gcs_label.setText(f"\u25CF GCS ERR")
+            self._gcs_label.show()
+        else:
+            self._gcs_label.hide()
 
     def _pulse_listening(self):
         self._listening_visible = not self._listening_visible

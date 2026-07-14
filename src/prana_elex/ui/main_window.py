@@ -186,6 +186,12 @@ class MainWindow(QMainWindow):
         elif running and not recording and chat_state == "recording":
             self._chat.set_state("listening")
 
+        self._chat.set_gcs_status(
+            ready=status.get("gcs_ready", False),
+            error=status.get("gcs_error"),
+            retry_queue=status.get("gcs_retry_queue", 0),
+        )
+
     def _history_dialog(self):
         if not hasattr(self, "_history"):
             self._history = HistoryDialog(self)

@@ -20,6 +20,7 @@ class GCSStorage:
         self._config = config
         self._client = None
         self._bucket = None
+        self._last_error: str | None = None
         self._audio_dir: Path | None = None
         self._result_dir: Path | None = None
         if local_config is not None:
@@ -31,30 +32,66 @@ class GCSStorage:
         if config.enabled:
             self._init_client()
 
+    @property
+    def ready(self) -> bool:
+        return self._client is not None and self._bucket is not None
+
+    @property
+    def last_error(self) -> str | None:
+        return self._last_error
+
     def _init_client(self) -> None:
         try:
             from google.cloud import storage
+        except ImportError as e:
+            self._last_error = "google-cloud-storage not installed. Install with: pip install google-cloud-storage"
+            logger.warning(self._last_error)
+            return
 
+        try:
             if self._config.credentials_path:
-                self._client = storage.Client.from_service_account_json(
-                    self._config.credentials_path
-                )
+                path = Path(self._config.credentials_path)
+                if not path.exists():
+                    self._last_error = f"GCS credentials file not found: {self._config.credentials_path}"
+                    logger.error(self._last_error)
+                    return
+                self._client = storage.Client.from_service_account_json(str(path))
             else:
-                self._client = storage.Client()
+                try:
+                    self._client = storage.Client()
+                except Exception as e:
+                    err_msg = str(e)
+                    if "default credentials" in err_msg.lower() or "could not automatically determine" in err_msg.lower():
+                        self._last_error = (
+                            "GCS: no credentials found. "
+                            "Set GOOGLE_APPLICATION_CREDENTIALS env var or run: gcloud auth application-default login"
+                        )
+                    else:
+                        self._last_error = f"GCS auth failed: {err_msg}"
+                    logger.error(self._last_error)
+                    return
 
             self._bucket = self._client.bucket(self._config.bucket_name)
-            logger.info(
-                f"GCS initialized: bucket={self._config.bucket_name}"
-            )
-        except ImportError:
-            logger.warning(
-                "google-cloud-storage not installed. "
-                "Install with: pip install google-cloud-storage"
-            )
-            self._client = None
+            self._last_error = None
+            logger.info(f"GCS initialized: bucket={self._config.bucket_name}")
+
         except Exception as e:
-            logger.warning(f"Failed to initialize GCS: {e}")
+            err_msg = str(e)
+            if "not found" in err_msg.lower() or "404" in err_msg:
+                self._last_error = (
+                    f"GCS bucket '{self._config.bucket_name}' not found. "
+                    f"Create it or update bucket_name in config."
+                )
+            elif "forbidden" in err_msg.lower() or "403" in err_msg:
+                self._last_error = (
+                    f"GCS: no permission to access bucket '{self._config.bucket_name}'. "
+                    f"Check IAM permissions."
+                )
+            else:
+                self._last_error = f"GCS init failed: {err_msg}"
+            logger.error(self._last_error)
             self._client = None
+            self._bucket = None
 
     @staticmethod
     def _date_path() -> str:
@@ -167,15 +204,19 @@ class GCSStorage:
             return False, False
 
         audio_file = (
-            self._audio_dir / result.audio_file
+            next(Path(self._audio_dir).rglob(result.audio_file), None)
             if self._audio_dir
             else Path(result.audio_file)
         )
         result_file = (
-            self._result_dir / result.json_path
+            next(Path(self._result_dir).rglob(result.json_path), None)
             if self._result_dir
             else Path(result.json_path)
         )
+
+        if audio_file is None or result_file is None:
+            logger.error(f"Local files not found for GCS upload (audio={result.audio_file}, result={result.json_path})")
+            return False, False
 
         date_path = self._date_path()
         audio_remote = self._build_path(self._config.prefix, "audio", date_path, audio_file.name)
