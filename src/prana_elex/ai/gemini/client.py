@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import threading
 import time
 from pathlib import Path
@@ -11,6 +10,7 @@ from google.genai import types
 from google.genai.errors import ClientError
 
 from prana_elex.config.schema import GeminiConfig
+from prana_elex.common.google_credentials import load_google_credentials
 from prana_elex.pipeline.models import ProcessingResult
 from prana_elex.common.logger import get_logger
 from prana_elex.ai.gemini.prompts import PromptBuilder
@@ -25,53 +25,34 @@ class GeminiClient:
         config: GeminiConfig,
         prompt_builder: PromptBuilder,
         response_parser: type[GeminiResponseParser] = GeminiResponseParser,
+        *,
+        credentials_path: str,
     ):
         self._config = config
         self._prompt_builder = prompt_builder
         self._response_parser = response_parser
+        self._credentials_path = credentials_path
         self._client: genai.Client | None = None
         self._api_lock = threading.Lock()
         self._init_client()
 
     def _init_client(self) -> None:
         try:
-            key = self._config.api_key
-            if key:
-                self._client = genai.Client(api_key=key)
-                logger.info(f"Gemini client initialized (API key) with model: {self._config.model}")
-            else:
-                project = self._config.project_id or self._detect_project()
-                self._client = genai.Client(
-                    vertexai=True,
-                    project=project,
-                    location=self._config.location,
-                )
-                logger.info(
-                    f"Gemini client initialized (Vertex AI / ADC) "
-                    f"with model: {self._config.model}, project: {project}"
-                )
+            credentials, project, _ = load_google_credentials(self._credentials_path)
+            self._client = genai.Client(
+                vertexai=True,
+                credentials=credentials,
+                project=project,
+                location=self._config.location,
+            )
+            logger.info(
+                "Gemini initialized with service-account JSON: model=%s, project=%s",
+                self._config.model,
+                project,
+            )
         except Exception as e:
             logger.error(f"Failed to initialize Gemini client: {e}")
             raise
-
-    @staticmethod
-    def _detect_project() -> str:
-        try:
-            import google.auth
-            credentials, project = google.auth.default()
-            if project:
-                return project
-        except Exception as e:
-            logger.warning(f"Could not detect GCP project from ADC: {e}")
-
-        project = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCP_PROJECT")
-        if project:
-            return project
-
-        raise ValueError(
-            "No GCP project detected. Set GOOGLE_CLOUD_PROJECT env var "
-            "or specify project_id in config."
-        )
 
     def process_audio(
         self,

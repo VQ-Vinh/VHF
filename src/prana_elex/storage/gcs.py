@@ -9,6 +9,7 @@ from pathlib import Path
 from prana_elex.config.schema import GCSStorageConfig, LocalStorageConfig
 from prana_elex.pipeline.models import ProcessingResult
 from prana_elex.common.logger import get_logger
+from prana_elex.common.google_credentials import load_google_credentials
 
 logger = get_logger(__name__)
 
@@ -16,7 +17,12 @@ RETRY_INTERVAL = 30
 
 
 class GCSStorage:
-    def __init__(self, config: GCSStorageConfig, local_config: LocalStorageConfig | None = None):
+    def __init__(
+        self,
+        config: GCSStorageConfig,
+        local_config: LocalStorageConfig | None = None,
+        credentials_path: str = "",
+    ):
         self._config = config
         self._client = None
         self._bucket = None
@@ -24,6 +30,7 @@ class GCSStorage:
         self._last_upload_ok: bool | None = None
         self._audio_dir: Path | None = None
         self._result_dir: Path | None = None
+        self._credentials_path = credentials_path
         if local_config is not None:
             self._audio_dir = Path(local_config.audio_dir)
             self._result_dir = Path(local_config.result_dir)
@@ -55,31 +62,15 @@ class GCSStorage:
             return
 
         try:
-            if self._config.credentials_path:
-                path = Path(self._config.credentials_path)
-                if not path.exists():
-                    self._last_error = f"GCS credentials file not found: {self._config.credentials_path}"
-                    logger.error(self._last_error)
-                    return
-                self._client = storage.Client.from_service_account_json(str(path))
-            else:
-                try:
-                    self._client = storage.Client()
-                except Exception as e:
-                    err_msg = str(e)
-                    if "default credentials" in err_msg.lower() or "could not automatically determine" in err_msg.lower():
-                        self._last_error = (
-                            "GCS: no credentials found. "
-                            "Set GOOGLE_APPLICATION_CREDENTIALS env var or run: gcloud auth application-default login"
-                        )
-                    else:
-                        self._last_error = f"GCS auth failed: {err_msg}"
-                    logger.error(self._last_error)
-                    return
+            credentials, project, _ = load_google_credentials(self._credentials_path)
+            self._client = storage.Client(project=project, credentials=credentials)
 
             self._bucket = self._client.bucket(self._config.bucket_name)
             self._last_error = None
-            logger.info(f"GCS initialized: bucket={self._config.bucket_name}")
+            logger.info(
+                "GCS initialized with service-account JSON: bucket=%s",
+                self._config.bucket_name,
+            )
 
         except Exception as e:
             err_msg = str(e)

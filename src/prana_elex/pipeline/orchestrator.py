@@ -62,7 +62,11 @@ class PipelineOrchestrator:
 
         self._session = SessionManager(config.general.session_prefix)
         self._storage = LocalStorage(config.storage.local)
-        self._gcs = GCSStorage(config.storage.gcs, config.storage.local)
+        self._gcs = GCSStorage(
+            config.storage.gcs,
+            config.storage.local,
+            config.google_cloud.credentials_path,
+        )
         self._vad = self._create_vad()
 
         self._prompt_builder = PromptBuilder(config.translation)
@@ -140,7 +144,12 @@ class PipelineOrchestrator:
 
             if self._gemini is not None:
                 self._gemini.close()
-            self._gemini = GeminiClient(self._config.gemini, self._prompt_builder, GeminiResponseParser)
+            self._gemini = GeminiClient(
+                self._config.gemini,
+                self._prompt_builder,
+                GeminiResponseParser,
+                credentials_path=self._config.google_cloud.credentials_path,
+            )
 
             self._executor = ThreadPoolExecutor(max_workers=self._num_workers)
             for i in range(self._num_workers):
@@ -540,7 +549,12 @@ class PipelineOrchestrator:
         tracker.mark("start")
 
         if self._gemini is None:
-            self._gemini = GeminiClient(self._config.gemini, self._prompt_builder, GeminiResponseParser)
+            self._gemini = GeminiClient(
+                self._config.gemini,
+                self._prompt_builder,
+                GeminiResponseParser,
+                credentials_path=self._config.google_cloud.credentials_path,
+            )
         tracker.mark("gemini_start")
         result = self._gemini.process_audio(audio_path, sid, seq)
         tracker.mark("gemini_done")

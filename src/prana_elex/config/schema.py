@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-import os
 import shutil
 import tomllib
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
 
 class GeneralConfig(BaseModel):
     session_prefix: str = "session"
-    data_dir: Path = Path("./data")
+    data_dir: Path = Path(".")
     log_level: str = "INFO"
     num_workers: int = 4
 
@@ -36,15 +35,12 @@ class VADConfig(BaseModel):
 
 class GeminiConfig(BaseModel):
     model: str = "gemini-2.5-flash"
-    api_key_env: str = "GEMINI_API_KEY"
-    project_id: str = ""
     location: str = "us-central1"
-    timeout_seconds: int = 30
     max_retries: int = 3
 
-    @property
-    def api_key(self) -> str | None:
-        return os.environ.get(self.api_key_env) or None
+
+class GoogleCloudConfig(BaseModel):
+    credentials_path: str = ".secrets/gcs-service-account.json"
 
 
 class TranslationConfig(BaseModel):
@@ -54,14 +50,13 @@ class TranslationConfig(BaseModel):
 
 
 class LocalStorageConfig(BaseModel):
-    audio_dir: Path = Path("./data/audio")
-    result_dir: Path = Path("./data/results")
+    audio_dir: Path = Path("./VHF_Storage/audio")
+    result_dir: Path = Path("./VHF_Storage/results")
 
 
 class GCSStorageConfig(BaseModel):
     enabled: bool = True
     bucket_name: str = "vhf-recordings"
-    credentials_path: str = ""
     prefix: str = ""
 
 
@@ -77,6 +72,7 @@ class AppConfig(BaseModel):
     audio: AudioConfig = Field(default_factory=AudioConfig)
     vad: VADConfig = Field(default_factory=VADConfig)
 
+    google_cloud: GoogleCloudConfig = Field(default_factory=GoogleCloudConfig)
     gemini: GeminiConfig = Field(default_factory=GeminiConfig)
     translation: TranslationConfig = Field(default_factory=TranslationConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)

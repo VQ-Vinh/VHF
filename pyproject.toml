@@ -13,6 +13,7 @@ dependencies = [
     "silero-vad>=4.0",
     "webrtcvad>=2.0.10",
     "google-genai>=1.0.0",
+    "google-auth>=2.0.0",
     "google-cloud-storage>=2.16.0",
     "pydantic>=2.7.0",
     "pydantic-settings>=2.2.0",

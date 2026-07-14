@@ -30,8 +30,8 @@ echo [*] Installing dependencies...
 "%ROOT%\venv\Scripts\python.exe" -m pip install -e "%ROOT%"
 if errorlevel 1 exit /b 1
 
-if not exist "%ROOT%\data\audio" mkdir "%ROOT%\data\audio"
-if not exist "%ROOT%\data\results" mkdir "%ROOT%\data\results"
+if not exist "%ROOT%\VHF_Storage\audio" mkdir "%ROOT%\VHF_Storage\audio"
+if not exist "%ROOT%\VHF_Storage\results" mkdir "%ROOT%\VHF_Storage\results"
 
 echo.
 echo [OK] Setup complete. Run: run_dev.bat

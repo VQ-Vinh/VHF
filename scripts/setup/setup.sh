@@ -25,6 +25,6 @@ fi
 
 "$ROOT/venv/bin/python" -m pip install --upgrade pip
 "$ROOT/venv/bin/python" -m pip install -e "$ROOT"
-mkdir -p "$ROOT/data/audio" "$ROOT/data/results"
+mkdir -p "$ROOT/VHF_Storage/audio" "$ROOT/VHF_Storage/results"
 
 echo "[OK] Setup complete. Run: ./scripts/dev/run-cli.sh"
