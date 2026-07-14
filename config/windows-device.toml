@@ -22,7 +22,7 @@ silero_model_path = ""
 
 [gemini]
 model = "gemini-2.5-flash"
-api_key_env = "GEMINI_API_KEY"
+api_key_env = "GOOGLE_API_KEY"
 project_id = ""
 location = "us-central1"
 timeout_seconds = 30
