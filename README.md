@@ -28,9 +28,15 @@ Gemini Vertex AI và Google Cloud Storage dùng chung một service-account JSON
 .secrets/gcs-service-account.json
 ```
 
-Thư mục `.secrets/` đã được Git bỏ qua. Không commit hoặc đóng gói JSON key vào file `.exe`.
+Thư mục `.secrets/` đã được Git bỏ qua. Không commit JSON key vào repository.
 
-Khi triển khai bản `.exe`, tạo cùng cấu trúc bên cạnh file thực thi:
+Khi cài bằng `release/PRANA_ELEX_Setup_1.0.0_x64.exe`, installer sẽ yêu cầu chọn
+service-account JSON ở bước **Google Cloud Credentials**. Key được sao chép trong
+lúc cài đặt và đường dẫn được ghi vào `settings.json`; key không được nhúng sẵn
+trong file Setup.
+
+Khi dùng bản portable trong `dist/PRANA_ELEX/`, tạo cùng cấu trúc bên cạnh file
+thực thi:
 
 ```text
 PRANA_ELEX.exe
@@ -69,6 +75,12 @@ Build sạch toàn bộ ứng dụng bằng một lệnh tại thư mục gốc 
 
 ```cmd
 build.bat
+```
+
+Nếu đã cài Inno Setup 6, lệnh trên đồng thời tạo bộ cài dành cho người dùng:
+
+```text
+release/PRANA_ELEX_Setup_1.0.0_x64.exe
 ```
 
 File `dist\PRANA_ELEX\PRANA_ELEX.exe` là bản đóng gói sẵn — copy ra máy khác chạy được luôn:
