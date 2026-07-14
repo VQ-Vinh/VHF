@@ -10,12 +10,12 @@
 
 **Windows:**
 ```cmd
-setup.bat
+scripts\setup\setup.bat
 ```
 
 **Linux / Raspberry Pi:**
 ```bash
-./setup.sh
+./scripts/setup/setup.sh
 ```
 
 Script sẽ tự tạo môi trường ảo, cài đặt thư viện, tạo thư mục lưu dữ liệu.
@@ -39,21 +39,21 @@ run_dev.bat
 
 **Chạy trên console (không cần màn hình):**
 ```cmd
-run.bat
+scripts\dev\run-cli.bat
 ```
 
 **Nếu có file WAV muốn xử lý sẵn:**
 ```cmd
-run.bat batch file1.wav file2.wav
+scripts\dev\run-cli.bat batch file1.wav file2.wav
 ```
 
 ### Dùng file .exe có sẵn (không cần cài Python)
 
-File `dist\PRANA_ELEX.exe` là bản đóng gói sẵn — copy ra máy khác chạy được luôn:
+File `dist\PRANA_ELEX\PRANA_ELEX.exe` là bản đóng gói sẵn — copy ra máy khác chạy được luôn:
 
 ```cmd
 set GOOGLE_API_KEY=AIzaSy...
-dist\PRANA_ELEX.exe
+dist\PRANA_ELEX\PRANA_ELEX.exe
 ```
 
 ---
@@ -154,10 +154,21 @@ min_speech_duration_ms = 300 # bao nhiêu ms thì coi là có người nói
 
 ```
 src/prana_elex/
-├── app/              # điểm vào: cli, desktop
-├── core/             # xử lý chính: audio, config, gemini, pipeline, vad...
-├── ui/               # giao diện desktop (PySide6)
-└── __main__.py       # chạy từ dòng lệnh: python -m prana_elex
+├── ai/gemini/        # tích hợp Gemini, prompt và xử lý phản hồi
+├── app/              # các điểm vào CLI, desktop và bản đóng gói
+├── audio/            # thu âm và backend WASAPI/PulseAudio
+├── common/           # logger, timing và cấu trúc dữ liệu dùng chung
+├── config/           # schema và thiết lập người dùng
+├── pipeline/         # điều phối luồng xử lý, sự kiện và session
+├── storage/          # lưu cục bộ và Google Cloud Storage
+├── ui/               # giao diện desktop, components và dialogs
+├── vad/              # phát hiện giọng nói Silero/WebRTC
+└── __main__.py       # chạy CLI bằng python -m prana_elex
+
+scripts/
+├── dev/              # launcher dùng khi phát triển
+├── packaging/        # PyInstaller spec, build và runtime hooks
+└── setup/            # cài môi trường cho Windows/Linux
 ```
 
 ## Yêu cầu
