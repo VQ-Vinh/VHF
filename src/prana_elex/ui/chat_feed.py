@@ -86,9 +86,6 @@ class ChatFeed(QWidget):
         status_layout.addWidget(self._gcs_label)
         layout.addLayout(status_layout)
 
-        self._pulse_timer = QTimer(self)
-        self._pulse_timer.timeout.connect(self._pulse_listening)
-        self._listening_visible = True
         self._state = "stopped"
 
     def add_message(self, source: str, transcript: str, translation: str, timestamp: datetime | None = None):
@@ -112,13 +109,11 @@ class ChatFeed(QWidget):
         self._state = state
         color = _STATE_COLORS.get(state, "#666666")
 
-        self._pulse_timer.stop()
         self._listening_dot.setStyleSheet(f"color: {color}; font-size: 10px;")
         self._listening_dot.show()
 
         if state == "listening":
             self._listening_label.setText("LISTENING")
-            self._pulse_timer.start(1500)
         elif state == "recording":
             self._listening_label.setText("RECORDING")
         elif state == "error":
@@ -130,25 +125,37 @@ class ChatFeed(QWidget):
         else:
             self._listening_label.setText("IDLE")
 
-    def set_gcs_status(self, ready: bool, error: str | None, retry_queue: int) -> None:
-        if ready:
-            self._gcs_label.setStyleSheet("color: #00E566; font-size: 10px; font-weight: 700; letter-spacing: 1px;")
-            text = f"\u25CF GCS OK"
-            if retry_queue:
-                text += f" ({retry_queue} pending)"
-            self._gcs_label.setText(text)
-            self._gcs_label.show()
+    def set_gcs_status(
+        self,
+        enabled: bool,
+        ready: bool,
+        error: str | None,
+        retry_queue: int,
+        last_upload_ok: bool | None,
+    ) -> None:
+        if not enabled:
+            color, text, tooltip = "#6A6A7E", "GCS OFF", "Cloud upload is disabled"
+        elif retry_queue:
+            color = "#FFD600"
+            text = f"GCS RETRY ({retry_queue})"
+            tooltip = error or f"{retry_queue} file(s) waiting to upload"
         elif error:
-            self._gcs_label.setStyleSheet("color: #FF3B30; font-size: 10px; font-weight: 700; letter-spacing: 1px;")
-            lines = error.split("\n")
-            self._gcs_label.setText(f"\u25CF GCS ERR")
-            self._gcs_label.show()
+            color, text, tooltip = "#FF5A52", "GCS ERROR", error
+        elif last_upload_ok is True:
+            color, text, tooltip = "#00E566", "GCS SYNCED", "Latest audio and result uploaded"
+        elif last_upload_ok is False:
+            color, text, tooltip = "#FF5A52", "GCS UPLOAD ERROR", "Latest upload failed"
+        elif ready:
+            color, text, tooltip = "#00B8D4", "GCS READY", "Cloud client is ready; no upload yet"
         else:
-            self._gcs_label.hide()
+            color, text, tooltip = "#FFD600", "GCS STARTING", "Cloud client is initializing"
 
-    def _pulse_listening(self):
-        self._listening_visible = not self._listening_visible
-        self._listening_dot.setVisible(self._listening_visible)
+        self._gcs_label.setStyleSheet(
+            f"color: {color}; font-size: 10px; font-weight: 700; letter-spacing: 1px;"
+        )
+        self._gcs_label.setText(text)
+        self._gcs_label.setToolTip(tooltip)
+        self._gcs_label.show()
 
     def _on_history(self):
         w = self.window()

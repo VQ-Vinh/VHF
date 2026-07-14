@@ -249,9 +249,16 @@ QPushButton:pressed {
     background: transparent;
     border: none;
     border-radius: 6px;
+    color: #B8B8C8;
+    padding: 0;
 }
 #SettingsButton:hover {
     background: #282838;
+    color: #FFFFFF;
+}
+#SettingsButton:pressed {
+    background: #20202C;
+    color: #00E5FF;
 }
 
 /* ── Settings Dialog ─────────────────────────── */

@@ -187,9 +187,11 @@ class MainWindow(QMainWindow):
             self._chat.set_state("listening")
 
         self._chat.set_gcs_status(
+            enabled=status.get("gcs_enabled", False),
             ready=status.get("gcs_ready", False),
             error=status.get("gcs_error"),
             retry_queue=status.get("gcs_retry_queue", 0),
+            last_upload_ok=status.get("gcs_last_upload_ok"),
         )
 
     def _history_dialog(self):

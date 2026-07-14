@@ -18,6 +18,7 @@ dependencies = [
     "pydantic-settings>=2.2.0",
     "pyside6>=6.7.0",
     "qasync>=0.27.0",
+    "qtawesome==1.4.2",
 ]
 
 [project.scripts]

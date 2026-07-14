@@ -9,6 +9,7 @@ block_cipher = None
 datas = collect_data_files("PySide6", include_py_files=True)
 
 datas += collect_data_files("silero_vad")
+datas += collect_data_files("qtawesome")
 datas += [
     ("..\\src\\prana_elex\\ui\\resources\\styles.qss", "prana_elex\\ui\\resources"),
     ("..\\config\\default.toml", "config"),
@@ -23,6 +24,11 @@ hiddenimports = [
     "pyaudiowpatch",
     "pydantic",
     "pydantic.v1",
+    "qtawesome",
+    "qtpy",
+    "qtpy.QtCore",
+    "qtpy.QtGui",
+    "qtpy.QtWidgets",
 ]
 
 excludes = [

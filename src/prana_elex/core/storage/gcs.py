@@ -21,6 +21,7 @@ class GCSStorage:
         self._client = None
         self._bucket = None
         self._last_error: str | None = None
+        self._last_upload_ok: bool | None = None
         self._audio_dir: Path | None = None
         self._result_dir: Path | None = None
         if local_config is not None:
@@ -39,6 +40,11 @@ class GCSStorage:
     @property
     def last_error(self) -> str | None:
         return self._last_error
+
+    @property
+    def last_upload_ok(self) -> bool | None:
+        with self._lock:
+            return self._last_upload_ok
 
     def _init_client(self) -> None:
         try:
@@ -141,8 +147,10 @@ class GCSStorage:
 
             self._retry_queue = remaining
             if self._retry_queue:
+                self._last_upload_ok = False
                 self._start_retry_timer()
             else:
+                self._last_upload_ok = True
                 logger.info("GCS retry queue empty, timer stopped")
 
     def _start_retry_timer(self) -> None:
@@ -198,9 +206,13 @@ class GCSStorage:
     def upload_result(self, result: ProcessingResult) -> tuple[bool, bool]:
         if not result.audio_file or not result.audio_file.strip():
             logger.error(f"Empty audio_file in result (session={result.session_id}, seq={result.sequence})")
+            with self._lock:
+                self._last_upload_ok = False
             return False, False
         if not result.json_path or not result.json_path.strip():
             logger.error(f"Empty json_path in result (session={result.session_id}, seq={result.sequence})")
+            with self._lock:
+                self._last_upload_ok = False
             return False, False
 
         audio_file = (
@@ -216,6 +228,8 @@ class GCSStorage:
 
         if audio_file is None or result_file is None:
             logger.error(f"Local files not found for GCS upload (audio={result.audio_file}, result={result.json_path})")
+            with self._lock:
+                self._last_upload_ok = False
             return False, False
 
         date_path = self._date_path()
@@ -235,6 +249,8 @@ class GCSStorage:
 
             if not audio_ok or not result_ok:
                 self._start_retry_timer()
+
+            self._last_upload_ok = audio_ok and result_ok
 
         return audio_ok, result_ok
 

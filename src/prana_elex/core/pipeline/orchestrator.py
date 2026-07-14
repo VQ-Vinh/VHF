@@ -585,7 +585,9 @@ class PipelineOrchestrator:
             "recording": self._recording,
             "queue_size": self._job_queue.qsize(),
             "vad_backend": self._vad.name,
+            "gcs_enabled": self._config.storage.gcs.enabled,
             "gcs_ready": self._gcs.ready,
             "gcs_error": self._gcs.last_error,
             "gcs_retry_queue": self._gcs.retry_queue_size,
+            "gcs_last_upload_ok": self._gcs.last_upload_ok,
         }
