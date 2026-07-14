@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import tomllib
 from pathlib import Path
 from typing import Literal, Optional
@@ -89,14 +90,21 @@ class AppConfig(BaseModel):
             data = tomllib.load(f)
         return cls.model_validate(data)
 
-    def resolve_paths(self) -> None:
-        base = Path(self.general.data_dir).resolve()
-        self.general.data_dir = base
-        self.storage.local.audio_dir = (base / "audio").resolve()
-        self.storage.local.result_dir = (base / "results").resolve()
+    def resolve_paths(self, base_dir: Path | None = None) -> None:
+        base = base_dir.resolve() if base_dir else Path(self.general.data_dir).resolve()
+        storage_root = base / "VHF_Storage"
+        storage_root.mkdir(parents=True, exist_ok=True)
+        self.general.data_dir = storage_root
+        self.storage.local.audio_dir = (storage_root / "audio").resolve()
+        self.storage.local.result_dir = (storage_root / "results").resolve()
+
+        from prana_elex.core.config.user_settings import _get_settings_path
+        src = _get_settings_path()
+        if src.exists():
+            shutil.copy2(src, storage_root / "settings.json")
 
 
-def load_config(config_path: str | Path = Path("config/default.toml")) -> AppConfig:
+def load_config(config_path: str | Path = Path("config/default.toml"), base_dir: Path | None = None) -> AppConfig:
     cfg = AppConfig.from_toml(config_path)
-    cfg.resolve_paths()
+    cfg.resolve_paths(base_dir)
     return cfg

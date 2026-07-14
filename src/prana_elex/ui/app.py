@@ -9,6 +9,7 @@ from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QApplication
 
 from prana_elex.core.config.schema import AppConfig
+from prana_elex.core.config.user_settings import load_settings, save_settings
 from prana_elex.core.pipeline.events import event_bus
 from prana_elex.core.pipeline.orchestrator import PipelineOrchestrator, PipelineState
 from prana_elex.ui.main_window import MainWindow
@@ -83,6 +84,24 @@ def run_app(
     target_language: str = "en",
 ) -> None:
     config = AppConfig.from_toml(_find_config())
+
+    app = QApplication([])
+
+    if _is_frozen():
+        from PySide6.QtWidgets import QFileDialog
+        settings = load_settings()
+        if not settings.get("data_dir"):
+            folder = QFileDialog.getExistingDirectory(
+                None,
+                "Select data save location",
+                str(Path.home() / "Desktop"),
+            )
+            if not folder:
+                folder = str(Path.home() / "Desktop")
+            save_settings(folder)
+            settings["data_dir"] = folder
+        config.general.data_dir = Path(settings["data_dir"])
+
     config.resolve_paths()
     config.audio.capture_mode = capture_mode
     if device_index >= 0:
@@ -91,7 +110,6 @@ def run_app(
 
     setup_logger(level=config.general.log_level, console_level="WARNING")
 
-    app = QApplication([])
     app.setApplicationName("PRANA ELEX")
     app.setOrganizationName("PRANA")
     _load_styles(app)

@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from prana_elex.core.config.schema import load_config
+from prana_elex.core.config.user_settings import load_settings
 from prana_elex.core.gemini.prompt_builder import LANGUAGE_NAMES
 from prana_elex.core.pipeline.orchestrator import PipelineOrchestrator
 from prana_elex.core.utils.logger import get_logger, setup_logger
@@ -108,8 +109,16 @@ def apply_target(config, target: str | None) -> None:
         config.translation.target_language = target
 
 
-async def run_realtime(config_path: Path, target: str | None = None, capture_mode: str = "device", device_index: int = -1) -> None:
-    config = load_config(config_path)
+def _frozen_base_dir() -> Path | None:
+    if getattr(sys, "frozen", False) or getattr(sys, "_MEIPASS", None) is not None:
+        settings = load_settings()
+        data_dir = settings.get("data_dir") or str(Path.home() / "Desktop" / "PRANA_ELEX")
+        return Path(data_dir)
+    return None
+
+
+async def run_realtime(config_path: Path, target: str | None = None, capture_mode: str = "device", device_index: int = -1, data_dir: Path | None = None) -> None:
+    config = load_config(config_path, base_dir=data_dir or _frozen_base_dir())
     apply_target(config, target)
     config.audio.capture_mode = capture_mode
     if device_index >= 0:
@@ -144,8 +153,8 @@ async def run_realtime(config_path: Path, target: str | None = None, capture_mod
         print(f"\n  Stopped. Session: {s['session_id']}, Processed: {s['sequences_processed']}")
 
 
-def run_batch(config_path: Path, files: list[Path], target: str | None = None) -> None:
-    config = load_config(config_path)
+def run_batch(config_path: Path, files: list[Path], target: str | None = None, data_dir: Path | None = None) -> None:
+    config = load_config(config_path, base_dir=data_dir or _frozen_base_dir())
     apply_target(config, target)
     setup_logger(level=config.general.log_level, console_level="WARNING")
 
@@ -186,6 +195,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Target output language (default: prompt)",
     )
     parser.add_argument(
+        "-d", "--data-dir",
+        type=Path,
+        default=None,
+        help="Data directory (audio/results). Overrides settings.json.",
+    )
+    parser.add_argument(
         "--gui", "-g",
         action="store_true",
         help="Launch desktop GUI",
@@ -223,6 +238,7 @@ def main() -> None:
         return
 
     target = args.target
+    data_dir = args.data_dir
     if args.batch and args.batch[0] == "batch":
         files = [Path(a) for a in args.batch[1:]]
         if not files:
@@ -230,7 +246,7 @@ def main() -> None:
             sys.exit(1)
         if not target:
             target = select_language()
-        run_batch(Path("config/default.toml"), files, target)
+        run_batch(Path("config/default.toml"), files, target, data_dir=data_dir)
         return
 
     mode, dev_idx = select_capture_mode()
@@ -243,9 +259,9 @@ def main() -> None:
             if not config_path.exists():
                 print(f"Config not found: {config_path}")
                 sys.exit(1)
-            asyncio.run(run_realtime(config_path, target, mode, dev_idx))
+            asyncio.run(run_realtime(config_path, target, mode, dev_idx, data_dir=data_dir))
         else:
-            asyncio.run(run_realtime(Path("config/default.toml"), target, mode, dev_idx))
+            asyncio.run(run_realtime(Path("config/default.toml"), target, mode, dev_idx, data_dir=data_dir))
     except KeyboardInterrupt:
         pass
 
