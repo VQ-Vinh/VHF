@@ -14,6 +14,6 @@ def _redirect_stdio() -> None:
 
 _redirect_stdio()
 
-from prana_elex.app.cli import main
+from prana_elex.app.desktop import main
 
 main()

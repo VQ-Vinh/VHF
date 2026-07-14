@@ -20,7 +20,8 @@ def setup_logger(
     )
 
     if not logger.handlers:
-        console = logging.StreamHandler(sys.stdout)
+        stream = sys.stdout if sys.stdout is not None else sys.stderr
+        console = logging.StreamHandler(stream)
         console.setFormatter(fmt)
         if console_level:
             console.setLevel(getattr(logging, console_level.upper(), logging.WARNING))

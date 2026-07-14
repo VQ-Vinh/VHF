@@ -66,7 +66,7 @@ class PipelineOrchestrator:
         self._vad = self._create_vad()
 
         self._prompt_builder = PromptBuilder(config.translation)
-        self._gemini = GeminiClient(config.gemini, self._prompt_builder, GeminiResponseParser)
+        self._gemini: GeminiClient | None = None
 
         self._vad_buffer: SpeechBuffer = []
         self._recording = False
@@ -138,6 +138,10 @@ class PipelineOrchestrator:
             sid = self._session.session_id
             logger.info("Session started", extra={"session_id": sid, "workers": self._num_workers})
 
+            if self._gemini is not None:
+                self._gemini.close()
+            self._gemini = GeminiClient(self._config.gemini, self._prompt_builder, GeminiResponseParser)
+
             self._executor = ThreadPoolExecutor(max_workers=self._num_workers)
             for i in range(self._num_workers):
                 self._worker_futures.append(
@@ -190,7 +194,9 @@ class PipelineOrchestrator:
                 self._executor.shutdown(wait=True)
 
             self._worker_futures.clear()
-            self._gemini.close()
+            if self._gemini is not None:
+                self._gemini.close()
+                self._gemini = None
             self._gcs.close()
             logger.info(
                 "Pipeline stopped",
@@ -451,6 +457,8 @@ class PipelineOrchestrator:
 
     @staticmethod
     def _print_result(result: ProcessingResult) -> None:
+        if sys.stdout is None:
+            return
         sep = "-" * 60
         lines = [f"\n{sep}"]
         lines.append(f"  [#{result.sequence}] {result.timestamp.strftime('%H:%M:%S')}")
@@ -478,6 +486,8 @@ class PipelineOrchestrator:
 
     @staticmethod
     def _print_gcs_status(audio_ok: bool | None, result_ok: bool | None, queue_size: int = 0) -> None:
+        if sys.stdout is None:
+            return
         if audio_ok is None:
             return
         parts = []
@@ -529,6 +539,8 @@ class PipelineOrchestrator:
         tracker = LatencyTracker()
         tracker.mark("start")
 
+        if self._gemini is None:
+            self._gemini = GeminiClient(self._config.gemini, self._prompt_builder, GeminiResponseParser)
         tracker.mark("gemini_start")
         result = self._gemini.process_audio(audio_path, sid, seq)
         tracker.mark("gemini_done")

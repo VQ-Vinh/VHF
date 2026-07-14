@@ -33,14 +33,14 @@ excludes = [
 ]
 
 a = Analysis(
-    ["..\\src\\prana_elex\\__main__.py"],
+    ["..\\src\\prana_elex\\__main_window__.py"],
     pathex=["..\\src", ".."],
     binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=["scripts\\pyi_rth_hide_subprocess_console.py"],
     excludes=excludes,
     noarchive=False,
     optimize=0,
