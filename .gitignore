@@ -34,6 +34,7 @@ Thumbs.db
 # Build
 dist/
 build/
+release/
 *.spec
 !scripts/packaging/PRANA_ELEX.spec
 *.egg-info/

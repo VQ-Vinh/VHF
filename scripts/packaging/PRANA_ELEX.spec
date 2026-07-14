@@ -58,9 +58,8 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,
     name="PRANA_ELEX",
     debug=False,
     bootloader_ignore_signals=False,
@@ -75,6 +74,7 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=None,
+    version=str(PROJECT_ROOT / "scripts/packaging/version_info.txt"),
 )
 
 COLLECT(
