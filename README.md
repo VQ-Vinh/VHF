@@ -20,15 +20,31 @@ scripts\setup\setup.bat
 
 Script sẽ tự tạo môi trường ảo, cài đặt thư viện, tạo thư mục lưu dữ liệu.
 
-### Bước 2: Nhập API Key
+### Bước 2: Đặt Google Cloud JSON key
 
-Bạn cần một key của Google Gemini. Đặt nó trước khi chạy app:
+Gemini Vertex AI và Google Cloud Storage dùng chung một service-account JSON key; ứng dụng không dùng API key hoặc ADC. Khi chạy từ source, đặt key tại:
 
-```cmd
-set GOOGLE_API_KEY=AIzaSy...
+```text
+.secrets/gcs-service-account.json
 ```
 
-Hoặc set trong biến môi trường Windows luôn để khỏi phải gõ lại.
+Thư mục `.secrets/` đã được Git bỏ qua. Không commit hoặc đóng gói JSON key vào file `.exe`.
+
+Khi triển khai bản `.exe`, tạo cùng cấu trúc bên cạnh file thực thi:
+
+```text
+PRANA_ELEX.exe
+.secrets/
+└── gcs-service-account.json
+```
+
+Có thể dùng một vị trí khác bằng biến môi trường cố định:
+
+```cmd
+setx PRANA_ELEX_GOOGLE_CREDENTIALS "D:\secure\gcs-service-account.json"
+```
+
+Sau khi dùng `setx`, đóng và mở lại ứng dụng để nhận biến môi trường mới.
 
 ### Bước 3: Chạy thôi
 
@@ -49,10 +65,15 @@ scripts\dev\run-cli.bat batch file1.wav file2.wav
 
 ### Dùng file .exe có sẵn (không cần cài Python)
 
+Build sạch toàn bộ ứng dụng bằng một lệnh tại thư mục gốc dự án:
+
+```cmd
+build.bat
+```
+
 File `dist\PRANA_ELEX\PRANA_ELEX.exe` là bản đóng gói sẵn — copy ra máy khác chạy được luôn:
 
 ```cmd
-set GOOGLE_API_KEY=AIzaSy...
 dist\PRANA_ELEX\PRANA_ELEX.exe
 ```
 
@@ -110,15 +131,15 @@ pa.terminate()
 
 ## Dữ liệu lưu ở đâu?
 
-Mọi thứ được lưu trong thư mục `data/`:
+Khi chạy từ source, mọi dữ liệu được lưu trong thư mục `VHF_Storage/` ở gốc dự án:
 
 ```
-data/
+VHF_Storage/
 ├── audio/        ← file WAV từng đoạn hội thoại
 └── results/      ← file JSON kết quả (transcript + bản dịch)
 ```
 
-Mỗi file có tên theo thời gian, dễ tra cứu. Thư mục `data/` đã được git bỏ qua, không sợ lỡ commit.
+Với bản `.exe`, `VHF_Storage/` nằm bên trong thư mục lưu mà người dùng đã chọn. Mỗi file có tên theo thời gian, dễ tra cứu; thư mục này đã được Git bỏ qua.
 
 ---
 
