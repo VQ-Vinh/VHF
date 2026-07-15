@@ -30,12 +30,12 @@ Gemini Vertex AI và Google Cloud Storage dùng chung một service-account JSON
 
 Thư mục `.secrets/` đã được Git bỏ qua. Không commit JSON key vào repository.
 
-Khi cài bằng `release/PRANA_ELEX_Setup_1.0.0_x64.exe`, installer sẽ yêu cầu chọn
+Khi cài bằng `release/windows/PRANA_ELEX_Setup_1.0.0_x64.exe`, installer sẽ yêu cầu chọn
 service-account JSON ở bước **Google Cloud Credentials**. Key được sao chép trong
 lúc cài đặt và đường dẫn được ghi vào `settings.json`; key không được nhúng sẵn
 trong file Setup.
 
-Khi dùng bản portable trong `dist/PRANA_ELEX/`, tạo cùng cấu trúc bên cạnh file
+Khi dùng bản portable trong `dist/windows/PRANA_ELEX/`, tạo cùng cấu trúc bên cạnh file
 thực thi:
 
 ```text
@@ -69,25 +69,56 @@ scripts\dev\run-cli.bat
 scripts\dev\run-cli.bat batch file1.wav file2.wav
 ```
 
-### Dùng file .exe có sẵn (không cần cài Python)
+### Đóng gói Windows x64
 
 Build sạch toàn bộ ứng dụng bằng một lệnh tại thư mục gốc dự án:
 
 ```cmd
-build.bat
+buildwin.bat
 ```
 
 Nếu đã cài Inno Setup 6, lệnh trên đồng thời tạo bộ cài dành cho người dùng:
 
 ```text
-release/PRANA_ELEX_Setup_1.0.0_x64.exe
+release/windows/PRANA_ELEX_Setup_1.0.0_x64.exe
 ```
 
-File `dist\PRANA_ELEX\PRANA_ELEX.exe` là bản đóng gói sẵn — copy ra máy khác chạy được luôn:
+File `dist\windows\PRANA_ELEX\PRANA_ELEX.exe` là bản đóng gói portable:
 
 ```cmd
-dist\PRANA_ELEX\PRANA_ELEX.exe
+dist\windows\PRANA_ELEX\PRANA_ELEX.exe
 ```
+
+`build.bat` hiện chỉ là alias tạm thời cho `buildwin.bat` và sẽ bị loại bỏ ở
+major release sau.
+
+### Đóng gói Raspberry Pi 4B ARM64
+
+Chạy trực tiếp trên Raspberry Pi 4B dùng Raspberry Pi OS Desktop Bookworm 64-bit:
+
+```bash
+./buildlinux
+```
+
+Lệnh này chỉ tạo artifact Linux ARM64; nó không đụng vào output Windows:
+
+```text
+dist/linux-arm64/PRANA_ELEX/
+release/linux-arm64/prana-elex_1.0.0_arm64.deb
+```
+
+Cài và chạy gói trên Pi:
+
+```bash
+sudo apt install ./release/linux-arm64/prana-elex_1.0.0_arm64.deb
+prana-elex
+```
+
+Lần chạy đầu sẽ yêu cầu chọn thư mục dữ liệu và service-account JSON. Cấu hình
+được lưu tại `~/.config/prana-elex/settings.json`, credentials được sao chép tới
+`~/.config/prana-elex/gcs-service-account.json` với mode `0600`, và dữ liệu mặc
+định nằm ở `~/PRANA_ELEX_Data`. Gỡ gói bằng `apt remove prana-elex` không xóa các
+tệp người dùng này. Autostart mặc định tắt và có thể bật trong Settings.
 
 ---
 
@@ -151,7 +182,10 @@ VHF_Storage/
 └── results/      ← file JSON kết quả (transcript + bản dịch)
 ```
 
-Với bản `.exe`, `VHF_Storage/` nằm bên trong thư mục lưu mà người dùng đã chọn. Mỗi file có tên theo thời gian, dễ tra cứu; thư mục này đã được Git bỏ qua.
+Với bản `.exe`, app tạo thư mục `VHF_Storage/` bên trong thư mục gốc mà người dùng
+đã chọn trong installer. Ví dụ chọn `D:\PRANA_Data` thì audio và kết quả nằm tại
+`D:\PRANA_Data\VHF_Storage\`. Khi kiểm thử bằng `run_dev.bat`, dữ liệu source vẫn
+nằm tại `VHF\VHF_Storage` và không sử dụng cấu hình của bản đã cài.
 
 ---
 
@@ -199,13 +233,16 @@ src/prana_elex/
 └── __main__.py       # chạy CLI bằng python -m prana_elex
 
 scripts/
-├── dev/              # launcher dùng khi phát triển
-├── packaging/        # PyInstaller spec, build và runtime hooks
-└── setup/            # cài môi trường cho Windows/Linux
+├── dev/                    # launcher dùng khi phát triển
+├── packaging/
+│   ├── common/             # metadata và validator dùng chung
+│   ├── windows/            # spec, hook, build và Inno Setup cho Windows
+│   └── linux-arm64/        # spec, build và Debian package cho Pi 4B
+└── setup/                  # cài môi trường phát triển Windows/Linux
 ```
 
 ## Yêu cầu
 
 - Windows (WASAPI) hoặc Linux (PulseAudio)
-- Google Gemini API key
+- Google Cloud service-account JSON
 - Kết nối internet (để gọi Gemini API)
