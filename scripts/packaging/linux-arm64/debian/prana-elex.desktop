@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=PRANA ELEX
+Comment=Marine VHF transcription and translation
+Exec=/usr/bin/prana-elex
+Icon=audio-input-microphone
+Terminal=false
+Categories=AudioVideo;Audio;Utility;
+StartupNotify=true

@@ -1,0 +1,11 @@
+Package: prana-elex
+Version: @VERSION@
+Section: sound
+Priority: optional
+Architecture: arm64
+Maintainer: @VENDOR@
+Installed-Size: @INSTALLED_SIZE@
+Depends: libc6, libstdc++6, libgcc-s1, libasound2, libportaudio2, libsndfile1, libgl1, libegl1, libxkbcommon-x11-0, libxcb-cursor0
+Description: PRANA ELEX marine VHF transcription and translation
+ Desktop application for live marine VHF transcription and translation using
+ Google Cloud services.
