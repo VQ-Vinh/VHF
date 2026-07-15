@@ -55,9 +55,10 @@ def _bundle_root() -> Path:
 
 def _find_config() -> Path:
     root = _bundle_root()
-    candidates = [
-        root / "config" / "default.toml",
-    ]
+    candidates = []
+    if _is_frozen() and sys.platform.startswith("linux"):
+        candidates.append(root / "config" / "raspberry-pi.toml")
+    candidates.append(root / "config" / "default.toml")
     if not _is_frozen():
         candidates.append(root / "src" / "prana_elex" / "config" / "default.toml")
     for p in candidates:
@@ -88,9 +89,36 @@ def run_app(
 
     app = QApplication([])
 
+    app.setApplicationName("PRANA ELEX")
+    app.setOrganizationName("PRANA")
+    app.setWindowIcon(
+        phosphor_icon(
+            "ph.radio",
+            color="#00D7ED",
+            active_color="#00D7ED",
+            scale_factor=0.9,
+        )
+    )
+    _load_styles(app)
+
     if _is_frozen():
         settings = load_settings()
-        data_dir = settings.get("data_dir") or str(Path.home() / "Documents" / "PRANA ELEX Data")
+        if sys.platform.startswith("linux"):
+            data_value = settings.get("data_dir", "").strip()
+            credentials_value = settings.get("credentials_path", "").strip()
+            data_dir = Path(data_value).expanduser()
+            credentials = Path(credentials_value).expanduser()
+            if not data_value or not credentials_value or not data_dir.is_dir() or not credentials.is_file():
+                from prana_elex.ui.dialogs.first_run import FirstRunDialog
+
+                if not FirstRunDialog().exec():
+                    return
+                settings = load_settings()
+
+        default_data = Path.home() / (
+            "PRANA_ELEX_Data" if sys.platform.startswith("linux") else "Documents/PRANA ELEX Data"
+        )
+        data_dir = settings.get("data_dir") or str(default_data)
         config.general.data_dir = Path(data_dir)
         credentials_path = settings.get("credentials_path", "").strip()
         if credentials_path:
@@ -103,18 +131,6 @@ def run_app(
     config.translation.target_language = target_language
 
     setup_logger(level=config.general.log_level, console_level="WARNING")
-
-    app.setApplicationName("PRANA ELEX")
-    app.setOrganizationName("PRANA")
-    app.setWindowIcon(
-        phosphor_icon(
-            "ph.radio",
-            color="#00D7ED",
-            active_color="#00D7ED",
-            scale_factor=0.9,
-        )
-    )
-    _load_styles(app)
 
     bridge = _EventBusBridge()
     orchestrator = PipelineOrchestrator(config)

@@ -1,4 +1,5 @@
 import logging as _logging
+import sys
 from datetime import datetime
 
 from PySide6.QtCore import QSize, Qt, QTimer
@@ -215,6 +216,8 @@ class MainWindow(QMainWindow):
         self._history_dialog().raise_()
 
     def open_settings(self):
+        from prana_elex.config.autostart import is_enabled as autostart_is_enabled
+        from prana_elex.config.autostart import set_enabled as set_autostart_enabled
         from prana_elex.audio.recorder import AudioRecorder
         try:
             devices = AudioRecorder.list_devices()
@@ -232,10 +235,17 @@ class MainWindow(QMainWindow):
             current_mode=self._config.audio.capture_mode,
             devices=devices,
             loopback_devices=loopbacks,
+            autostart_enabled=autostart_is_enabled() if sys.platform.startswith("linux") else None,
             parent=self,
         )
         if dialog.exec():
             mode, device = dialog.get_values()
+            autostart = dialog.get_autostart_enabled()
+            if autostart is not None:
+                try:
+                    set_autostart_enabled(autostart)
+                except OSError:
+                    logger.warning("Failed to update autostart", exc_info=True)
             changed = (
                 mode != self._config.audio.capture_mode or
                 device != self._config.audio.device_index

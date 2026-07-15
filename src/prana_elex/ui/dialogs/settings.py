@@ -1,6 +1,15 @@
 from __future__ import annotations
 
-from PySide6.QtWidgets import QComboBox, QDialog, QFormLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QFormLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+)
 
 
 def _device_label(d: dict) -> str:
@@ -22,6 +31,7 @@ class SettingsDialog(QDialog):
         current_mode: str,
         devices: list[dict],
         loopback_devices: list[dict],
+        autostart_enabled: bool | None = None,
         parent=None,
     ):
         super().__init__(parent)
@@ -52,6 +62,12 @@ class SettingsDialog(QDialog):
         self._device_combo.setMinimumWidth(340)
         self._populate_devices(current_mode, current_device)
         form.addRow(dev_label, self._device_combo)
+
+        self._autostart_checkbox = None
+        if autostart_enabled is not None:
+            self._autostart_checkbox = QCheckBox("Start PRANA ELEX when I log in")
+            self._autostart_checkbox.setChecked(autostart_enabled)
+            form.addRow("Autostart", self._autostart_checkbox)
 
         layout.addLayout(form)
         layout.addStretch()
@@ -92,3 +108,8 @@ class SettingsDialog(QDialog):
         if device is None:
             device = -1
         return mode, device
+
+    def get_autostart_enabled(self) -> bool | None:
+        if self._autostart_checkbox is None:
+            return None
+        return self._autostart_checkbox.isChecked()

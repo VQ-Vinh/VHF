@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shutil
 import tomllib
 from pathlib import Path
 from typing import Literal
@@ -93,12 +92,6 @@ class AppConfig(BaseModel):
         self.general.data_dir = storage_root
         self.storage.local.audio_dir = (storage_root / "audio").resolve()
         self.storage.local.result_dir = (storage_root / "results").resolve()
-
-        from prana_elex.config.user_settings import _get_settings_path
-        src = _get_settings_path()
-        if src.exists():
-            shutil.copy2(src, storage_root / "settings.json")
-
 
 def load_config(config_path: str | Path = Path("config/default.toml"), base_dir: Path | None = None) -> AppConfig:
     cfg = AppConfig.from_toml(config_path)
