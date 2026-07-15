@@ -1,0 +1,5 @@
+*.bat text eol=crlf
+*.sh text eol=lf
+/buildlinux text eol=lf
+/scripts/packaging/linux-arm64/debian/postinst text eol=lf
+/scripts/packaging/linux-arm64/debian/postrm text eol=lf

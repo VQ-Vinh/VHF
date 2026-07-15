@@ -1,5 +1,7 @@
 #define MyAppName "PRANA ELEX"
-#define MyAppVersion "1.0.0"
+#ifndef MyAppVersion
+  #define MyAppVersion "1.0.0"
+#endif
 #define MyAppPublisher "DLV Corporation"
 #define MyAppExeName "PRANA_ELEX.exe"
 
@@ -12,7 +14,7 @@ DefaultDirName={autopf}\PRANA ELEX
 DefaultGroupName=PRANA ELEX
 DisableProgramGroupPage=yes
 UninstallDisplayIcon={app}\{#MyAppExeName}
-OutputDir=..\..\release
+OutputDir=..\..\..\..\release\windows
 OutputBaseFilename=PRANA_ELEX_Setup_{#MyAppVersion}_x64
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -40,15 +42,15 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 Name: "autostart"; Description: "Start PRANA ELEX when I sign in"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
 
 [Files]
-Source: "..\..\dist\PRANA_ELEX\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: application
+Source: "..\..\..\..\dist\windows\PRANA_ELEX\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: application
 
 [Icons]
-Name: "{group}\PRANA ELEX"; Filename: "{app}\{#MyAppExeName}"
-Name: "{autodesktop}\PRANA ELEX"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
-Name: "{userstartup}\PRANA ELEX"; Filename: "{app}\{#MyAppExeName}"; Tasks: autostart
+Name: "{group}\PRANA ELEX"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"
+Name: "{autodesktop}\PRANA ELEX"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{userstartup}\PRANA ELEX"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: autostart
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch PRANA ELEX"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Description: "Launch PRANA ELEX"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 Type: files; Name: "{app}\settings.json"
@@ -116,6 +118,14 @@ var
   InstalledCredentialsPath: String;
   SettingsJson: String;
 begin
+  if CurStep = ssInstall then
+  begin
+    { Remove a stale per-user shortcut before recreating it. This matters when
+      upgrading an installation that was created under another install scope. }
+    DeleteFile(ExpandConstant('{userdesktop}\PRANA ELEX.lnk'));
+    DeleteFile(ExpandConstant('{userprograms}\PRANA ELEX\PRANA ELEX.lnk'));
+  end;
+
   if CurStep = ssPostInstall then
   begin
     DataPath := DataDirPage.Values[0];
@@ -124,7 +134,7 @@ begin
     CredentialsPath := CredentialsPage.Values[0];
     InstalledCredentialsPath := ExpandConstant('{app}\.secrets\gcs-service-account.json');
     ForceDirectories(ExtractFileDir(InstalledCredentialsPath));
-    if not FileCopy(CredentialsPath, InstalledCredentialsPath, False) then
+    if not CopyFile(CredentialsPath, InstalledCredentialsPath, False) then
       RaiseException('Could not copy the Google service-account JSON.');
 
     StringChangeEx(DataPath, '\', '/', True);

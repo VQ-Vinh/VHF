@@ -3,40 +3,54 @@ setlocal
 chcp 65001 >nul
 title PRANA ELEX - Build
 
-set "ROOT=%~dp0..\.."
+set "ROOT=%~dp0..\..\.."
 for %%I in ("%ROOT%") do set "ROOT=%%~fI"
 set "SPEC=%~dp0PRANA_ELEX.spec"
+set "VENV=%ROOT%\.venv\windows"
+set "WORK_DIR=%ROOT%\build\windows"
+set "DIST_DIR=%ROOT%\dist\windows"
+set "RELEASE_DIR=%ROOT%\release\windows"
 cd /d "%ROOT%"
 
-if not exist "%ROOT%\venv\Scripts\python.exe" (
+if /I not "%OS%"=="Windows_NT" (
+    echo [ERROR] buildwin.bat can only run on Windows.
+    exit /b 1
+)
+
+if not exist "%VENV%\Scripts\python.exe" (
     echo [1/7] Creating virtual environment...
-    python -m venv "%ROOT%\venv"
+    python -m venv "%VENV%"
     if errorlevel 1 goto :error
 ) else (
     echo [1/7] Virtual environment ready.
 )
 
 echo [2/7] Installing project dependencies...
-"%ROOT%\venv\Scripts\python.exe" -m pip install -e "%ROOT%"
+"%VENV%\Scripts\python.exe" -m pip install -e "%ROOT%"
 if errorlevel 1 goto :error
 
 echo [3/7] Installing PyInstaller...
-"%ROOT%\venv\Scripts\python.exe" -m pip install pyinstaller
+"%VENV%\Scripts\python.exe" -m pip install pyinstaller
 if errorlevel 1 goto :error
 
 echo [4/7] Cleaning previous build...
-if exist "%ROOT%\build" rmdir /s /q "%ROOT%\build"
-if exist "%ROOT%\dist\PRANA_ELEX" rmdir /s /q "%ROOT%\dist\PRANA_ELEX"
-if exist "%ROOT%\dist\PRANA_ELEX.exe" del "%ROOT%\dist\PRANA_ELEX.exe"
-if exist "%ROOT%\dist\settings.json" del "%ROOT%\dist\settings.json"
+if exist "%WORK_DIR%" rmdir /s /q "%WORK_DIR%"
+if exist "%DIST_DIR%" rmdir /s /q "%DIST_DIR%"
+if exist "%RELEASE_DIR%" rmdir /s /q "%RELEASE_DIR%"
 
 echo [5/7] Building PRANA_ELEX.exe...
-"%ROOT%\venv\Scripts\python.exe" -m PyInstaller --noconfirm --clean "%SPEC%"
+"%VENV%\Scripts\python.exe" -m PyInstaller --noconfirm --clean --workpath "%WORK_DIR%" --distpath "%DIST_DIR%" "%SPEC%"
 if errorlevel 1 goto :error
 
 echo [6/7] Validating release bundle...
-"%ROOT%\venv\Scripts\python.exe" "%ROOT%\scripts\packaging\validate_release.py" "%ROOT%\dist\PRANA_ELEX"
+"%VENV%\Scripts\python.exe" "%ROOT%\scripts\packaging\common\validate_release.py" --platform windows --bundle "%DIST_DIR%\PRANA_ELEX"
 if errorlevel 1 goto :error
+
+for /f "delims=" %%V in ('""%VENV%\Scripts\python.exe" "%ROOT%\scripts\packaging\common\project_metadata.py" --field version"') do set "APP_VERSION=%%V"
+if not defined APP_VERSION (
+    echo [ERROR] Could not read project version from pyproject.toml.
+    goto :error
+)
 
 echo [7/7] Building Windows installer...
 set "ISCC="
@@ -46,16 +60,16 @@ if not defined ISCC if exist "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" set "IS
 if not defined ISCC if exist "%ProgramFiles%\Inno Setup 6\ISCC.exe" set "ISCC=%ProgramFiles%\Inno Setup 6\ISCC.exe"
 
 if defined ISCC (
-    "%ISCC%" "%ROOT%\scripts\installer\PRANA_ELEX.iss"
+    "%ISCC%" /DMyAppVersion=%APP_VERSION% "%ROOT%\scripts\packaging\windows\installer\PRANA_ELEX.iss"
     if errorlevel 1 goto :error
-    echo [OK] Installer: %ROOT%\release\PRANA_ELEX_Setup_1.0.0_x64.exe
+    echo [OK] Installer: %RELEASE_DIR%\PRANA_ELEX_Setup_%APP_VERSION%_x64.exe
 ) else (
     echo [SKIP] Inno Setup 6 not found. Portable release is still ready.
     echo [INFO] Install Inno Setup 6, then run build.bat again to create the installer.
 )
 
 echo.
-echo [OK] Output: %ROOT%\dist\PRANA_ELEX\PRANA_ELEX.exe
+echo [OK] Output: %DIST_DIR%\PRANA_ELEX\PRANA_ELEX.exe
 echo [SECURITY] Google service-account credentials are not included in the release.
 pause
 exit /b 0

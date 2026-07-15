@@ -2,6 +2,7 @@
 name = "prana-elex"
 version = "1.0.0"
 description = "PRANA ELEX — VHF Marine Radio transcription and translation using Gemini 2.5"
+authors = [{ name = "DLV Corporation" }]
 requires-python = ">=3.11"
 dependencies = [
     "pyaudiowpatch>=0.2.12; sys_platform == 'win32'",

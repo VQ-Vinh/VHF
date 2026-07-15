@@ -5,11 +5,9 @@ from pathlib import Path
 from PyInstaller.utils.hooks import collect_data_files
 
 block_cipher = None
-PROJECT_ROOT = Path(SPECPATH).resolve().parents[1]
+PROJECT_ROOT = Path(SPECPATH).resolve().parents[2]
 
-datas = collect_data_files("PySide6", include_py_files=True)
-
-datas += collect_data_files("silero_vad")
+datas = collect_data_files("silero_vad")
 datas += collect_data_files("qtawesome")
 datas += [
     (str(PROJECT_ROOT / "src/prana_elex/ui/resources/styles.qss"), "prana_elex/ui/resources"),
@@ -47,7 +45,7 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[str(PROJECT_ROOT / "scripts/packaging/hooks/hide_subprocess_console.py")],
+    runtime_hooks=[str(PROJECT_ROOT / "scripts/packaging/windows/hooks/hide_subprocess_console.py")],
     excludes=excludes,
     noarchive=False,
     optimize=0,
@@ -74,7 +72,7 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=None,
-    version=str(PROJECT_ROOT / "scripts/packaging/version_info.txt"),
+    version=str(PROJECT_ROOT / "scripts/packaging/windows/version_info.txt"),
 )
 
 COLLECT(

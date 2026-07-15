@@ -1,5 +1,6 @@
 # Virtual environment
 venv/
+.venv/
 .Python
 
 # Runtime data (audio, results, logs)
@@ -36,7 +37,8 @@ dist/
 build/
 release/
 *.spec
-!scripts/packaging/PRANA_ELEX.spec
+!scripts/packaging/windows/PRANA_ELEX.spec
+!scripts/packaging/linux-arm64/PRANA_ELEX.spec
 *.egg-info/
 *.egg-info
 
