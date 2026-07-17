@@ -3,7 +3,7 @@ set "ROOT=%~dp0..\.."
 for %%I in ("%ROOT%") do set "ROOT=%%~fI"
 cd /d "%ROOT%"
 
-if not exist "%ROOT%\venv\Scripts\python.exe" (
+if not exist "%ROOT%\.venv\dev\Scripts\python.exe" (
     echo [ERROR] Virtual environment not found.
     echo [!] Run scripts\setup\setup.bat first, then try again.
     pause
@@ -11,5 +11,5 @@ if not exist "%ROOT%\venv\Scripts\python.exe" (
 )
 
 set "PYTHONPATH=%ROOT%\src"
-"%ROOT%\venv\Scripts\python.exe" -u -m prana_elex.app.cli %*
+"%ROOT%\.venv\dev\Scripts\python.exe" -u -m prana_elex.app.cli %*
 exit /b %errorlevel%

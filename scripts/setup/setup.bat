@@ -17,17 +17,17 @@ if errorlevel 1 (
     exit /b 1
 )
 
-if exist "%ROOT%\venv\Scripts\python.exe" (
+if exist "%ROOT%\.venv\dev\Scripts\python.exe" (
     echo [*] Virtual environment already exists, skipping...
 ) else (
     echo [*] Creating virtual environment...
-    python -m venv "%ROOT%\venv"
+    python -m venv "%ROOT%\.venv\dev"
     if errorlevel 1 exit /b 1
 )
 
 echo [*] Installing dependencies...
-"%ROOT%\venv\Scripts\python.exe" -m pip install --upgrade pip
-"%ROOT%\venv\Scripts\python.exe" -m pip install -e "%ROOT%"
+"%ROOT%\.venv\dev\Scripts\python.exe" -m pip install --upgrade pip
+"%ROOT%\.venv\dev\Scripts\python.exe" -m pip install -e "%ROOT%"
 if errorlevel 1 exit /b 1
 
 if not exist "%ROOT%\VHF_Storage\audio" mkdir "%ROOT%\VHF_Storage\audio"

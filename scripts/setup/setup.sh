@@ -19,12 +19,12 @@ fi
     exit 1
 }
 
-if [ ! -x "$ROOT/venv/bin/python" ]; then
-    "$PYTHON" -m venv "$ROOT/venv"
+if [ ! -x "$ROOT/.venv/dev/bin/python" ]; then
+    "$PYTHON" -m venv "$ROOT/.venv/dev"
 fi
 
-"$ROOT/venv/bin/python" -m pip install --upgrade pip
-"$ROOT/venv/bin/python" -m pip install -e "$ROOT"
+"$ROOT/.venv/dev/bin/python" -m pip install --upgrade pip
+"$ROOT/.venv/dev/bin/python" -m pip install -e "$ROOT"
 mkdir -p "$ROOT/VHF_Storage/audio" "$ROOT/VHF_Storage/results"
 
 echo "[OK] Setup complete. Run: ./scripts/dev/run-cli.sh"

@@ -11,8 +11,4 @@ if [ ! -x "$ROOT/.venv/dev/bin/python" ]; then
 fi
 
 export PYTHONPATH="$ROOT/src"
-if [ $# -eq 0 ]; then
-    exec "$ROOT/.venv/dev/bin/python" -u -m prana_elex.app.cli "$ROOT/config/profiles/raspberry-pi.toml"
-else
-    exec "$ROOT/.venv/dev/bin/python" -u -m prana_elex.app.cli "$@"
-fi
+exec "$ROOT/.venv/dev/bin/python" -c "from prana_elex.ui.app import run_app; run_app()"
