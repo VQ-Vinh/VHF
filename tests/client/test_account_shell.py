@@ -12,7 +12,8 @@ from prana_elex.storage.account import prepare_account_data_root
 try:
     from PySide6.QtWidgets import QApplication
     from prana_elex.config.schema import AppConfig
-    from prana_elex.ui.account import AccountController, AccountState, AuthPage
+    from prana_elex.ui.account import AccountController, AccountState
+    from prana_elex.ui.pages.account import AuthPage
     from prana_elex.ui.i18n import language
     from prana_elex.ui.main_window import MainWindow
 except ModuleNotFoundError as exc:
