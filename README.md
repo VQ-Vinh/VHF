@@ -35,8 +35,13 @@ infra/terraform/                Production Google Cloud infrastructure
 scripts/packaging/windows/      Windows build + Inno Setup
 scripts/packaging/linux-arm64/  Pi 4B build + Debian package
 config/profiles/                Public build configuration per platform
-tests/                          Client, packaging and SaaS security tests
+tests/client/                   Desktop/Pi client and Qt tests
+tests/api/                      PRANA API tests
+tests/admin/                    PRANA Admin tests
+tests/packaging/                Build and release validation tests
 ```
+
+Chi tiết ranh giới và chiều phụ thuộc: [`docs/architecture.md`](docs/architecture.md).
 
 ## Luồng tài khoản
 
@@ -234,8 +239,16 @@ retention cloud. `apt remove` giữ settings, token và dữ liệu người dù
 
 ```powershell
 $env:PYTHONPATH="src;."
-.venv\backend\Scripts\python.exe -m unittest discover -s tests -v
+.venv\backend\Scripts\python.exe -m unittest discover -s tests -t . -v
 .venv\backend\Scripts\python.exe -m compileall -q src services tests
+```
+
+Test Qt chạy bằng development environment:
+
+```powershell
+$env:PYTHONPATH="src;."
+$env:QT_QPA_PLATFORM="offscreen"
+.venv\dev\Scripts\python.exe -m unittest tests.client.test_account_shell -v
 ```
 
 Trước release cần chạy thêm Terraform validation, build/validator từng platform,
