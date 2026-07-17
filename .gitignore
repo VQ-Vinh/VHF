@@ -14,6 +14,15 @@ __pycache__/
 .env
 .secrets/
 vhf-ai-*.json
+auth.json
+credentials.json
+
+# Terraform local state and production values
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
 
 # Logs
 *.log

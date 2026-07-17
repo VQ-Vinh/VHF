@@ -1,0 +1,11 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Desktop/Pi users can only access SaaS data through prana-api.
+    // Firebase Admin/Google Cloud server SDKs use IAM and bypass these rules.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
