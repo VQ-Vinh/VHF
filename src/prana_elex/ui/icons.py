@@ -11,8 +11,8 @@ _phosphor_icons: IconicFont | None = None
 def phosphor_icon(
     name: str,
     *,
-    color: str = "#B8B8C8",
-    active_color: str = "#00D7ED",
+    color: str = "#4D6570",
+    active_color: str = "#087F8C",
     scale_factor: float = 1.0,
 ) -> QIcon:
     global _phosphor_icons

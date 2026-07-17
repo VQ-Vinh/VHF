@@ -3,6 +3,7 @@ from pathlib import Path
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QHeaderView, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout
 
 from prana_elex.pipeline.models import ProcessingResult
+from prana_elex.ui.i18n import language, tr
 
 _MAX_ROWS = 1000
 
@@ -10,7 +11,7 @@ _MAX_ROWS = 1000
 class HistoryDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Translation History")
+        self.setWindowTitle(tr("history.title"))
         self.setMinimumSize(700, 500)
         self.setObjectName("HistoryDialog")
 
@@ -20,15 +21,15 @@ class HistoryDialog(QDialog):
         top_layout = QHBoxLayout()
         self._search = QLineEdit()
         self._search.setObjectName("HistorySearch")
-        self._search.setPlaceholderText("Search transcripts...")
+        self._search.setPlaceholderText(tr("history.search"))
         self._search.textChanged.connect(self._filter)
         top_layout.addWidget(self._search)
 
-        self._export_btn = QPushButton("Export")
+        self._export_btn = QPushButton(tr("history.export"))
         self._export_btn.clicked.connect(self._export)
         top_layout.addWidget(self._export_btn)
 
-        self._clear_btn = QPushButton("Clear All")
+        self._clear_btn = QPushButton(tr("history.clear"))
         self._clear_btn.clicked.connect(self._clear_all)
         top_layout.addWidget(self._clear_btn)
 
@@ -36,7 +37,9 @@ class HistoryDialog(QDialog):
 
         self._table = QTableWidget()
         self._table.setColumnCount(4)
-        self._table.setHorizontalHeaderLabels(["Time", "Language", "Transcript", "Translation"])
+        self._table.setHorizontalHeaderLabels([
+            tr("history.time"), tr("history.language"), tr("history.transcript"), tr("history.translation")
+        ])
         self._table.setAlternatingRowColors(True)
         self._table.setWordWrap(True)
         self._table.verticalHeader().setDefaultSectionSize(60)
@@ -51,6 +54,16 @@ class HistoryDialog(QDialog):
         layout.addWidget(self._table)
 
         self._results: list[ProcessingResult] = []
+        language.changed.connect(self._retranslate)
+
+    def _retranslate(self, *_args) -> None:
+        self.setWindowTitle(tr("history.title"))
+        self._search.setPlaceholderText(tr("history.search"))
+        self._export_btn.setText(tr("history.export"))
+        self._clear_btn.setText(tr("history.clear"))
+        self._table.setHorizontalHeaderLabels([
+            tr("history.time"), tr("history.language"), tr("history.transcript"), tr("history.translation")
+        ])
 
     def add_result(self, result: ProcessingResult) -> None:
         if len(self._results) >= _MAX_ROWS:
@@ -94,3 +107,6 @@ class HistoryDialog(QDialog):
     def _clear_all(self) -> None:
         self._results.clear()
         self._table.setRowCount(0)
+
+    def clear(self) -> None:
+        self._clear_all()

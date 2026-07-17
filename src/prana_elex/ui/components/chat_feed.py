@@ -4,15 +4,16 @@ from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
 from prana_elex.ui.icons import phosphor_icon
+from prana_elex.ui.i18n import language, tr
 
 
 _STATE_COLORS = {
-    "starting": "#F2B84B",
-    "listening": "#00DF72",
-    "recording": "#00D7ED",
-    "error": "#FF5D68",
-    "stopped": "#777789",
-    "stopping": "#F2B84B",
+    "starting": "#A66B12",
+    "listening": "#21835A",
+    "recording": "#087F8C",
+    "error": "#C34655",
+    "stopped": "#607683",
+    "stopping": "#A66B12",
 }
 
 
@@ -63,9 +64,9 @@ class ChatFeed(QWidget):
 
         header_layout = QHBoxLayout()
         header_layout.setContentsMargins(0, 4, 0, 4)
-        feed_label = QLabel("LIVE TRANSLATION")
-        feed_label.setObjectName("FeedHeader")
-        header_layout.addWidget(feed_label)
+        self._feed_label = QLabel()
+        self._feed_label.setObjectName("FeedHeader")
+        header_layout.addWidget(self._feed_label)
         header_layout.addStretch()
 
         self._history_btn = QPushButton()
@@ -75,8 +76,8 @@ class ChatFeed(QWidget):
         )
         self._history_btn.setIconSize(QSize(18, 18))
         self._history_btn.setCursor(Qt.PointingHandCursor)
-        self._history_btn.setToolTip("Open translation history")
-        self._history_btn.setAccessibleName("Translation history")
+        self._history_btn.setToolTip(tr("feed.history"))
+        self._history_btn.setAccessibleName(tr("feed.history"))
         self._history_btn.clicked.connect(self._on_history)
         header_layout.addWidget(self._history_btn)
         layout.addLayout(header_layout)
@@ -90,6 +91,20 @@ class ChatFeed(QWidget):
         self._feed_layout = QVBoxLayout(scroll_content)
         self._feed_layout.setContentsMargins(0, 6, 8, 6)
         self._feed_layout.setSpacing(0)
+        self._empty = QFrame()
+        self._empty.setObjectName("FeedEmptyState")
+        empty_layout = QVBoxLayout(self._empty)
+        empty_layout.setAlignment(Qt.AlignCenter)
+        self._empty_title = QLabel()
+        self._empty_title.setObjectName("FeedEmptyTitle")
+        self._empty_title.setAlignment(Qt.AlignCenter)
+        self._empty_body = QLabel()
+        self._empty_body.setObjectName("FeedEmptyBody")
+        self._empty_body.setAlignment(Qt.AlignCenter)
+        self._empty_body.setWordWrap(True)
+        empty_layout.addWidget(self._empty_title)
+        empty_layout.addWidget(self._empty_body)
+        self._feed_layout.addWidget(self._empty, 1)
         self._feed_layout.addStretch()
 
         self._scroll.setWidget(scroll_content)
@@ -117,7 +132,7 @@ class ChatFeed(QWidget):
 
         self._gcs_dot = QLabel("●")
         self._gcs_dot.setObjectName("GcsDot")
-        self._gcs_label = QLabel("GCS OFF")
+        self._gcs_label = QLabel("API OFF")
         self._gcs_label.setObjectName("GcsLabel")
         status_layout.addWidget(self._gcs_dot)
         status_layout.addWidget(self._gcs_label)
@@ -126,6 +141,16 @@ class ChatFeed(QWidget):
         self._state = "stopped"
         self.set_state("stopped")
         self.set_gcs_status(False, False, None, 0, None)
+        language.changed.connect(self._retranslate)
+        self._retranslate()
+
+    def _retranslate(self, *_args) -> None:
+        self._feed_label.setText(tr("feed.title"))
+        self._history_btn.setToolTip(tr("feed.history"))
+        self._history_btn.setAccessibleName(tr("feed.history"))
+        self._empty_title.setText(tr("feed.empty_title"))
+        self._empty_body.setText(tr("feed.empty_body"))
+        self.set_state(self._state)
 
     def add_message(
         self,
@@ -136,6 +161,7 @@ class ChatFeed(QWidget):
         confidence: float | None = None,
     ) -> None:
         bubble = ChatBubble(source, transcript, translation, timestamp, confidence)
+        self._empty.setVisible(False)
         self._feed_layout.insertWidget(self._feed_layout.count() - 1, bubble)
         scrollbar = self._scroll.verticalScrollBar()
         at_bottom = scrollbar.value() >= scrollbar.maximum() - 20
@@ -143,10 +169,13 @@ class ChatFeed(QWidget):
             QTimer.singleShot(50, lambda: scrollbar.setValue(scrollbar.maximum()))
 
     def clear(self) -> None:
-        while self._feed_layout.count() > 1:
-            item = self._feed_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+        for index in range(self._feed_layout.count() - 1, -1, -1):
+            item = self._feed_layout.itemAt(index)
+            widget = item.widget()
+            if widget and widget is not self._empty:
+                self._feed_layout.takeAt(index)
+                widget.deleteLater()
+        self._empty.setVisible(True)
 
     def get_state(self) -> str:
         return self._state
@@ -155,12 +184,12 @@ class ChatFeed(QWidget):
         self._state = state
         color = _STATE_COLORS.get(state, "#777789")
         labels = {
-            "listening": "LISTENING",
-            "recording": "RECEIVING",
-            "error": "ERROR",
-            "starting": "STARTING",
-            "stopping": "STOPPING",
-            "stopped": "IDLE",
+            "listening": tr("feed.listening"),
+            "recording": tr("feed.receiving"),
+            "error": tr("feed.error"),
+            "starting": tr("feed.starting"),
+            "stopping": tr("feed.stopping"),
+            "stopped": tr("feed.idle"),
         }
         self._listening_dot.setStyleSheet(f"color: {color};")
         self._listening_label.setText(labels.get(state, "IDLE"))
@@ -168,11 +197,11 @@ class ChatFeed(QWidget):
 
     def set_latency(self, latency_ms: float) -> None:
         if latency_ms <= 0:
-            self._latency_label.setText("LATENCY  --")
+            self._latency_label.setText(f"{tr('feed.latency')}  --")
         elif latency_ms < 1000:
-            self._latency_label.setText(f"LATENCY  {latency_ms:.0f}ms")
+            self._latency_label.setText(f"{tr('feed.latency')}  {latency_ms:.0f}ms")
         else:
-            self._latency_label.setText(f"LATENCY  {latency_ms / 1000:.1f}s")
+            self._latency_label.setText(f"{tr('feed.latency')}  {latency_ms / 1000:.1f}s")
 
     def set_gcs_status(
         self,
@@ -183,20 +212,20 @@ class ChatFeed(QWidget):
         last_upload_ok: bool | None,
     ) -> None:
         if not enabled:
-            color, text, tooltip = "#777789", "GCS OFF", "Cloud upload is disabled"
+            color, text, tooltip = "#777789", "API OFF", "PRANA API is not configured"
         elif retry_queue:
-            color, text = "#F2B84B", f"GCS RETRY ({retry_queue})"
+            color, text = "#F2B84B", f"API RETRY ({retry_queue})"
             tooltip = error or f"{retry_queue} file(s) waiting to upload"
         elif error:
-            color, text, tooltip = "#FF5D68", "GCS ERROR", error
+            color, text, tooltip = "#C34655", tr("feed.api_error"), error
         elif last_upload_ok is True:
-            color, text, tooltip = "#00DF72", "GCS SYNCED", "Latest audio and result uploaded"
+            color, text, tooltip = "#21835A", tr("feed.api_ok"), "Latest translation request succeeded"
         elif last_upload_ok is False:
-            color, text, tooltip = "#FF5D68", "GCS ERROR", "Latest upload failed"
+            color, text, tooltip = "#C34655", tr("feed.api_error"), "Latest translation request failed"
         elif ready:
-            color, text, tooltip = "#00D7ED", "GCS READY", "Cloud client is ready; no upload yet"
+            color, text, tooltip = "#087F8C", tr("feed.api_ready"), "Signed in and ready"
         else:
-            color, text, tooltip = "#F2B84B", "GCS STARTING", "Cloud client is initializing"
+            color, text, tooltip = "#F2B84B", "API STARTING", "PRANA API is initializing"
 
         self._gcs_dot.setStyleSheet(f"color: {color};")
         self._gcs_label.setStyleSheet(f"color: {color};")

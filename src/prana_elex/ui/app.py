@@ -8,12 +8,15 @@ import qasync
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QApplication
 
+from prana_elex.backend.client import BackendClient
 from prana_elex.config.schema import AppConfig
-from prana_elex.config.user_settings import load_settings
+from prana_elex.config.user_settings import load_settings, save_settings
 from prana_elex.pipeline.events import event_bus
-from prana_elex.pipeline.orchestrator import PipelineOrchestrator, PipelineState
+from prana_elex.pipeline.orchestrator import PipelineState
+from prana_elex.ui.account import AccountController
 from prana_elex.ui.main_window import MainWindow
 from prana_elex.ui.icons import phosphor_icon
+from prana_elex.ui.i18n import language
 from prana_elex.ui.tray import TrayManager
 from prana_elex.common.logger import get_logger, setup_logger
 
@@ -25,6 +28,7 @@ class _EventBusBridge(QObject):
     language_detected = Signal(str)
     state_changed = Signal(object, str)
     error_occurred = Signal(str)
+    access_denied = Signal(str, str)
     pipeline_started = Signal()
 
     def __init__(self):
@@ -33,6 +37,7 @@ class _EventBusBridge(QObject):
         event_bus.on("language_detected", self.language_detected.emit)
         event_bus.on("state_changed", self.state_changed.emit)
         event_bus.on("error_occurred", self.error_occurred.emit)
+        event_bus.on("access_denied", self.access_denied.emit)
         event_bus.on("pipeline_started", self.pipeline_started.emit)
 
 
@@ -56,8 +61,11 @@ def _bundle_root() -> Path:
 def _find_config() -> Path:
     root = _bundle_root()
     candidates = []
-    if _is_frozen() and sys.platform.startswith("linux"):
-        candidates.append(root / "config" / "raspberry-pi.toml")
+    profile_dir = root / "config" if _is_frozen() else root / "config" / "profiles"
+    if sys.platform.startswith("linux"):
+        candidates.append(profile_dir / "raspberry-pi.toml")
+    if sys.platform == "win32":
+        candidates.append(profile_dir / "windows-device.toml")
     candidates.append(root / "config" / "default.toml")
     if not _is_frozen():
         candidates.append(root / "src" / "prana_elex" / "config" / "default.toml")
@@ -94,37 +102,17 @@ def run_app(
     app.setWindowIcon(
         phosphor_icon(
             "ph.radio",
-            color="#00D7ED",
-            active_color="#00D7ED",
+            color="#087F8C",
+            active_color="#087F8C",
             scale_factor=0.9,
         )
     )
     _load_styles(app)
 
-    if _is_frozen():
-        settings = load_settings()
-        if sys.platform.startswith("linux"):
-            data_value = settings.get("data_dir", "").strip()
-            credentials_value = settings.get("credentials_path", "").strip()
-            data_dir = Path(data_value).expanduser()
-            credentials = Path(credentials_value).expanduser()
-            if not data_value or not credentials_value or not data_dir.is_dir() or not credentials.is_file():
-                from prana_elex.ui.dialogs.first_run import FirstRunDialog
-
-                if not FirstRunDialog().exec():
-                    return
-                settings = load_settings()
-
-        default_data = Path.home() / (
-            "PRANA_ELEX_Data" if sys.platform.startswith("linux") else "Documents/PRANA ELEX Data"
-        )
-        data_dir = settings.get("data_dir") or str(default_data)
-        config.general.data_dir = Path(data_dir)
-        credentials_path = settings.get("credentials_path", "").strip()
-        if credentials_path:
-            config.google_cloud.credentials_path = credentials_path
-
-    config.resolve_paths()
+    settings = load_settings()
+    language.set_locale(settings.get("ui_locale", "en"))
+    language.changed.connect(lambda locale: save_settings(ui_locale=locale))
+    data_value = settings.get("data_dir", "").strip()
     config.audio.capture_mode = capture_mode
     if device_index >= 0:
         config.audio.device_index = device_index
@@ -132,9 +120,19 @@ def run_app(
 
     setup_logger(level=config.general.log_level, console_level="WARNING")
 
+    backend = BackendClient(
+        config.backend.api_url,
+        config.backend.firebase_api_key,
+        config.backend.timeout_seconds,
+    )
+    account = AccountController(backend)
     bridge = _EventBusBridge()
-    orchestrator = PipelineOrchestrator(config)
-    window = MainWindow(config, orchestrator)
+    window = MainWindow(
+        config,
+        account_controller=account,
+        data_root=data_value,
+        require_installer_data=_is_frozen() and sys.platform == "win32",
+    )
     tray = TrayManager(window)
 
     bridge.result_ready.connect(window._on_result)
@@ -142,13 +140,18 @@ def run_app(
     bridge.state_changed.connect(window._on_state_changed)
     bridge.state_changed.connect(tray._on_state_changed)
     bridge.error_occurred.connect(window._on_error)
+    bridge.access_denied.connect(window.on_access_denied)
+    window.account_active_changed.connect(tray.set_authenticated)
 
     loop = qasync.QEventLoop(app)
     asyncio.set_event_loop(loop)
     window.show()
+    window.start_account_flow()
 
     try:
         with loop:
             loop.run_forever()
     finally:
-        orchestrator.stop()
+        if window._orchestrator:
+            window._orchestrator.shutdown()
+        backend.close()
