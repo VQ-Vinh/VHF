@@ -57,6 +57,10 @@ echo "[2/7] Installing project and PyInstaller..."
 "$VENV/bin/python" -m pip install --upgrade pip
 "$VENV/bin/python" -m pip install -e "$ROOT" pyinstaller
 
+echo "[CHECK] Validating production client configuration..."
+"$VENV/bin/python" "$ROOT/scripts/packaging/common/validate_client_config.py" \
+    "$ROOT/config/profiles/raspberry-pi.toml"
+
 echo "[3/7] Cleaning Linux ARM64 outputs only..."
 rm -rf -- "$WORK_DIR" "$DIST_DIR" "$RELEASE_DIR"
 mkdir -p "$WORK_DIR" "$DIST_DIR" "$RELEASE_DIR"

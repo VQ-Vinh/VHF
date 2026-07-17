@@ -33,6 +33,10 @@ echo [3/7] Installing PyInstaller...
 "%VENV%\Scripts\python.exe" -m pip install pyinstaller
 if errorlevel 1 goto :error
 
+echo [CHECK] Validating production client configuration...
+"%VENV%\Scripts\python.exe" "%ROOT%\scripts\packaging\common\validate_client_config.py" "%ROOT%\config\profiles\windows-device.toml"
+if errorlevel 1 goto :error
+
 echo [4/7] Cleaning previous build...
 if exist "%WORK_DIR%" rmdir /s /q "%WORK_DIR%"
 if exist "%DIST_DIR%" rmdir /s /q "%DIST_DIR%"
@@ -70,7 +74,7 @@ if defined ISCC (
 
 echo.
 echo [OK] Output: %DIST_DIR%\PRANA_ELEX\PRANA_ELEX.exe
-echo [SECURITY] Google service-account credentials are not included in the release.
+echo [SECURITY] The desktop release uses PRANA API and contains no Google credentials.
 pause
 exit /b 0
 

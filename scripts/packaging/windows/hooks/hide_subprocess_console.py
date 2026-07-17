@@ -2,7 +2,7 @@
 
 PyInstaller's ``console=False`` hides the console of the main executable, but
 console programs launched by dependencies (notably ``gcloud.cmd`` from
-google-auth) can still briefly create their own windows.
+networking libraries) can still briefly create their own windows.
 """
 
 from __future__ import annotations

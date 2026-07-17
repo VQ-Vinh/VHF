@@ -16,7 +16,10 @@ datas += [
 
 hiddenimports = [
     "qasync",
-    "google.genai",
+    "httpx",
+    "cryptography",
+    "keyring",
+    "keyring.backends.SecretService",
     "silero_vad",
     "silero_vad.data",
     "webrtcvad",

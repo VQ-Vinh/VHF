@@ -11,12 +11,15 @@ datas = collect_data_files("silero_vad")
 datas += collect_data_files("qtawesome")
 datas += [
     (str(PROJECT_ROOT / "src/prana_elex/ui/resources/styles.qss"), "prana_elex/ui/resources"),
-    (str(PROJECT_ROOT / "config/default.toml"), "config"),
+    (str(PROJECT_ROOT / "config/profiles/windows-device.toml"), "config"),
 ]
 
 hiddenimports = [
     "qasync",
-    "google.genai",
+    "httpx",
+    "cryptography",
+    "keyring",
+    "keyring.backends.Windows",
     "silero_vad",
     "silero_vad.data",
     "webrtcvad",
@@ -71,7 +74,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,
+    icon=str(PROJECT_ROOT / "scripts/packaging/windows/installer/assets/prana-elex.ico"),
     version=str(PROJECT_ROOT / "scripts/packaging/windows/version_info.txt"),
 )
 

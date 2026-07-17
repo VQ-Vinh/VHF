@@ -5,19 +5,22 @@ import os
 import platform
 import struct
 import subprocess
+import tomllib
 from pathlib import Path
 
 
 FORBIDDEN_NAMES = {
     "gcs-service-account.json",
     "settings.json",
+    "auth.json",
+    "credentials.json",
 }
 FORBIDDEN_SUFFIXES = {".pfx", ".p12", ".key"}
 
 REQUIRED_FILES = {
     "windows": {
         "PRANA_ELEX.exe",
-        "_internal/config/default.toml",
+        "_internal/config/windows-device.toml",
         "_internal/prana_elex/ui/resources/styles.qss",
     },
     "linux-arm64": {
@@ -81,6 +84,23 @@ def _validate_linux_dependencies(files: dict[str, Path]) -> list[str]:
     return errors
 
 
+def _validate_backend_config(path: Path | None) -> list[str]:
+    if path is None:
+        return []
+    try:
+        with path.open("rb") as stream:
+            backend = tomllib.load(stream).get("backend", {})
+    except (OSError, tomllib.TOMLDecodeError):
+        return [f"Cannot parse backend build config: {path.name}"]
+    api_url = str(backend.get("api_url", ""))
+    firebase_key = str(backend.get("firebase_api_key", ""))
+    if not api_url.startswith("https://") or "REPLACE_WITH" in api_url:
+        return ["Release backend.api_url must be the production HTTPS Cloud Run URL"]
+    if not firebase_key or "REPLACE_WITH" in firebase_key:
+        return ["Release backend.firebase_api_key must contain the Firebase Web API key"]
+    return []
+
+
 def validate(platform_name: str, bundle: Path) -> int:
     bundle = bundle.resolve()
     if not bundle.is_dir():
@@ -99,11 +119,19 @@ def validate(platform_name: str, bundle: Path) -> int:
         if path.name.lower() in FORBIDDEN_NAMES
         or path.suffix.lower() in FORBIDDEN_SUFFIXES
         or "service-account" in path.name.lower()
+        or "refresh-token" in path.name.lower()
+        or "device-private" in path.name.lower()
         or _is_runtime_data(relative)
         or _contains_private_key(path)
     )
 
     errors: list[str] = []
+    config_relative = (
+        "_internal/config/windows-device.toml"
+        if platform_name == "windows"
+        else "_internal/config/raspberry-pi.toml"
+    )
+    errors.extend(_validate_backend_config(relative_files.get(config_relative)))
     if platform_name == "linux-arm64":
         executable = relative_files.get("PRANA_ELEX")
         if executable and _elf_machine(executable) != 183:

@@ -12,12 +12,18 @@ class ReleaseValidatorTests(unittest.TestCase):
         bundle = root / "PRANA_ELEX"
         for relative in (
             "PRANA_ELEX.exe",
-            "_internal/config/default.toml",
+            "_internal/config/windows-device.toml",
             "_internal/prana_elex/ui/resources/styles.qss",
         ):
             path = bundle / relative
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.touch()
+            if path.suffix == ".toml":
+                path.write_text(
+                    '[backend]\napi_url = "https://api.example.run.app"\nfirebase_api_key = "public-key"\n',
+                    encoding="utf-8",
+                )
+            else:
+                path.touch()
         return bundle
 
     def test_valid_windows_bundle(self) -> None:
@@ -28,6 +34,16 @@ class ReleaseValidatorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             bundle = self._windows_bundle(Path(temporary))
             (bundle / "gcs-service-account.json").touch()
+            self.assertEqual(validate("windows", bundle), 1)
+
+    def test_placeholder_backend_config_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            bundle = self._windows_bundle(Path(temporary))
+            config = bundle / "_internal/config/windows-device.toml"
+            config.write_text(
+                '[backend]\napi_url = "https://REPLACE_WITH_PRANA_API_URL"\nfirebase_api_key = ""\n',
+                encoding="utf-8",
+            )
             self.assertEqual(validate("windows", bundle), 1)
 
 
