@@ -1,25 +1,21 @@
 from __future__ import annotations
 
-import io
 import queue
-import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
 from enum import Enum, auto
 from pathlib import Path
 
 import numpy as np
-import soundfile as sf
 
 from prana_elex.audio.recorder import AudioRecorder
 from prana_elex.config.schema import AppConfig
 from prana_elex.backend.client import BackendApiError, BackendClient
 from prana_elex.pipeline.models import ProcessingResult
+from prana_elex.pipeline.segment_processor import SegmentJob, SegmentProcessor
 from prana_elex.storage.local import LocalStorage
 from prana_elex.common.logger import get_logger
-from prana_elex.common.timing import LatencyTracker
 from prana_elex.vad.base import VADBackend, VADState
 from prana_elex.vad.silero import SileroVAD
 from prana_elex.vad.webrtc import WebRTCVAD
@@ -29,16 +25,6 @@ from prana_elex.pipeline.events import event_bus
 logger = get_logger(__name__)
 
 SpeechBuffer = list[np.ndarray]
-TARGET_SR = 16000
-
-
-@dataclass
-class SegmentJob:
-    audio_data: np.ndarray
-    session_id: str
-    sequence: int
-    sample_rate: int
-    timestamp: float = field(default_factory=time.time)
 
 
 class PipelineState(Enum):
@@ -64,11 +50,8 @@ class PipelineOrchestrator:
             config.backend.firebase_api_key,
             config.backend.timeout_seconds,
         )
+        self._segment_processor = SegmentProcessor(config, self._backend, self._storage)
         self._vad = self._create_vad()
-
-        self._backend_error: str | None = None
-        self._last_backend_ok: bool | None = None
-        self._failed_audio: dict[tuple[str, int], Path] = {}
 
         self._vad_buffer: SpeechBuffer = []
         self._recording = False
@@ -144,7 +127,7 @@ class PipelineOrchestrator:
             if profile.get("status") != "active":
                 raise RuntimeError("SUBSCRIPTION_INACTIVE: Your account is waiting for activation or has expired")
             self._backend.ensure_device()
-            self._backend_error = None
+            self._segment_processor.backend_error = None
 
             self._executor = ThreadPoolExecutor(max_workers=self._num_workers)
             for i in range(self._num_workers):
@@ -345,232 +328,19 @@ class PipelineOrchestrator:
 
         logger.info("Segment processor thread stopped")
 
-    @staticmethod
-    def _resample(audio: np.ndarray, orig_sr: int, target_sr: int) -> np.ndarray:
-        if orig_sr == target_sr:
-            return audio
-        if audio.ndim > 1:
-            audio = audio.squeeze()
-        ratio = target_sr / orig_sr
-        new_len = int(len(audio) * ratio)
-        indices = np.linspace(0, len(audio) - 1, new_len)
-        return np.interp(indices, np.arange(len(audio)), audio).astype(audio.dtype)
-
-    @staticmethod
-    def _trim_trailing_silence(audio: np.ndarray, sample_rate: int) -> np.ndarray:
-        if len(audio) == 0:
-            return audio
-        threshold = 50
-        frame_length = int(sample_rate * 0.032)
-        if len(audio) <= frame_length:
-            return audio
-        audio_float = audio.astype(np.float32)
-        end = len(audio)
-        while end > frame_length:
-            frame = audio_float[end - frame_length:end]
-            if np.sqrt(np.mean(frame ** 2)) >= threshold:
-                break
-            end -= frame_length
-        return audio[:end]
-
     # ── Process segment ─────────────────────────────────────────────
     def _process_segment(self, job: SegmentJob) -> None:
-        tracker = LatencyTracker()
-        tracker.mark("segment_received")
-
-        queue_wait_ms = max(0.0, (time.time() - job.timestamp) * 1000)
-
-        sid = job.session_id
-        seq = job.sequence
-        sr = job.sample_rate
-
-        audio_data = job.audio_data
-        peak = np.abs(audio_data).max()
-        if 0 < peak < 5000:
-            gain = 30000.0 / peak
-            audio_data = (audio_data.astype(np.float32) * gain).clip(-32768, 32767).astype(np.int16)
-
-        sr = TARGET_SR
-        audio_data = self._resample(audio_data, job.sample_rate, sr)
-
-        segment_rms = np.sqrt(np.mean(audio_data.astype(np.float32) ** 2))
-        if segment_rms < 50:
-            return
-
-        audio_data = self._trim_trailing_silence(audio_data, sr)
-        duration_ms = int(len(audio_data) / sr * 1000)
-        if duration_ms < 100:
-            return
-
-        buf = io.BytesIO()
-        sf.write(buf, audio_data, sr, subtype="PCM_16", format="WAV")
-        wav_bytes = buf.getvalue()
-
-        audio_path = self._storage.save_audio(audio_data, sr, sid, seq)
-
-        tracker.mark("backend_start")
-        try:
-            result = self._backend.process_audio(
-                audio_path,
-                sid,
-                seq,
-                self._config.translation.target_language,
-                audio_bytes=wav_bytes,
-            )
-            self._last_backend_ok = True
-            self._backend_error = None
-            self._failed_audio.pop((sid, seq), None)
-        except BackendApiError as exc:
-            self._last_backend_ok = False
-            self._backend_error = f"{exc.code}: {exc}"
-            if exc.code in {"AUTH_REQUIRED", "EMAIL_NOT_VERIFIED", "SUBSCRIPTION_INACTIVE", "DEVICE_REVOKED", "DEVICE_LIMIT_REACHED"}:
-                event_bus.emit("access_denied", exc.code, str(exc))
-            result = ProcessingResult(
-                session_id=sid,
-                sequence=seq,
-                audio_file=audio_path.name,
-                error=exc.code,
-                processing_notes=[str(exc)],
-            )
-            self._failed_audio[(sid, seq)] = audio_path
-        tracker.mark("backend_done")
-
-        process_ms = tracker.total_ms()
-        result.latency_ms = process_ms + queue_wait_ms
-        result.queue_wait_ms = queue_wait_ms
-
-        event_bus.emit("result_ready", result)
-        if result.detected_language:
-            event_bus.emit("language_detected", result.detected_language)
-
-        tracker.mark("save_result")
-        self._storage.save_result(result)
-
-        self._print_result(result)
-
-        seg_duration = duration_ms / 1000
-        logger.info(
-            "Segment processed",
-            extra={
-                "session": sid,
-                "sequence": seq,
-                "audio": audio_path.name,
-                "duration_s": round(seg_duration, 1),
-                "latency_s": round(result.latency_ms / 1000, 1),
-                "queue_wait_ms": round(queue_wait_ms, 1),
-                "process_ms": round(process_ms, 1),
-                "confidence": result.confidence,
-                "language": result.detected_language,
-                "error": result.error,
-            },
-        )
-
-        if result.has_error:
-            logger.warning(
-                "Segment ended with error",
-                extra={
-                    "session": sid,
-                    "sequence": seq,
-                    "error": result.error,
-                },
-            )
-
-    @staticmethod
-    def _print_result(result: ProcessingResult) -> None:
-        if sys.stdout is None:
-            return
-        sep = "-" * 60
-        lines = [f"\n{sep}"]
-        lines.append(f"  [#{result.sequence}] {result.timestamp.strftime('%H:%M:%S')}")
-        lines.append(f"  LANG: {result.detected_language.upper() or '?'}  |  CONF: {result.confidence:.0%}")
-        if result.transcript_restored:
-            lines.append(f"  TXT:  {result.transcript_restored}")
-        if result.translation:
-            lines.append(f"  TRN:  {result.translation}")
-        if result.corrections:
-            for c in result.corrections:
-                lines.append(f"  ! {c}")
-        if result.uncertain_segments:
-            lines.append(f"  UNCERTAIN: {', '.join(result.uncertain_segments)}")
-        if result.error:
-            lines.append(f"  ERROR: {result.error}")
-        if result.latency_ms:
-            process_ms = result.latency_ms - result.queue_wait_ms
-            if result.queue_wait_ms > 0:
-                lines.append(f"  LATENCY: {result.latency_ms:.0f}ms (process: {process_ms:.0f}ms | queue: {result.queue_wait_ms:.0f}ms)")
-            else:
-                lines.append(f"  LATENCY: {result.latency_ms:.0f}ms")
-        lines.append(f"{sep}\n")
-        sys.stdout.write("\n".join(lines))
-        sys.stdout.flush()
+        self._segment_processor.process(job)
 
     # ── Batch processing ────────────────────────────────────────────
     def process_file(self, file_path: str | Path) -> ProcessingResult:
-        file_path = Path(file_path)
-        if not file_path.exists():
-            logger.error(f"File not found: {file_path}")
-            return ProcessingResult(
-                session_id=self._session.session_id,
-                sequence=0,
-                audio_file=file_path.name,
-                error="file_not_found",
-            )
-
-        audio, sr = sf.read(str(file_path))
-
-        if audio.ndim > 1:
-            audio = audio.mean(axis=1)
-
-        target_sr = 16000
-        if sr != target_sr:
-            ratio = target_sr / sr
-            new_len = int(len(audio) * ratio)
-            indices = np.linspace(0, len(audio) - 1, new_len)
-            audio = np.interp(indices, np.arange(len(audio)), audio)
-            sr = target_sr
-
-        peak = np.abs(audio).max()
-        if peak > 0.99:
-            audio = audio / peak * 0.95
-
-        audio_int16 = (audio * 32767).clip(-32768, 32767).astype(np.int16)
-
-        seq = self._session.next_sequence()
-        sid = self._session.session_id
-
-        audio_path = self._storage.save_audio(audio_int16, sr, sid, seq)
-
-        return self._process_segment_sync(audio_path, sid, seq)
-
-    def _process_segment_sync(self, audio_path: Path, sid: str, seq: int) -> ProcessingResult:
-        tracker = LatencyTracker()
-        tracker.mark("start")
-
-        tracker.mark("backend_start")
-        result = self._backend.process_audio(
-            audio_path, sid, seq, self._config.translation.target_language
+        path = Path(file_path)
+        sequence = self._session.next_sequence() if path.exists() else 0
+        return self._segment_processor.process_file(
+            path,
+            self._session.session_id,
+            sequence,
         )
-        tracker.mark("backend_done")
-
-        result.latency_ms = tracker.total_ms()
-
-        self._print_result(result)
-        self._storage.save_result(result)
-
-        logger.info(
-            "Batch file processed",
-            extra={
-                "file": audio_path.name,
-                "session": sid,
-                "sequence": seq,
-                "latency_ms": round(result.latency_ms, 1),
-                "confidence": result.confidence,
-                "language": result.detected_language,
-                "error": result.error,
-            },
-        )
-
-        return result
 
     # ── Status ──────────────────────────────────────────────────────
     def get_status(self) -> dict:
@@ -586,8 +356,8 @@ class PipelineOrchestrator:
             "vad_backend": self._vad.name,
             "backend_enabled": bool(self._config.backend.api_url),
             "backend_ready": self._backend.ready,
-            "backend_error": self._backend_error,
-            "backend_last_request_ok": self._last_backend_ok,
+            "backend_error": self._segment_processor.backend_error,
+            "backend_last_request_ok": self._segment_processor.last_backend_ok,
         }
 
     def get_account(self) -> dict:
@@ -610,31 +380,8 @@ class PipelineOrchestrator:
             if time.monotonic() >= deadline:
                 return False
             time.sleep(0.05)
-        self._failed_audio.clear()
+        self._segment_processor.clear_failures()
         return self.state == PipelineState.IDLE
 
     def retry_last_failed(self) -> bool:
-        if not self._failed_audio:
-            return False
-        (sid, seq), audio_path = next(reversed(self._failed_audio.items()))
-        threading.Thread(target=self._retry_failed, args=(audio_path, sid, seq), daemon=True).start()
-        return True
-
-    def _retry_failed(self, audio_path: Path, sid: str, seq: int) -> None:
-        try:
-            result = self._backend.process_audio(
-                audio_path, sid, seq, self._config.translation.target_language
-            )
-            self._storage.save_result(result)
-            self._failed_audio.pop((sid, seq), None)
-            self._last_backend_ok = True
-            self._backend_error = None
-            event_bus.emit("result_ready", result)
-            if result.detected_language:
-                event_bus.emit("language_detected", result.detected_language)
-        except BackendApiError as exc:
-            self._last_backend_ok = False
-            self._backend_error = f"{exc.code}: {exc}"
-            if exc.code in {"AUTH_REQUIRED", "EMAIL_NOT_VERIFIED", "SUBSCRIPTION_INACTIVE", "DEVICE_REVOKED", "DEVICE_LIMIT_REACHED"}:
-                event_bus.emit("access_denied", exc.code, str(exc))
-            event_bus.emit("error_occurred", self._backend_error)
+        return self._segment_processor.retry_last_failed()
