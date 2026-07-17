@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-heading"><div><h1>{{ t('users.title') }}</h1><p>{{ t('users.subtitle') }}</p></div></div>
+<form class="filter-bar" method="get" action="/users">
+  <label><span>{{ t('users.search') }}</span><input name="q" value="{{ filters.q }}" placeholder="name@example.com"></label>
+  <label><span>{{ t('common.status') }}</span><select name="status"><option value="">{{ t('users.status') }}</option>{% for value in statuses %}<option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ value|replace('_', ' ') }}</option>{% endfor %}</select></label>
+  <label><span>{{ t('common.plan') }}</span><select name="plan"><option value="">{{ t('users.plan') }}</option>{% for plan in plans %}<option value="{{ plan.id }}" {% if filters.plan == plan.id %}selected{% endif %}>{{ plan.name }}</option>{% endfor %}</select></label>
+  <div class="filter-actions"><button class="button primary">{{ t('users.filter') }}</button><a class="button" href="/users">{{ t('users.clear') }}</a></div>
+</form>
+<section class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>{{ t('users.user') }}</th><th>{{ t('common.status') }}</th><th>{{ t('common.plan') }}</th><th>{{ t('users.expires') }}</th></tr></thead>
+  <tbody>{% for item in users %}<tr><td><a class="user-link" href="/users/{{ item.uid }}"><strong>{{ item.email }}</strong><small>{{ item.uid }}</small></a></td><td><span class="badge {{ item.status }}">{{ item.status|replace('_', ' ') }}</span></td><td>{{ item.plan_id or '-' }}</td><td>{{ item.expires }}</td></tr>{% else %}<tr><td colspan="4" class="empty">{{ t('users.empty') }}</td></tr>{% endfor %}</tbody></table></div></section>
+<nav class="pagination">{% if cursor %}<a class="button" href="/users?{{ first_query }}">{{ t('users.first') }}</a>{% endif %}{% if next_query %}<a class="button primary" href="/users?{{ next_query }}">{{ t('users.next') }}</a>{% endif %}</nav>
+{% endblock %}

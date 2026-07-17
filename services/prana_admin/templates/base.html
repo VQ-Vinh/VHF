@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="{{ locale }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} | PRANA ELEX Admin</title>
+  <link rel="stylesheet" href="/static/admin.css">
+  <script src="/static/admin.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="/">
+        <span class="brand-mark">PE</span>
+        <span><strong>PRANA ELEX</strong><small>{{ t('brand.subtitle') }}</small></span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="/" class="nav-link {% if active_nav == 'dashboard' %}active{% endif %}">{{ t('nav.dashboard') }}</a>
+        <a href="/users" class="nav-link {% if active_nav == 'users' %}active{% endif %}">{{ t('nav.users') }}</a>
+        <a href="/plans" class="nav-link {% if active_nav == 'plans' %}active{% endif %}">{{ t('nav.plans') }}</a>
+      </nav>
+      <div class="operator"><small>{{ t('nav.signed_in') }}</small><strong>{{ operator }}</strong></div>
+    </aside>
+    <main>
+      <header class="topbar">
+        <button class="menu-button" type="button" aria-label="Menu" data-menu-button>Menu</button>
+        <div class="locale-switch" aria-label="{{ t('nav.language') }}">
+          <a href="/locale/en?next={{ return_path|urlencode }}" class="{% if locale == 'en' %}active{% endif %}">EN</a>
+          <a href="/locale/vi?next={{ return_path|urlencode }}" class="{% if locale == 'vi' %}active{% endif %}">VI</a>
+        </div>
+      </header>
+      <div class="page-container">
+        {% if notice %}<div class="notice success" role="status">{{ t('notice.' + notice) }}</div>{% endif %}
+        {% block content %}{% endblock %}
+      </div>
+    </main>
+  </div>
+</body>
+</html>

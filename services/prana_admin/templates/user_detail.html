@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<a class="back-link" href="/users">{{ t('user.back') }}</a>
+<div class="page-heading user-heading"><div><h1>{{ user.email }}</h1><p class="uid">{{ uid }}</p></div><span class="badge large {{ user.status }}">{{ user.status|replace('_', ' ') }}</span></div>
+<div class="detail-grid">
+  <section class="panel"><div class="panel-heading"><h2>{{ t('user.overview') }}</h2></div><dl class="definition-list"><div><dt>{{ t('common.plan') }}</dt><dd>{{ user.plan_id or '-' }}</dd></div><div><dt>{{ t('users.expires') }}</dt><dd>{{ user.expires }}</dd></div><div><dt>Email verified</dt><dd>{{ user.email_verified }}</dd></div></dl></section>
+  <section class="panel"><div class="panel-heading"><h2>{{ t('user.subscription') }}</h2></div>
+    <form class="stack-form" method="post" action="/users/{{ uid }}/activate"><label><span>{{ t('common.plan') }}</span><select name="plan_id" required>{% for plan in plans %}<option value="{{ plan.id }}" {% if plan.id == user.plan_id %}selected{% endif %}>{{ plan.name }}</option>{% endfor %}</select></label><label><span>{{ t('user.days') }}</span><input name="days" type="number" value="30" min="1" max="3650" required></label><button class="button primary">{{ t('user.activate') }}</button></form>
+    <form class="inline-form" method="post" action="/users/{{ uid }}/status"><select name="status">{% for value in ['active','expired','suspended'] %}<option value="{{ value }}" {% if value == user.status %}selected{% endif %}>{{ value }}</option>{% endfor %}</select><button class="button">{{ t('user.set_status') }}</button></form>
+  </section>
+</div>
+<section class="panel"><div class="panel-heading"><h2>{{ t('user.devices') }}</h2><form method="post" action="/users/{{ uid }}/devices/reset" data-confirm="{{ t('user.revoke_all') }}?"><button class="button danger">{{ t('user.revoke_all') }}</button></form></div>
+  {% if devices %}<div class="device-list">{% for device in devices %}<article><div><strong>{{ device.name or device.id }}</strong><small>{{ device.id }}</small></div><span class="badge {% if device.active %}active{% else %}suspended{% endif %}">{% if device.active %}{{ t('common.active') }}{% else %}{{ t('common.inactive') }}{% endif %}</span>{% if not device.active %}<form method="post" action="/users/{{ uid }}/devices/{{ device.id }}/allow-reenrollment"><button class="button small">{{ t('user.allow') }}</button></form>{% endif %}</article>{% endfor %}</div>{% else %}<p class="empty">{{ t('user.no_devices') }}</p>{% endif %}
+</section>
+<section class="panel table-panel"><div class="panel-heading"><h2>{{ t('user.usage') }}</h2></div><div class="table-wrap"><table><thead><tr><th>{{ t('user.period') }}</th><th>{{ t('user.minutes') }}</th><th>{{ t('user.requests') }}</th></tr></thead><tbody>{% for row in usage %}<tr><td>{{ row.period }}</td><td>{{ '%.1f'|format(row.minutes) }}</td><td>{{ row.requests }}</td></tr>{% else %}<tr><td colspan="3" class="empty">{{ t('user.no_usage') }}</td></tr>{% endfor %}</tbody></table></div></section>
+{% endblock %}
