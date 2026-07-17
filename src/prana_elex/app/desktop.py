@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 from prana_elex.config.schema import load_config
-from prana_elex.ai.gemini.prompts import LANGUAGE_NAMES
+from prana_elex.common.languages import LANGUAGE_NAMES
 from prana_elex.ui.app import run_app
 from prana_elex.common.logger import get_logger
 

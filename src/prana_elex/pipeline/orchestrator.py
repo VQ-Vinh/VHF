@@ -15,12 +15,9 @@ import soundfile as sf
 
 from prana_elex.audio.recorder import AudioRecorder
 from prana_elex.config.schema import AppConfig
-from prana_elex.ai.gemini.client import GeminiClient
-from prana_elex.ai.gemini.prompts import PromptBuilder
-from prana_elex.ai.gemini.response_parser import GeminiResponseParser
+from prana_elex.backend.client import BackendApiError, BackendClient
 from prana_elex.pipeline.models import ProcessingResult
 from prana_elex.storage.local import LocalStorage
-from prana_elex.storage.gcs import GCSStorage
 from prana_elex.common.logger import get_logger
 from prana_elex.common.timing import LatencyTracker
 from prana_elex.vad.base import VADBackend, VADState
@@ -54,7 +51,7 @@ class PipelineState(Enum):
 
 # ── PipelineOrchestrator ────────────────────────────────────────────
 class PipelineOrchestrator:
-    def __init__(self, config: AppConfig):
+    def __init__(self, config: AppConfig, backend: BackendClient | None = None):
         self._config = config
         self._state = PipelineState.IDLE
         self._state_lock = threading.RLock()
@@ -62,15 +59,16 @@ class PipelineOrchestrator:
 
         self._session = SessionManager(config.general.session_prefix)
         self._storage = LocalStorage(config.storage.local)
-        self._gcs = GCSStorage(
-            config.storage.gcs,
-            config.storage.local,
-            config.google_cloud.credentials_path,
+        self._backend = backend or BackendClient(
+            config.backend.api_url,
+            config.backend.firebase_api_key,
+            config.backend.timeout_seconds,
         )
         self._vad = self._create_vad()
 
-        self._prompt_builder = PromptBuilder(config.translation)
-        self._gemini: GeminiClient | None = None
+        self._backend_error: str | None = None
+        self._last_backend_ok: bool | None = None
+        self._failed_audio: dict[tuple[str, int], Path] = {}
 
         self._vad_buffer: SpeechBuffer = []
         self._recording = False
@@ -142,14 +140,11 @@ class PipelineOrchestrator:
             sid = self._session.session_id
             logger.info("Session started", extra={"session_id": sid, "workers": self._num_workers})
 
-            if self._gemini is not None:
-                self._gemini.close()
-            self._gemini = GeminiClient(
-                self._config.gemini,
-                self._prompt_builder,
-                GeminiResponseParser,
-                credentials_path=self._config.google_cloud.credentials_path,
-            )
+            profile = self._backend.me()
+            if profile.get("status") != "active":
+                raise RuntimeError("SUBSCRIPTION_INACTIVE: Your account is waiting for activation or has expired")
+            self._backend.ensure_device()
+            self._backend_error = None
 
             self._executor = ThreadPoolExecutor(max_workers=self._num_workers)
             for i in range(self._num_workers):
@@ -163,12 +158,18 @@ class PipelineOrchestrator:
             )
             self._recorder.start()
 
-            self._run_cleanup()
-
             with self._state_lock:
                 self._state = PipelineState.RUNNING
             event_bus.emit("state_changed", PipelineState.RUNNING, "")
             event_bus.emit("pipeline_started")
+        except BackendApiError as e:
+            logger.error("Start failed", exc_info=e)
+            if e.code in {"AUTH_REQUIRED", "EMAIL_NOT_VERIFIED", "SUBSCRIPTION_INACTIVE", "DEVICE_REVOKED", "DEVICE_LIMIT_REACHED"}:
+                event_bus.emit("access_denied", e.code, str(e))
+            with self._state_lock:
+                self._state = PipelineState.ERROR
+            event_bus.emit("state_changed", PipelineState.ERROR, str(e))
+            event_bus.emit("error_occurred", str(e))
         except Exception as e:
             logger.error("Start failed", exc_info=e)
             with self._state_lock:
@@ -179,7 +180,7 @@ class PipelineOrchestrator:
     # ── Stop ────────────────────────────────────────────────────────
     def stop(self) -> None:
         with self._state_lock:
-            if self._state == PipelineState.IDLE:
+            if self._state in (PipelineState.IDLE, PipelineState.STOPPING):
                 return
             self._state = PipelineState.STOPPING
         event_bus.emit("state_changed", PipelineState.STOPPING, "Stopping...")
@@ -203,10 +204,7 @@ class PipelineOrchestrator:
                 self._executor.shutdown(wait=True)
 
             self._worker_futures.clear()
-            if self._gemini is not None:
-                self._gemini.close()
-                self._gemini = None
-            self._gcs.close()
+            self._backend.close()
             logger.info(
                 "Pipeline stopped",
                 extra={
@@ -245,10 +243,8 @@ class PipelineOrchestrator:
             if deleted_local:
                 logger.info(f"Local cleanup: removed {deleted_local} files older than {cfg.retention_days} days")
 
-            if cfg.gcs.enabled:
-                deleted_gcs = self._gcs.cleanup_old_files(cfg.retention_days)
-                if deleted_gcs:
-                    logger.info(f"GCS cleanup: removed {deleted_gcs} files older than {cfg.retention_days} days")
+            # Cloud retention is enforced by the bucket lifecycle. Local recordings
+            # remain under user control and are never deleted based on cloud policy.
         except Exception as e:
             logger.warning(f"Cleanup failed: {e}")
 
@@ -412,9 +408,32 @@ class PipelineOrchestrator:
 
         audio_path = self._storage.save_audio(audio_data, sr, sid, seq)
 
-        tracker.mark("gemini_start")
-        result = self._gemini.process_audio(audio_path, sid, seq, audio_bytes=wav_bytes)
-        tracker.mark("gemini_done")
+        tracker.mark("backend_start")
+        try:
+            result = self._backend.process_audio(
+                audio_path,
+                sid,
+                seq,
+                self._config.translation.target_language,
+                audio_bytes=wav_bytes,
+            )
+            self._last_backend_ok = True
+            self._backend_error = None
+            self._failed_audio.pop((sid, seq), None)
+        except BackendApiError as exc:
+            self._last_backend_ok = False
+            self._backend_error = f"{exc.code}: {exc}"
+            if exc.code in {"AUTH_REQUIRED", "EMAIL_NOT_VERIFIED", "SUBSCRIPTION_INACTIVE", "DEVICE_REVOKED", "DEVICE_LIMIT_REACHED"}:
+                event_bus.emit("access_denied", exc.code, str(exc))
+            result = ProcessingResult(
+                session_id=sid,
+                sequence=seq,
+                audio_file=audio_path.name,
+                error=exc.code,
+                processing_notes=[str(exc)],
+            )
+            self._failed_audio[(sid, seq)] = audio_path
+        tracker.mark("backend_done")
 
         process_ms = tracker.total_ms()
         result.latency_ms = process_ms + queue_wait_ms
@@ -427,15 +446,7 @@ class PipelineOrchestrator:
         tracker.mark("save_result")
         self._storage.save_result(result)
 
-        gcs_audio = None
-        gcs_result = None
-        gcs_pending = 0
-        if self._config.storage.gcs.enabled:
-            gcs_audio, gcs_result = self._gcs.upload_result(result)
-            gcs_pending = self._gcs.retry_queue_size
-
         self._print_result(result)
-        self._print_gcs_status(gcs_audio, gcs_result, gcs_pending)
 
         seg_duration = duration_ms / 1000
         logger.info(
@@ -493,19 +504,6 @@ class PipelineOrchestrator:
         sys.stdout.write("\n".join(lines))
         sys.stdout.flush()
 
-    @staticmethod
-    def _print_gcs_status(audio_ok: bool | None, result_ok: bool | None, queue_size: int = 0) -> None:
-        if sys.stdout is None:
-            return
-        if audio_ok is None:
-            return
-        parts = []
-        parts.append(f"  GCS: audio={'OK' if audio_ok else 'FAIL'}, result={'OK' if result_ok else 'FAIL'}")
-        if queue_size:
-            parts.append(f"  GCS: {queue_size} file(s) pending retry")
-        sys.stdout.write("\n".join(parts) + "\n")
-        sys.stdout.flush()
-
     # ── Batch processing ────────────────────────────────────────────
     def process_file(self, file_path: str | Path) -> ProcessingResult:
         file_path = Path(file_path)
@@ -548,29 +546,16 @@ class PipelineOrchestrator:
         tracker = LatencyTracker()
         tracker.mark("start")
 
-        if self._gemini is None:
-            self._gemini = GeminiClient(
-                self._config.gemini,
-                self._prompt_builder,
-                GeminiResponseParser,
-                credentials_path=self._config.google_cloud.credentials_path,
-            )
-        tracker.mark("gemini_start")
-        result = self._gemini.process_audio(audio_path, sid, seq)
-        tracker.mark("gemini_done")
+        tracker.mark("backend_start")
+        result = self._backend.process_audio(
+            audio_path, sid, seq, self._config.translation.target_language
+        )
+        tracker.mark("backend_done")
 
         result.latency_ms = tracker.total_ms()
 
         self._print_result(result)
         self._storage.save_result(result)
-
-        gcs_audio = None
-        gcs_result = None
-        gcs_pending = 0
-        if self._config.storage.gcs.enabled:
-            gcs_audio, gcs_result = self._gcs.upload_result(result)
-            gcs_pending = self._gcs.retry_queue_size
-        self._print_gcs_status(gcs_audio, gcs_result, gcs_pending)
 
         logger.info(
             "Batch file processed",
@@ -599,9 +584,57 @@ class PipelineOrchestrator:
             "recording": self._recording,
             "queue_size": self._job_queue.qsize(),
             "vad_backend": self._vad.name,
-            "gcs_enabled": self._config.storage.gcs.enabled,
-            "gcs_ready": self._gcs.ready,
-            "gcs_error": self._gcs.last_error,
-            "gcs_retry_queue": self._gcs.retry_queue_size,
-            "gcs_last_upload_ok": self._gcs.last_upload_ok,
+            "backend_enabled": bool(self._config.backend.api_url),
+            "backend_ready": self._backend.ready,
+            "backend_error": self._backend_error,
+            "backend_last_request_ok": self._last_backend_ok,
         }
+
+    def get_account(self) -> dict:
+        return self._backend.me()
+
+    def list_devices(self) -> list[dict]:
+        return self._backend.list_devices()
+
+    def revoke_device(self, device_id: str) -> None:
+        self._backend.revoke_device(device_id)
+
+    def sign_out(self) -> None:
+        self._backend.sign_out()
+
+    def shutdown(self, timeout: float = 15.0) -> bool:
+        """Stop all pipeline work and wait for cleanup before an account switch."""
+        self.stop()
+        deadline = time.monotonic() + timeout
+        while self.state not in (PipelineState.IDLE, PipelineState.ERROR):
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.05)
+        self._failed_audio.clear()
+        return self.state == PipelineState.IDLE
+
+    def retry_last_failed(self) -> bool:
+        if not self._failed_audio:
+            return False
+        (sid, seq), audio_path = next(reversed(self._failed_audio.items()))
+        threading.Thread(target=self._retry_failed, args=(audio_path, sid, seq), daemon=True).start()
+        return True
+
+    def _retry_failed(self, audio_path: Path, sid: str, seq: int) -> None:
+        try:
+            result = self._backend.process_audio(
+                audio_path, sid, seq, self._config.translation.target_language
+            )
+            self._storage.save_result(result)
+            self._failed_audio.pop((sid, seq), None)
+            self._last_backend_ok = True
+            self._backend_error = None
+            event_bus.emit("result_ready", result)
+            if result.detected_language:
+                event_bus.emit("language_detected", result.detected_language)
+        except BackendApiError as exc:
+            self._last_backend_ok = False
+            self._backend_error = f"{exc.code}: {exc}"
+            if exc.code in {"AUTH_REQUIRED", "EMAIL_NOT_VERIFIED", "SUBSCRIPTION_INACTIVE", "DEVICE_REVOKED", "DEVICE_LIMIT_REACHED"}:
+                event_bus.emit("access_denied", exc.code, str(exc))
+            event_bus.emit("error_occurred", self._backend_error)

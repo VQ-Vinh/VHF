@@ -20,13 +20,10 @@ threshold = 0.5
 energy_threshold = 500
 silero_model_path = ""
 
-[google_cloud]
-credentials_path = ".secrets/gcs-service-account.json"
-
-[gemini]
-model = "gemini-2.5-flash"
-location = "us-central1"
-max_retries = 3
+[backend]
+api_url = "https://prana-api-owuilj5d4a-uc.a.run.app"
+firebase_api_key = "AIzaSyBTG4ltR5PJMH9_TmsKPSF3fNSUgbCbevU"
+timeout_seconds = 150
 
 [translation]
 enabled = true
@@ -40,8 +37,3 @@ cleanup_interval_hours = 24
 [storage.local]
 audio_dir = "./VHF_Storage/audio"
 result_dir = "./VHF_Storage/results"
-
-[storage.gcs]
-enabled = false
-bucket_name = "vhf-recordings"
-prefix = ""

@@ -1,6 +1,6 @@
 [project]
 name = "prana-elex"
-version = "1.0.0"
+version = "1.1.0"
 description = "PRANA ELEX — VHF Marine Radio transcription and translation using Gemini 2.5"
 authors = [{ name = "DLV Corporation" }]
 requires-python = ">=3.11"
@@ -13,9 +13,9 @@ dependencies = [
     "torch>=2.4,<2.9; sys_platform != 'win32'",
     "silero-vad>=4.0",
     "webrtcvad>=2.0.10",
-    "google-genai>=1.0.0",
-    "google-auth>=2.0.0",
-    "google-cloud-storage>=2.16.0",
+    "httpx>=0.28.0",
+    "cryptography>=44.0.0",
+    "keyring>=25.6.0",
     "pydantic>=2.7.0",
     "pydantic-settings>=2.2.0",
     "pyside6>=6.7.0",

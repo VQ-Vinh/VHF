@@ -32,14 +32,10 @@ class VADConfig(BaseModel):
     silero_model_path: str = ""
 
 
-class GeminiConfig(BaseModel):
-    model: str = "gemini-2.5-flash"
-    location: str = "us-central1"
-    max_retries: int = 3
-
-
-class GoogleCloudConfig(BaseModel):
-    credentials_path: str = ".secrets/gcs-service-account.json"
+class BackendConfig(BaseModel):
+    api_url: str = ""
+    firebase_api_key: str = ""
+    timeout_seconds: float = 150.0
 
 
 class TranslationConfig(BaseModel):
@@ -53,15 +49,8 @@ class LocalStorageConfig(BaseModel):
     result_dir: Path = Path("./VHF_Storage/results")
 
 
-class GCSStorageConfig(BaseModel):
-    enabled: bool = True
-    bucket_name: str = "vhf-recordings"
-    prefix: str = ""
-
-
 class StorageConfig(BaseModel):
     local: LocalStorageConfig = Field(default_factory=LocalStorageConfig)
-    gcs: GCSStorageConfig = Field(default_factory=GCSStorageConfig)
     retention_days: int = 14
     cleanup_interval_hours: int = 24
 
@@ -71,8 +60,7 @@ class AppConfig(BaseModel):
     audio: AudioConfig = Field(default_factory=AudioConfig)
     vad: VADConfig = Field(default_factory=VADConfig)
 
-    google_cloud: GoogleCloudConfig = Field(default_factory=GoogleCloudConfig)
-    gemini: GeminiConfig = Field(default_factory=GeminiConfig)
+    backend: BackendConfig = Field(default_factory=BackendConfig)
     translation: TranslationConfig = Field(default_factory=TranslationConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
 

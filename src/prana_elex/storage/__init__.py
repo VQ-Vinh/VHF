@@ -1,4 +1,9 @@
-from prana_elex.storage.local import LocalStorage
-from prana_elex.storage.gcs import GCSStorage
+__all__ = ["LocalStorage"]
 
-__all__ = ["LocalStorage", "GCSStorage"]
+
+def __getattr__(name: str):
+    if name == "LocalStorage":
+        from prana_elex.storage.local import LocalStorage
+
+        return LocalStorage
+    raise AttributeError(name)

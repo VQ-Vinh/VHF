@@ -1,6 +1,3 @@
-from prana_elex.pipeline.events import event_bus
-
-
 def cli():
     from prana_elex.app.cli import main
     main()
@@ -11,4 +8,4 @@ def desktop():
     main()
 
 
-__all__ = ["event_bus", "cli", "desktop"]
+__all__ = ["cli", "desktop"]

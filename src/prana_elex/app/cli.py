@@ -7,7 +7,8 @@ from pathlib import Path
 
 from prana_elex.config.schema import load_config
 from prana_elex.config.user_settings import load_settings
-from prana_elex.ai.gemini.prompts import LANGUAGE_NAMES
+from prana_elex.common.languages import LANGUAGE_NAMES
+from prana_elex.backend.client import BackendApiError
 from prana_elex.pipeline.orchestrator import PipelineOrchestrator
 from prana_elex.common.logger import get_logger, setup_logger
 
@@ -139,6 +140,9 @@ async def run_realtime(config_path: Path, target: str | None = None, capture_mod
         orchestrator.start()
         while True:
             print_status(orchestrator)
+            if orchestrator.state.name == "ERROR":
+                print("  Pipeline stopped. Sign in with the desktop app and verify that the subscription is active.")
+                break
             await asyncio.sleep(1)
 
     except asyncio.CancelledError:
@@ -170,7 +174,12 @@ def run_batch(config_path: Path, files: list[Path], target: str | None = None, d
         if not f.exists():
             logger.warning(f"Skipping: {f} not found")
             continue
-        result = orchestrator.process_file(f)
+        try:
+            result = orchestrator.process_file(f)
+        except BackendApiError as exc:
+            print(f"  [ERR: {exc.code}] {exc}")
+            print("  Sign in with the desktop app and verify that the subscription is active.")
+            break
         status = "OK" if not result.has_error else f"ERR: {result.error}"
         print(f"  [{status}] {f.name} -> {result.detected_language.upper() or '?'} conf={result.confidence:.0%}")
 
