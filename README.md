@@ -222,11 +222,11 @@ cho `buildwin.bat`.
 
 - Windows mặc định: thư mục người dùng chọn trong installer.
 - Pi mặc định: `~/PRANA_ELEX_Data`.
-- Audio/result local được tách theo tài khoản:
-  `<data folder>/accounts/<firebase_uid>/VHF_Storage/audio|results`.
+- Audio/result local được lưu trực tiếp tại:
+  `<data folder>/VHF_Storage/audio|results`.
 - Sign out chỉ xóa phiên local và trở về Login; không đóng app, không revoke thiết
-  bị và không xóa dữ liệu. Dữ liệu layout cũ được chuyển một lần vào tài khoản đăng
-  nhập đầu tiên.
+  bị và không xóa dữ liệu. Layout cũ trong `accounts/<firebase_uid>` được chuyển
+  về Data folder đã chọn khi tài khoản đó đăng nhập.
 - Settings Pi: `~/.config/prana-elex/settings.json`.
 - Token/device identity: OS credential store; fallback Pi
   `~/.config/prana-elex/auth.json` mode `0600`.

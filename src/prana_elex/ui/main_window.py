@@ -19,7 +19,7 @@ from prana_elex.ui.pages.account import (
 from prana_elex.ui.pages.translation import TranslationPage
 from prana_elex.pipeline.orchestrator import PipelineState
 from prana_elex.pipeline.orchestrator import PipelineOrchestrator
-from prana_elex.storage.account import prepare_account_data_root
+from prana_elex.storage.account import prepare_data_root
 from prana_elex.config.user_settings import save_settings
 from prana_elex.common.logger import get_logger
 
@@ -195,9 +195,9 @@ class MainWindow(QMainWindow):
             self._stack.setCurrentWidget(self._status_page)
             return
         if self._orchestrator is None or self._active_uid != uid:
-            account_root = prepare_account_data_root(self._data_root, uid)
+            data_root = prepare_data_root(self._data_root, uid)
             config = self._base_config.model_copy(deep=True)
-            config.general.data_dir = account_root
+            config.general.data_dir = data_root
             config.resolve_paths()
             self._config = config
             self._orchestrator = PipelineOrchestrator(config, self._account.backend)

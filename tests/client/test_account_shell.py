@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from prana_elex.backend.auth import FirebaseAuthClient
 from prana_elex.backend.client import BackendApiError, BackendClient
-from prana_elex.storage.account import prepare_account_data_root
+from prana_elex.storage.account import prepare_data_root
 
 try:
     from PySide6.QtWidgets import QApplication
@@ -121,20 +121,23 @@ class AccountControllerTests(unittest.TestCase):
 
 
 class AccountStorageTests(unittest.TestCase):
-    def test_legacy_storage_moves_once_to_first_account(self) -> None:
+    def test_account_scoped_storage_moves_back_to_selected_data_folder(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            legacy_file = root / "VHF_Storage" / "audio" / "sample.wav"
-            legacy_file.parent.mkdir(parents=True)
-            legacy_file.write_bytes(b"wav")
+            nested_file = root / "accounts" / "uid-first" / "VHF_Storage" / "audio" / "sample.wav"
+            nested_file.parent.mkdir(parents=True)
+            nested_file.write_bytes(b"wav")
 
-            first = prepare_account_data_root(root, "uid-first")
-            self.assertEqual((first / "VHF_Storage" / "audio" / "sample.wav").read_bytes(), b"wav")
-            self.assertFalse((root / "VHF_Storage").exists())
+            data_root = prepare_data_root(root, "uid-first")
+            self.assertEqual(data_root, root.resolve())
+            self.assertEqual((root / "VHF_Storage" / "audio" / "sample.wav").read_bytes(), b"wav")
+            self.assertFalse((root / "accounts").exists())
 
-            second = prepare_account_data_root(root, "uid-second")
-            self.assertFalse((second / "VHF_Storage" / "audio" / "sample.wav").exists())
-            self.assertNotEqual(first, second)
+    def test_all_accounts_use_the_selected_data_folder(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.assertEqual(prepare_data_root(root, "uid-first"), root.resolve())
+            self.assertEqual(prepare_data_root(root, "uid-second"), root.resolve())
 
 
 @unittest.skipIf(MainWindow is None, "PySide6 is not installed in this test environment")

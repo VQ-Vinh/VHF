@@ -6,7 +6,7 @@ PRANA ELEX là monorepo gồm ba ứng dụng triển khai độc lập nhưng d
 
 ```text
 Desktop / Raspberry Pi client
-  ├─ capture audio, VAD, UI và dữ liệu local theo Firebase UID
+  ├─ capture audio, VAD, UI và dữ liệu local trong Data folder đã chọn
   └─ Firebase ID token + chữ ký Ed25519 thiết bị
                          │ HTTPS
                          ▼

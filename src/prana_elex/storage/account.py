@@ -14,19 +14,41 @@ def safe_account_key(uid: str) -> str:
     return hashlib.sha256(uid.encode("utf-8")).hexdigest()
 
 
-def prepare_account_data_root(data_root: str | Path, uid: str) -> Path:
-    """Return the account root and migrate the pre-account storage once."""
-    root = Path(data_root).expanduser().resolve()
-    account_root = root / "accounts" / safe_account_key(uid)
-    legacy_storage = root / "VHF_Storage"
-    account_storage = account_root / "VHF_Storage"
+def _merge_storage(source: Path, target: Path) -> None:
+    """Move non-conflicting files from source into target without overwriting."""
+    target.mkdir(parents=True, exist_ok=True)
+    for item in tuple(source.iterdir()):
+        destination = target / item.name
+        if not destination.exists():
+            item.replace(destination)
+        elif item.is_dir() and destination.is_dir():
+            _merge_storage(item, destination)
+        else:
+            logger.warning("Preserved account-scoped file because shared storage already contains %s", destination)
+    try:
+        source.rmdir()
+    except OSError:
+        pass
 
-    if legacy_storage.exists() and not account_storage.exists():
-        account_root.mkdir(parents=True, exist_ok=True)
-        legacy_storage.replace(account_storage)
-        logger.info("Migrated legacy local storage into account-scoped storage")
-    else:
-        account_root.mkdir(parents=True, exist_ok=True)
-        if legacy_storage.exists() and account_storage.exists():
-            logger.warning("Legacy storage was preserved because account storage already exists")
-    return account_root
+
+def prepare_data_root(data_root: str | Path, uid: str) -> Path:
+    """Return the selected data root and migrate this account's old nested storage."""
+    root = Path(data_root).expanduser().resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    account_root = root / "accounts" / safe_account_key(uid)
+    account_storage = account_root / "VHF_Storage"
+    shared_storage = root / "VHF_Storage"
+
+    if account_storage.exists():
+        if shared_storage.exists():
+            _merge_storage(account_storage, shared_storage)
+        else:
+            account_storage.replace(shared_storage)
+        logger.info("Migrated account-scoped local storage into the selected Data folder")
+
+    for directory in (account_root, root / "accounts"):
+        try:
+            directory.rmdir()
+        except OSError:
+            pass
+    return root
