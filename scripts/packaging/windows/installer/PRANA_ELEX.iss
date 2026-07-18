@@ -15,8 +15,10 @@ AppPublisher={#MyAppPublisher}
 AppComments={#MyAppDescription}
 DefaultDirName={autopf}\PRANA ELEX
 DefaultGroupName=PRANA ELEX
+DisableDirPage=yes
 DisableProgramGroupPage=yes
 DisableWelcomePage=no
+UsePreviousAppDir=no
 UninstallDisplayIcon={app}\{#MyAppExeName}
 SetupIconFile=assets\prana-elex.ico
 WizardImageFile=assets\wizard-banner.png
@@ -58,16 +60,28 @@ vietnamese.AdditionalShortcuts=Tùy chọn bổ sung:
 english.LaunchApp=Launch PRANA ELEX
 vietnamese.LaunchApp=Mở PRANA ELEX
 
-english.DataPageTitle=Choose Data Location
-vietnamese.DataPageTitle=Chọn nơi lưu dữ liệu
-english.DataPageDescription=Choose where recordings and translation results are stored.
-vietnamese.DataPageDescription=Chọn nơi lưu bản ghi âm và kết quả dịch.
-english.DataIntro=PRANA ELEX stores WAV recordings, translation results, and account-specific local data in this folder.
-vietnamese.DataIntro=PRANA ELEX lưu bản ghi WAV, kết quả dịch và dữ liệu cục bộ theo tài khoản trong thư mục này.
+english.LocationsPageTitle=Installation Locations
+vietnamese.LocationsPageTitle=Vị trí cài đặt
+english.LocationsPageDescription=Choose separate locations for the application and your data.
+vietnamese.LocationsPageDescription=Chọn riêng nơi cài ứng dụng và nơi lưu dữ liệu của bạn.
+english.AppSectionTitle=APPLICATION FILES
+vietnamese.AppSectionTitle=TỆP ỨNG DỤNG
+english.AppIntro=Contains PRANA ELEX, libraries, and program files. This folder may be removed when the application is uninstalled.
+vietnamese.AppIntro=Chứa PRANA ELEX, thư viện và các tệp chương trình. Thư mục này có thể bị xóa khi gỡ ứng dụng.
+english.AppFolderLabel=Application folder
+vietnamese.AppFolderLabel=Thư mục cài ứng dụng
+english.AppBrowseTitle=Select PRANA ELEX Application Folder
+vietnamese.AppBrowseTitle=Chọn thư mục cài ứng dụng PRANA ELEX
+english.AppRequired=Please select an application folder.
+vietnamese.AppRequired=Vui lòng chọn thư mục cài ứng dụng.
+english.DataSectionTitle=USER DATA
+vietnamese.DataSectionTitle=DỮ LIỆU NGƯỜI DÙNG
+english.DataIntro=Contains WAV recordings, translation JSON, history, and account-specific local data.
+vietnamese.DataIntro=Chứa bản ghi WAV, JSON kết quả dịch, lịch sử và dữ liệu cục bộ theo tài khoản.
 english.DataFolderLabel=Data folder
 vietnamese.DataFolderLabel=Thư mục dữ liệu
-english.DataBrowse=Browse...
-vietnamese.DataBrowse=Duyệt...
+english.BrowseButton=Browse...
+vietnamese.BrowseButton=Duyệt...
 english.DataRetentionNote=Your data is kept when PRANA ELEX is uninstalled. Choose a location outside the application folder.
 vietnamese.DataRetentionNote=Dữ liệu vẫn được giữ khi gỡ PRANA ELEX. Hãy chọn vị trí bên ngoài thư mục ứng dụng.
 english.DataBrowseTitle=Select PRANA ELEX Data Folder
@@ -78,12 +92,16 @@ english.DataRootRejected=The root of a drive cannot be used as the data folder. 
 vietnamese.DataRootRejected=Không thể dùng thư mục gốc của ổ đĩa làm nơi lưu dữ liệu. Vui lòng chọn hoặc tạo một thư mục con.
 english.DataInsideAppRejected=The data folder must be outside the application installation folder.
 vietnamese.DataInsideAppRejected=Thư mục dữ liệu phải nằm ngoài thư mục cài đặt ứng dụng.
+english.AppInsideDataRejected=The application folder must be outside the data folder.
+vietnamese.AppInsideDataRejected=Thư mục cài ứng dụng phải nằm ngoài thư mục dữ liệu.
 english.DataCreateFailed=Setup could not create the selected data folder. Choose a location you can write to.
 vietnamese.DataCreateFailed=Không thể tạo thư mục dữ liệu đã chọn. Hãy chọn vị trí mà bạn có quyền ghi.
 english.DataWriteFailed=Setup cannot write to the selected data folder. Choose another location.
 vietnamese.DataWriteFailed=Không thể ghi vào thư mục dữ liệu đã chọn. Hãy chọn vị trí khác.
 english.ReadyDataFolder=Data folder:
 vietnamese.ReadyDataFolder=Thư mục dữ liệu:
+english.ReadyApplicationFolder=Application folder:
+vietnamese.ReadyApplicationFolder=Thư mục cài ứng dụng:
 english.ReadyInstallScope=Install scope:
 vietnamese.ReadyInstallScope=Phạm vi cài đặt:
 english.ScopeAllUsers=All users
@@ -117,7 +135,13 @@ Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Description: "{cm:Launch
 
 [Code]
 var
-  DataPage: TWizardPage;
+  LocationsPage: TWizardPage;
+  AppSectionLabel: TNewStaticText;
+  AppIntroLabel: TNewStaticText;
+  AppFolderLabel: TNewStaticText;
+  AppPathEdit: TNewEdit;
+  AppBrowseButton: TNewButton;
+  DataSectionLabel: TNewStaticText;
   DataIntroLabel: TNewStaticText;
   DataFolderLabel: TNewStaticText;
   DataPathEdit: TNewEdit;
@@ -129,12 +153,37 @@ begin
   Result := RemoveBackslashUnlessRoot(ExpandFileName(Trim(Path)));
 end;
 
+function GetSelectedAppDir: String;
+begin
+  if Trim(AppPathEdit.Text) = '' then
+    Result := ''
+  else
+    Result := NormalizedPath(AppPathEdit.Text);
+end;
+
 function GetSelectedDataDir(Param: String): String;
 begin
   if Trim(DataPathEdit.Text) = '' then
     Result := ''
   else
     Result := NormalizedPath(DataPathEdit.Text);
+end;
+
+function IsPathInside(ChildPath, ParentPath: String): Boolean;
+begin
+  Result := Pos(
+    Uppercase(AddBackslash(NormalizedPath(ParentPath))),
+    Uppercase(AddBackslash(NormalizedPath(ChildPath)))
+  ) = 1;
+end;
+
+procedure BrowseForAppFolder(Sender: TObject);
+var
+  SelectedPath: String;
+begin
+  SelectedPath := AppPathEdit.Text;
+  if BrowseForFolder(CustomMessage('AppBrowseTitle'), SelectedPath, True) then
+    AppPathEdit.Text := SelectedPath;
 end;
 
 procedure BrowseForDataFolder(Sender: TObject);
@@ -150,50 +199,99 @@ procedure InitializeWizard;
 var
   RequestedDataDir: String;
 begin
-  DataPage := CreateCustomPage(
+  LocationsPage := CreateCustomPage(
     wpSelectDir,
-    CustomMessage('DataPageTitle'),
-    CustomMessage('DataPageDescription')
+    CustomMessage('LocationsPageTitle'),
+    CustomMessage('LocationsPageDescription')
   );
 
-  DataIntroLabel := TNewStaticText.Create(DataPage.Surface);
-  DataIntroLabel.Parent := DataPage.Surface;
+  AppSectionLabel := TNewStaticText.Create(LocationsPage.Surface);
+  AppSectionLabel.Parent := LocationsPage.Surface;
+  AppSectionLabel.Left := 0;
+  AppSectionLabel.Top := ScaleY(4);
+  AppSectionLabel.Font.Style := [fsBold];
+  AppSectionLabel.Font.Color := $42340A;
+  AppSectionLabel.Caption := CustomMessage('AppSectionTitle');
+
+  AppIntroLabel := TNewStaticText.Create(LocationsPage.Surface);
+  AppIntroLabel.Parent := LocationsPage.Surface;
+  AppIntroLabel.Left := 0;
+  AppIntroLabel.Top := ScaleY(26);
+  AppIntroLabel.Width := LocationsPage.SurfaceWidth;
+  AppIntroLabel.Height := ScaleY(32);
+  AppIntroLabel.AutoSize := False;
+  AppIntroLabel.WordWrap := True;
+  AppIntroLabel.Caption := CustomMessage('AppIntro');
+
+  AppFolderLabel := TNewStaticText.Create(LocationsPage.Surface);
+  AppFolderLabel.Parent := LocationsPage.Surface;
+  AppFolderLabel.Left := 0;
+  AppFolderLabel.Top := ScaleY(64);
+  AppFolderLabel.Caption := CustomMessage('AppFolderLabel');
+
+  AppPathEdit := TNewEdit.Create(LocationsPage.Surface);
+  AppPathEdit.Parent := LocationsPage.Surface;
+  AppPathEdit.Left := 0;
+  AppPathEdit.Top := ScaleY(84);
+  AppPathEdit.Width := LocationsPage.SurfaceWidth - ScaleX(104);
+  AppPathEdit.Height := ScaleY(30);
+  AppPathEdit.Text := WizardDirValue;
+
+  AppBrowseButton := TNewButton.Create(LocationsPage.Surface);
+  AppBrowseButton.Parent := LocationsPage.Surface;
+  AppBrowseButton.Left := LocationsPage.SurfaceWidth - ScaleX(96);
+  AppBrowseButton.Top := AppPathEdit.Top - ScaleY(1);
+  AppBrowseButton.Width := ScaleX(96);
+  AppBrowseButton.Height := ScaleY(32);
+  AppBrowseButton.Caption := CustomMessage('BrowseButton');
+  AppBrowseButton.OnClick := @BrowseForAppFolder;
+
+  DataSectionLabel := TNewStaticText.Create(LocationsPage.Surface);
+  DataSectionLabel.Parent := LocationsPage.Surface;
+  DataSectionLabel.Left := 0;
+  DataSectionLabel.Top := ScaleY(128);
+  DataSectionLabel.Font.Style := [fsBold];
+  DataSectionLabel.Font.Color := $988A00;
+  DataSectionLabel.Caption := CustomMessage('DataSectionTitle');
+
+  DataIntroLabel := TNewStaticText.Create(LocationsPage.Surface);
+  DataIntroLabel.Parent := LocationsPage.Surface;
   DataIntroLabel.Left := 0;
-  DataIntroLabel.Top := ScaleY(8);
-  DataIntroLabel.Width := DataPage.SurfaceWidth;
-  DataIntroLabel.Height := ScaleY(42);
+  DataIntroLabel.Top := ScaleY(150);
+  DataIntroLabel.Width := LocationsPage.SurfaceWidth;
+  DataIntroLabel.Height := ScaleY(32);
   DataIntroLabel.AutoSize := False;
   DataIntroLabel.WordWrap := True;
   DataIntroLabel.Caption := CustomMessage('DataIntro');
 
-  DataFolderLabel := TNewStaticText.Create(DataPage.Surface);
-  DataFolderLabel.Parent := DataPage.Surface;
+  DataFolderLabel := TNewStaticText.Create(LocationsPage.Surface);
+  DataFolderLabel.Parent := LocationsPage.Surface;
   DataFolderLabel.Left := 0;
-  DataFolderLabel.Top := ScaleY(64);
+  DataFolderLabel.Top := ScaleY(188);
   DataFolderLabel.Caption := CustomMessage('DataFolderLabel');
 
-  DataPathEdit := TNewEdit.Create(DataPage.Surface);
-  DataPathEdit.Parent := DataPage.Surface;
+  DataPathEdit := TNewEdit.Create(LocationsPage.Surface);
+  DataPathEdit.Parent := LocationsPage.Surface;
   DataPathEdit.Left := 0;
-  DataPathEdit.Top := ScaleY(84);
-  DataPathEdit.Width := DataPage.SurfaceWidth - ScaleX(104);
+  DataPathEdit.Top := ScaleY(208);
+  DataPathEdit.Width := LocationsPage.SurfaceWidth - ScaleX(104);
   DataPathEdit.Height := ScaleY(30);
 
-  DataBrowseButton := TNewButton.Create(DataPage.Surface);
-  DataBrowseButton.Parent := DataPage.Surface;
-  DataBrowseButton.Left := DataPage.SurfaceWidth - ScaleX(96);
+  DataBrowseButton := TNewButton.Create(LocationsPage.Surface);
+  DataBrowseButton.Parent := LocationsPage.Surface;
+  DataBrowseButton.Left := LocationsPage.SurfaceWidth - ScaleX(96);
   DataBrowseButton.Top := DataPathEdit.Top - ScaleY(1);
   DataBrowseButton.Width := ScaleX(96);
   DataBrowseButton.Height := ScaleY(32);
-  DataBrowseButton.Caption := CustomMessage('DataBrowse');
+  DataBrowseButton.Caption := CustomMessage('BrowseButton');
   DataBrowseButton.OnClick := @BrowseForDataFolder;
 
-  DataRetentionLabel := TNewStaticText.Create(DataPage.Surface);
-  DataRetentionLabel.Parent := DataPage.Surface;
+  DataRetentionLabel := TNewStaticText.Create(LocationsPage.Surface);
+  DataRetentionLabel.Parent := LocationsPage.Surface;
   DataRetentionLabel.Left := 0;
-  DataRetentionLabel.Top := ScaleY(132);
-  DataRetentionLabel.Width := DataPage.SurfaceWidth;
-  DataRetentionLabel.Height := ScaleY(48);
+  DataRetentionLabel.Top := ScaleY(246);
+  DataRetentionLabel.Width := LocationsPage.SurfaceWidth;
+  DataRetentionLabel.Height := ScaleY(32);
   DataRetentionLabel.AutoSize := False;
   DataRetentionLabel.WordWrap := True;
   { TColor uses BGR byte order: this is brand teal #005E68. }
@@ -211,7 +309,7 @@ begin
   DataPathEdit.Text := RequestedDataDir;
 end;
 
-function ValidateDataDirectory: Boolean;
+function ValidateLocations: Boolean;
 var
   AppPath: String;
   DataPath: String;
@@ -219,6 +317,13 @@ var
   ProbePath: String;
 begin
   Result := False;
+  AppPath := GetSelectedAppDir;
+  if AppPath = '' then
+  begin
+    MsgBox(CustomMessage('AppRequired'), mbError, MB_OK);
+    Exit;
+  end;
+
   DataPath := GetSelectedDataDir('');
   if DataPath = '' then
   begin
@@ -233,11 +338,15 @@ begin
     Exit;
   end;
 
-  AppPath := NormalizedPath(WizardDirValue);
-  if (CompareText(DataPath, AppPath) = 0) or
-     (Pos(Uppercase(AddBackslash(AppPath)), Uppercase(AddBackslash(DataPath))) = 1) then
+  if (CompareText(DataPath, AppPath) = 0) or IsPathInside(DataPath, AppPath) then
   begin
     MsgBox(CustomMessage('DataInsideAppRejected'), mbError, MB_OK);
+    Exit;
+  end;
+
+  if IsPathInside(AppPath, DataPath) then
+  begin
+    MsgBox(CustomMessage('AppInsideDataRejected'), mbError, MB_OK);
     Exit;
   end;
 
@@ -254,14 +363,15 @@ begin
     Exit;
   end;
   DeleteFile(ProbePath);
+  WizardForm.DirEdit.Text := AppPath;
   Result := True;
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
 begin
   Result := True;
-  if CurPageID = DataPage.ID then
-    Result := ValidateDataDirectory;
+  if CurPageID = LocationsPage.ID then
+    Result := ValidateLocations;
 end;
 
 function UpdateReadyMemo(
@@ -276,7 +386,7 @@ begin
   else
     ScopeText := CustomMessage('ScopeCurrentUser');
 
-  Result := MemoDirInfo + NewLine + NewLine +
+  Result := CustomMessage('ReadyApplicationFolder') + NewLine + Space + GetSelectedAppDir + NewLine + NewLine +
     CustomMessage('ReadyDataFolder') + NewLine + Space + GetSelectedDataDir('') + NewLine + NewLine +
     CustomMessage('ReadyInstallScope') + NewLine + Space + ScopeText;
   if MemoTasksInfo <> '' then
