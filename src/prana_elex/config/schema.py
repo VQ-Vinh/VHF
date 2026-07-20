@@ -27,6 +27,7 @@ class VADConfig(BaseModel):
     backend: Literal["silero", "webrtc"] = "silero"
     min_speech_duration_ms: int = 300
     min_silence_duration_ms: int = 1200
+    max_segment_duration_ms: int = Field(default=15000, gt=0)
     threshold: float = 0.5
     energy_threshold: int = 500
     silero_model_path: str = ""

@@ -16,6 +16,7 @@ device_index = -1
 backend = "silero"
 min_speech_duration_ms = 300
 min_silence_duration_ms = 1200
+max_segment_duration_ms = 15000
 threshold = 0.5
 energy_threshold = 500
 silero_model_path = ""

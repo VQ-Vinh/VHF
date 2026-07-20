@@ -12,6 +12,7 @@ import numpy as np
 from prana_elex.audio.recorder import AudioRecorder
 from prana_elex.config.schema import AppConfig
 from prana_elex.backend.client import BackendApiError, BackendClient
+from prana_elex.pipeline.audio_utils import split_audio_buffer
 from prana_elex.pipeline.models import ProcessingResult
 from prana_elex.pipeline.segment_processor import SegmentJob, SegmentProcessor
 from prana_elex.storage.local import LocalStorage
@@ -54,6 +55,7 @@ class PipelineOrchestrator:
         self._vad = self._create_vad()
 
         self._vad_buffer: SpeechBuffer = []
+        self._vad_sample_count = 0
         self._recording = False
         self._samples_since_speech = 0
         self._speech_frame_count = 0
@@ -115,6 +117,7 @@ class PipelineOrchestrator:
     def _do_start(self) -> None:
         logger.info("_do_start entered")
         self._vad_buffer.clear()
+        self._vad_sample_count = 0
         self._recording = False
         self._samples_since_speech = 0
         self._speech_frame_count = 0
@@ -267,39 +270,71 @@ class PipelineOrchestrator:
             self._samples_since_speech = 0
             if not self._recording:
                 self._vad_buffer = [audio]
+                self._vad_sample_count = len(audio)
                 self._recording = True
                 self._speech_frame_count = 1
             else:
                 self._vad_buffer.append(audio)
+                self._vad_sample_count += len(audio)
                 self._speech_frame_count += 1
+            self._flush_max_duration_segments(sr, state, frame_size)
         else:
             if self._recording:
                 self._vad_buffer.append(audio)
+                self._vad_sample_count += len(audio)
                 self._samples_since_speech += 1
+                self._flush_max_duration_segments(sr, state, frame_size)
 
                 if self._samples_since_speech >= min_silence_frames:
                     if self._speech_frame_count >= min_speech_frames:
-                        audio_data = np.concatenate(
-                            self._vad_buffer, axis=0
+                        self._enqueue_audio_data(
+                            np.concatenate(self._vad_buffer, axis=0), sr
                         )
-                        if audio_data.dtype != np.int16:
-                            audio_data = (audio_data * 32767).clip(-32768, 32767).astype(np.int16)
-                        job = SegmentJob(
-                            audio_data=audio_data,
-                            session_id=self._session.session_id,
-                            sequence=self._session.next_sequence(),
-                            sample_rate=sr,
-                        )
-                        try:
-                            self._job_queue.put_nowait(job)
-                        except queue.Full:
-                            logger.warning("Processing queue full, dropping segment")
                     else:
                         logger.debug("Speech segment too short, discarded")
                     self._recording = False
                     self._vad_buffer.clear()
+                    self._vad_sample_count = 0
                     self._samples_since_speech = 0
                     self._speech_frame_count = 0
+
+    def _flush_max_duration_segments(
+        self, sample_rate: int, state: VADState, frame_size: int
+    ) -> None:
+        max_samples = int(
+            sample_rate * self._config.vad.max_segment_duration_ms / 1000
+        )
+        if self._vad_sample_count < max_samples:
+            return
+
+        chunks, remainder = split_audio_buffer(self._vad_buffer, max_samples)
+        for chunk in chunks:
+            self._enqueue_audio_data(chunk, sample_rate)
+
+        self._vad_buffer = remainder
+        self._vad_sample_count = sum(len(part) for part in remainder)
+        if state == VADState.SPEECH:
+            self._samples_since_speech = 0
+            self._speech_frame_count = 1 if self._vad_sample_count else 0
+        else:
+            self._samples_since_speech = (
+                (self._vad_sample_count + frame_size - 1) // frame_size
+            )
+            self._speech_frame_count = 0
+
+    def _enqueue_audio_data(self, audio_data: np.ndarray, sample_rate: int) -> None:
+        if audio_data.dtype != np.int16:
+            audio_data = (audio_data * 32767).clip(-32768, 32767).astype(np.int16)
+        job = SegmentJob(
+            audio_data=audio_data,
+            session_id=self._session.session_id,
+            sequence=self._session.next_sequence(),
+            sample_rate=sample_rate,
+        )
+        try:
+            self._job_queue.put_nowait(job)
+        except queue.Full:
+            logger.warning("Processing queue full, dropping segment")
 
     # ── Processor loop (worker thread) ──────────────────────────────
     def _processor_loop(self) -> None:

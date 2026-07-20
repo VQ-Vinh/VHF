@@ -3,6 +3,25 @@ from __future__ import annotations
 import numpy as np
 
 
+def split_audio_buffer(
+    buffer: list[np.ndarray], max_samples: int
+) -> tuple[list[np.ndarray], list[np.ndarray]]:
+    """Split buffered audio into exact non-overlapping chunks and a remainder."""
+    if max_samples <= 0:
+        raise ValueError("max_samples must be positive")
+    if not buffer:
+        return [], []
+
+    combined = np.concatenate(buffer, axis=0)
+    chunks: list[np.ndarray] = []
+    offset = 0
+    while len(combined) - offset >= max_samples:
+        chunks.append(combined[offset : offset + max_samples])
+        offset += max_samples
+    remainder = combined[offset:]
+    return chunks, [remainder] if len(remainder) else []
+
+
 def resample_audio(audio: np.ndarray, original_rate: int, target_rate: int) -> np.ndarray:
     """Resample mono audio while preserving its input dtype."""
     if original_rate == target_rate:
