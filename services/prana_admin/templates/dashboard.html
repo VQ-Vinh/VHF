@@ -1,19 +1,21 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="page-heading"><div><h1>{{ t('dashboard.title') }}</h1><p>{{ t('dashboard.subtitle') }}</p></div></div>
-<section class="metrics" aria-label="Key metrics">
-  <article><span>{{ t('dashboard.total') }}</span><strong>{{ metrics.total }}</strong></article>
-  <article><span>{{ t('dashboard.active') }}</span><strong>{{ metrics.active }}</strong></article>
-  <article><span>{{ t('dashboard.pending') }}</span><strong>{{ metrics.pending }}</strong></article>
-  <article><span>{{ t('dashboard.usage') }}</span><strong>{{ '%.1f'|format(metrics.audio_minutes) }} <small>min</small></strong></article>
+<header class="page-heading"><div><h1>{{ t('dashboard.title') }}</h1><p>{{ t('dashboard.subtitle') }}</p></div></header>
+<section class="metrics" aria-label="{{ t('dashboard.metrics') }}">
+  <article class="metric-card metric-users"><span>{{ t('dashboard.total') }}</span><strong>{{ metrics.total }}</strong></article>
+  <article class="metric-card metric-active"><span>{{ t('dashboard.active') }}</span><strong>{{ metrics.active }}</strong></article>
+  <article class="metric-card metric-pending"><span>{{ t('dashboard.pending') }}</span><strong>{{ metrics.pending }}</strong></article>
+  <article class="metric-card metric-usage"><span>{{ t('dashboard.usage') }}</span><strong>{{ '%.1f'|format(metrics.audio_minutes) }} <small>{{ t('common.minutes_short') }}</small></strong></article>
 </section>
 <div class="dashboard-grid">
-  <section class="panel"><div class="panel-heading"><h2>{{ t('dashboard.needs_action') }}</h2><a href="/users?status=pending_payment">{{ t('nav.users') }}</a></div>
-    {% if attention %}<div class="compact-list">{% for item in attention %}<a href="/users/{{ item.uid }}"><span><strong>{{ item.email }}</strong><small>{{ item.uid }}</small></span><span class="badge {{ item.status }}">{{ item.status|replace('_', ' ') }}</span></a>{% endfor %}</div>
+  <section class="panel" aria-labelledby="attention-title">
+    <div class="panel-heading"><div><h2 id="attention-title">{{ t('dashboard.needs_action') }}</h2><p>{{ t('dashboard.needs_action_hint') }}</p></div><a class="text-link" href="/users">{{ t('dashboard.view_users') }}</a></div>
+    {% if attention %}<div class="compact-list">{% for item in attention %}<a href="/users/{{ item.uid }}"><span><strong>{{ item.email }}</strong><small>{{ item.uid }}</small></span><span class="badge {{ item.status }}">{{ t('status.' ~ item.status) }}</span></a>{% endfor %}</div>
     {% else %}<p class="empty">{{ t('users.empty') }}</p>{% endif %}
   </section>
-  <section class="panel"><div class="panel-heading"><h2>{{ t('dashboard.activity') }}</h2></div>
-    {% if activity %}<div class="activity-list">{% for item in activity %}<div><strong>{{ item.action }}</strong><span>{{ item.operator }}</span><time>{{ item.when }}</time></div>{% endfor %}</div>
+  <section class="panel table-panel activity-panel" aria-labelledby="activity-title">
+    <div class="panel-heading"><div><h2 id="activity-title">{{ t('dashboard.activity') }}</h2><p>{{ t('dashboard.activity_hint') }}</p></div></div>
+    {% if activity %}<div class="table-wrap"><table class="activity-table"><thead><tr><th>{{ t('dashboard.action') }}</th><th>{{ t('dashboard.operator') }}</th><th>{{ t('dashboard.time') }}</th></tr></thead><tbody>{% for item in activity %}<tr><td><strong>{{ t('audit.' ~ item.action) }}</strong></td><td>{{ item.operator }}</td><td><time>{{ item.when }}</time></td></tr>{% endfor %}</tbody></table></div>
     {% else %}<p class="empty">{{ t('common.none') }}</p>{% endif %}
   </section>
 </div>

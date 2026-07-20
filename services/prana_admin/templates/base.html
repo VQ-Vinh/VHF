@@ -9,22 +9,27 @@
 </head>
 <body>
   <div class="app-shell">
-    <aside class="sidebar">
+    <aside class="sidebar" data-sidebar>
       <a class="brand" href="/">
-        <span class="brand-mark">PE</span>
-        <span><strong>PRANA ELEX</strong><small>{{ t('brand.subtitle') }}</small></span>
+        <span class="brand-mark" aria-hidden="true">PE</span>
+        <span class="brand-copy"><strong>PRANA ELEX</strong><small>{{ t('brand.subtitle') }}</small></span>
       </a>
-      <nav aria-label="Primary navigation">
+      <nav aria-label="{{ t('nav.primary') }}">
         <a href="/" class="nav-link {% if active_nav == 'dashboard' %}active{% endif %}">{{ t('nav.dashboard') }}</a>
         <a href="/users" class="nav-link {% if active_nav == 'users' %}active{% endif %}">{{ t('nav.users') }}</a>
         <a href="/plans" class="nav-link {% if active_nav == 'plans' %}active{% endif %}">{{ t('nav.plans') }}</a>
       </nav>
-      <div class="operator"><small>{{ t('nav.signed_in') }}</small><strong>{{ operator }}</strong></div>
+      <div class="operator">
+        <span class="operator-avatar" aria-hidden="true">{{ operator[:1]|upper }}</span>
+        <span class="operator-copy"><small>{{ t('nav.signed_in') }}</small><strong title="{{ operator }}">{{ operator }}</strong></span>
+      </div>
     </aside>
-    <main>
+    <button class="sidebar-scrim" type="button" aria-label="{{ t('nav.close') }}" data-sidebar-scrim></button>
+    <main id="main-content">
       <header class="topbar">
-        <button class="menu-button" type="button" aria-label="Menu" data-menu-button>Menu</button>
-        <div class="locale-switch" aria-label="{{ t('nav.language') }}">
+        <button class="menu-button" type="button" aria-label="{{ t('nav.menu') }}" aria-expanded="false" data-menu-button>{{ t('nav.menu') }}</button>
+        <div class="topbar-context"><strong>{{ t('brand.subtitle') }}</strong><span>PRANA ELEX</span></div>
+        <div class="locale-switch" role="group" aria-label="{{ t('nav.language') }}">
           <a href="/locale/en?next={{ return_path|urlencode }}" class="{% if locale == 'en' %}active{% endif %}">EN</a>
           <a href="/locale/vi?next={{ return_path|urlencode }}" class="{% if locale == 'vi' %}active{% endif %}">VI</a>
         </div>

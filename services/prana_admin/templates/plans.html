@@ -1,6 +1,20 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="page-heading"><div><h1>{{ t('plans.title') }}</h1><p>{{ t('plans.subtitle') }}</p></div></div>
-<section class="panel"><div class="panel-heading"><h2>{{ t('plans.create') }}</h2></div><form class="plan-form" method="post" action="/plans"><label><span>{{ t('plans.id') }}</span><input name="plan_id" placeholder="starter" required pattern="[a-z0-9-]+"></label><label><span>{{ t('plans.name') }}</span><input name="name" placeholder="Starter" required></label><label><span>{{ t('plans.minutes') }}</span><input name="monthly_audio_minutes" type="number" min="1" required></label><label><span>{{ t('plans.rpm') }}</span><input name="requests_per_minute" type="number" value="30" min="1" required></label><button class="button primary">{{ t('plans.save') }}</button></form></section>
-<section class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>{{ t('plans.id') }}</th><th>{{ t('plans.name') }}</th><th>{{ t('plans.minutes') }}</th><th>{{ t('plans.rpm') }}</th></tr></thead><tbody>{% for plan in plans %}<tr><td><code>{{ plan.id }}</code></td><td>{{ plan.name }}</td><td>{{ '%.0f'|format(plan.monthly_audio_seconds / 60) }}</td><td>{{ plan.requests_per_minute }}</td></tr>{% endfor %}</tbody></table></div></section>
+<header class="page-heading"><div><h1>{{ t('plans.title') }}</h1><p>{{ t('plans.subtitle') }}</p></div></header>
+<div class="plans-layout">
+  <section class="panel plan-editor" aria-labelledby="plan-editor-title">
+    <div class="panel-heading"><div><h2 id="plan-editor-title">{{ t('plans.create') }}</h2><p>{{ t('plans.create_hint') }}</p></div></div>
+    <form class="plan-form" method="post" action="/plans">
+      <label><span>{{ t('plans.id') }}</span><input name="plan_id" placeholder="starter" required pattern="[a-z0-9-]+"></label>
+      <label><span>{{ t('plans.name') }}</span><input name="name" placeholder="Starter" required></label>
+      <label><span>{{ t('plans.minutes') }}</span><input name="monthly_audio_minutes" type="number" min="1" required></label>
+      <label><span>{{ t('plans.rpm') }}</span><input name="requests_per_minute" type="number" value="30" min="1" required></label>
+      <button class="button primary">{{ t('plans.save') }}</button>
+    </form>
+  </section>
+  <section class="panel table-panel" aria-labelledby="plan-list-title">
+    <div class="panel-heading"><div><h2 id="plan-list-title">{{ t('plans.configured') }}</h2><p>{{ t('plans.configured_hint') }}</p></div></div>
+    <div class="table-wrap"><table><thead><tr><th>{{ t('plans.id') }}</th><th>{{ t('plans.name') }}</th><th class="numeric-cell">{{ t('plans.minutes') }}</th><th class="numeric-cell">{{ t('plans.rpm') }}</th></tr></thead><tbody>{% for plan in plans %}<tr><td><code>{{ plan.id }}</code></td><td><strong>{{ plan.name }}</strong></td><td class="numeric-cell">{{ '%.0f'|format(plan.monthly_audio_seconds / 60) }}</td><td class="numeric-cell">{{ plan.requests_per_minute }}</td></tr>{% else %}<tr><td colspan="4" class="empty">{{ t('plans.empty') }}</td></tr>{% endfor %}</tbody></table></div>
+  </section>
+</div>
 {% endblock %}

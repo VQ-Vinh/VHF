@@ -49,6 +49,36 @@ class AdminUiTests(unittest.TestCase):
                              attention=[], activity=[])
         self.assertIn("Tổng quan vận hành", vietnamese.body.decode())
 
+    def test_operational_pages_render_structured_data(self) -> None:
+        scope = {"type": "http", "method": "GET", "path": "/users", "query_string": b"", "headers": [],
+                 "scheme": "https", "server": ("testserver", 443)}
+        request = Request(scope)
+        plans = [{"id": "starter", "name": "Starter", "monthly_audio_seconds": 6000,
+                  "requests_per_minute": 30}]
+        user = {"email": "customer@example.com", "status": "pending_payment", "plan_id": "starter",
+                "expires": "2026-08-20 10:00", "email_verified": True}
+
+        users = _render(request, "users.html", "operator@example.com", "Users", "users",
+                        users=[{"uid": "uid-1", **user}], plans=plans,
+                        statuses=("registered", "email_verified", "pending_payment", "active", "expired", "suspended"),
+                        filters={"q": "", "status": "", "plan": ""}, cursor="", first_query="", next_query="")
+        users_html = users.body.decode()
+        self.assertIn("Pending payment", users_html)
+        self.assertIn('class="filter-bar"', users_html)
+
+        detail = _render(request, "user_detail.html", "operator@example.com", "User", "users",
+                         uid="uid-1", user=user, plans=plans,
+                         devices=[{"id": "device-1", "name": "Bridge PC", "active": True}],
+                         usage=[{"period": "2026-07", "minutes": 12.5, "requests": 17}])
+        detail_html = detail.body.decode()
+        self.assertIn("Account overview", detail_html)
+        self.assertIn("Bridge PC", detail_html)
+
+        plan_page = _render(request, "plans.html", "operator@example.com", "Plans", "plans", plans=plans)
+        plan_html = plan_page.body.decode()
+        self.assertIn("Configured plans", plan_html)
+        self.assertIn("100", plan_html)
+
     def test_cursor_rejects_invalid_values(self) -> None:
         self.assertEqual(_decode_cursor("not-a-valid-cursor"), "")
 
