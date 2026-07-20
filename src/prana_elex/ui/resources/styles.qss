@@ -21,7 +21,7 @@ QToolTip {
 #HeaderTitle { font-size: 23px; font-weight: 750; letter-spacing: 1.2px; color: #FFFFFF; }
 #HeaderSubtitle { font-size: 10px; font-weight: 650; letter-spacing: 1.8px; color: #A9C5CC; }
 #LocaleSelector {
-    min-width: 58px; max-width: 58px; min-height: 34px;
+    min-width: 58px; max-width: 58px; min-height: 36px; max-height: 36px;
     background: #1C4652; color: #FFFFFF;
     border: 1px solid #41636D; border-radius: 8px; padding: 0 8px;
     font-weight: 700;
@@ -44,6 +44,9 @@ QFrame#RxBadge[state="error"] QLabel { color: #FFFFFF; }
     font-size: 10px; font-weight: 750; letter-spacing: .8px; color: #476671;
 }
 #LangValue { font-size: 17px; font-weight: 700; color: #102F3A; }
+#LanguageInputBox {
+    background: #FFFFFF; border: 1px solid #B8CBD3; border-radius: 8px;
+}
 #LanguageDirection { color: #007B87; font-size: 18px; }
 
 QComboBox, QLineEdit, QSpinBox {
@@ -82,7 +85,7 @@ QCheckBox { color: #24444F; spacing: 8px; }
 /* Status */
 #StatusBar { background: #DCE9ED; border-top: 1px solid #B8CBD3; }
 #ListeningDot, #GcsDot { font-size: 8px; }
-#ListeningLabel, #GcsLabel, #LatencyLabel {
+#ListeningLabel, #GcsLabel {
     font-size: 10px; font-weight: 750; letter-spacing: .4px; color: #355762;
 }
 
@@ -105,10 +108,10 @@ QPushButton:disabled { color: #99AAB2; border-color: #E1E7EB; background: #F3F6F
 QPushButton#StartStopButton[mode="stop"] { background: #F4B942; color: #2D2106; border-color: #FFD36F; font-weight: 750; }
 QPushButton#StartStopButton[mode="stop"]:hover { background: #FFC957; border-color: #FFE098; color: #201805; }
 QPushButton#StartStopButton[mode="transition"] { background: #EDF2F4; color: #607683; border-color: #CBD7DE; }
-#SettingsButton, #ConsoleClearButton {
+#SettingsButton, #AccountButton, #ConsoleClearButton {
     background: transparent; border: 1px solid transparent; border-radius: 8px; padding: 0;
 }
-#SettingsButton:hover { background: #1C4652; border-color: #41636D; }
+#SettingsButton:hover, #AccountButton:hover { background: #1C4652; border-color: #41636D; }
 #ConsoleClearButton:hover { background: #DCE9ED; border-color: #B8CBD3; }
 
 /* Account pages */
@@ -120,6 +123,7 @@ QPushButton#StartStopButton[mode="transition"] { background: #EDF2F4; color: #60
 #AccountCard QLineEdit { min-height: 40px; font-size: 13px; }
 #AccountCard QPushButton { min-height: 40px; font-size: 13px; }
 #AccountCard QCheckBox { min-height: 30px; color: #24444F; }
+#PasswordRequirements { font-size: 11px; line-height: 1.35; color: #607683; }
 #PasswordToggle {
     min-height: 30px; max-width: 170px; padding: 0;
     background: transparent; border: none; color: #355762; text-align: left;
@@ -133,6 +137,26 @@ QTabBar::tab {
     padding: 9px 22px; border: 1px solid #D8E1E7;
 }
 QTabBar::tab:selected { background: #FCFDFD; color: #087F8C; border-bottom: 2px solid #087F8C; }
+
+/* Account center */
+#AccountCenterPage, #AccountCenterScroll, #AccountCenterBody { background: #EAF1F4; border: none; }
+#AccountCenterTitle { font-size: 25px; font-weight: 750; color: #102F3A; }
+#AccountCenterSubtitle, #AccountCenterMuted { color: #607683; }
+#AccountCenterSectionTitle { font-size: 15px; font-weight: 750; color: #005E68; }
+#AccountCenterCard {
+    background: #FCFDFD; border: 1px solid #CBD7DE; border-radius: 12px;
+}
+#AccountCenterValue, #DeviceName { font-weight: 700; color: #102F3A; }
+#AccountCenterMessage { padding: 10px 12px; border-radius: 8px; }
+QLabel#AccountCenterMessage[kind="success"] { background: #DDF3E8; color: #166440; }
+QLabel#AccountCenterMessage[kind="error"] { background: #F9E1E5; color: #A42A3A; }
+#UsageProgress { min-height: 12px; max-height: 12px; border: none; border-radius: 6px; background: #DCE9ED; }
+#UsageProgress::chunk { background: #087F8C; border-radius: 6px; }
+#DeviceRow { background: #F5F9FA; border: 1px solid #D8E1E7; border-radius: 9px; }
+#DeviceBadge { padding: 4px 8px; border-radius: 7px; font-size: 10px; font-weight: 750; }
+QLabel#DeviceBadge[state="current"] { background: #D9EFF1; color: #006975; }
+QLabel#DeviceBadge[state="active"] { background: #DDF3E8; color: #166440; }
+QLabel#DeviceBadge[state="revoked"] { background: #EDF0F2; color: #72838B; }
 
 /* Dialogs and tables */
 #SettingsDialog, #HistoryDialog { background: #EAF1F4; }

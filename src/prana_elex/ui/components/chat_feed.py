@@ -125,11 +125,6 @@ class ChatFeed(QWidget):
         status_layout.addWidget(self._listening_label)
         status_layout.addStretch()
 
-        self._latency_label = QLabel("LATENCY  --")
-        self._latency_label.setObjectName("LatencyLabel")
-        status_layout.addWidget(self._latency_label)
-        status_layout.addStretch()
-
         self._gcs_dot = QLabel("●")
         self._gcs_dot.setObjectName("GcsDot")
         self._gcs_label = QLabel("API OFF")
@@ -194,14 +189,6 @@ class ChatFeed(QWidget):
         self._listening_dot.setStyleSheet(f"color: {color};")
         self._listening_label.setText(labels.get(state, "IDLE"))
         self._listening_label.setToolTip(message if state == "error" else "")
-
-    def set_latency(self, latency_ms: float) -> None:
-        if latency_ms <= 0:
-            self._latency_label.setText(f"{tr('feed.latency')}  --")
-        elif latency_ms < 1000:
-            self._latency_label.setText(f"{tr('feed.latency')}  {latency_ms:.0f}ms")
-        else:
-            self._latency_label.setText(f"{tr('feed.latency')}  {latency_ms / 1000:.1f}s")
 
     def set_gcs_status(
         self,

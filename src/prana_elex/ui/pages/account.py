@@ -84,10 +84,10 @@ class AuthPage(_CenteredPage):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.card.setMinimumHeight(520)
+        self.card.setMinimumHeight(600)
         self.add_title(tr("account.welcome"), tr("account.subtitle"))
         self._tabs = QTabWidget()
-        self._tabs.setMinimumHeight(310)
+        self._tabs.setMinimumHeight(390)
         self._tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.content.addWidget(self._tabs)
 
@@ -130,11 +130,16 @@ class AuthPage(_CenteredPage):
         self._register_email.setPlaceholderText("name@example.com")
         self._register_password = QLineEdit()
         self._register_password.setEchoMode(QLineEdit.Password)
-        self._register_password.setPlaceholderText("At least 6 characters")
+        self._register_password.setPlaceholderText(tr("account.password_placeholder"))
         self._register_email_label = QLabel()
         self._register_password_label = QLabel()
         register_form.addRow(self._register_email_label, self._register_email)
         register_form.addRow(self._register_password_label, self._register_password)
+        self._password_requirements = QLabel()
+        self._password_requirements.setObjectName("PasswordRequirements")
+        self._password_requirements.setTextFormat(Qt.RichText)
+        self._password_requirements.setWordWrap(True)
+        register_form.addRow("", self._password_requirements)
         self._show_register = QPushButton()
         self._configure_password_toggle(self._show_register, self._register_password)
         register_form.addRow("", self._show_register)
@@ -143,6 +148,10 @@ class AuthPage(_CenteredPage):
         self._create.clicked.connect(self._emit_sign_up)
         register_form.addRow("", self._create)
         self._tabs.addTab(register, "")
+
+        self._busy = False
+        self._register_email.textChanged.connect(self._update_registration_state)
+        self._register_password.textChanged.connect(self._update_registration_state)
 
         self._message = QLabel()
         self._message.setWordWrap(True)
@@ -178,6 +187,7 @@ class AuthPage(_CenteredPage):
         self._login_password_label.setText(tr("account.password"))
         self._register_email_label.setText(tr("account.email"))
         self._register_password_label.setText(tr("account.password"))
+        self._register_password.setPlaceholderText(tr("account.password_placeholder"))
         self._show_login.setText(tr("account.show_password"))
         self._show_register.setText(tr("account.show_password"))
         self._forgot_password.setText(tr("account.forgot"))
@@ -185,28 +195,64 @@ class AuthPage(_CenteredPage):
         self._create.setText(tr("account.create"))
         self._tabs.setTabText(0, tr("account.sign_in"))
         self._tabs.setTabText(1, tr("account.create"))
+        self._update_registration_state()
 
     @staticmethod
-    def _valid(email: str, password: str) -> bool:
+    def _valid_login(email: str, password: str) -> bool:
         return bool(email and "@" in email and len(password) >= 6)
+
+    @staticmethod
+    def _password_checks(password: str) -> dict[str, bool]:
+        return {
+            "length": len(password) >= 6,
+            "letter": any(char.isalpha() for char in password),
+            "uppercase": any(char.isalpha() and char.isupper() for char in password),
+            "number": any(char.isdigit() for char in password),
+            "special": any(not char.isalnum() and not char.isspace() for char in password),
+        }
+
+    @classmethod
+    def _valid_registration(cls, email: str, password: str) -> bool:
+        return bool(
+            email
+            and "@" in email
+            and all(cls._password_checks(password).values())
+        )
+
+    def _update_registration_state(self, *_args) -> None:
+        checks = self._password_checks(self._register_password.text())
+        rows = []
+        for key, passed in checks.items():
+            color = "#21835A" if passed else "#A42A3A"
+            marker = "&#10003;" if passed else "&#9675;"
+            rows.append(
+                f'<span style="color:{color}">{marker} {tr(f"account.password_{key}")}</span>'
+            )
+        self._password_requirements.setText("<br>".join(rows))
+        valid = self._valid_registration(
+            self._register_email.text().strip(), self._register_password.text()
+        )
+        self._create.setEnabled(not self._busy and valid)
 
     def _emit_sign_in(self) -> None:
         email, password = self._login_email.text().strip(), self._login_password.text()
-        if not self._valid(email, password):
+        if not self._valid_login(email, password):
             self.set_message(tr("account.invalid"), True)
             return
         self.sign_in_requested.emit(email, password)
 
     def _emit_sign_up(self) -> None:
         email, password = self._register_email.text().strip(), self._register_password.text()
-        if not self._valid(email, password):
-            self.set_message(tr("account.invalid"), True)
+        if not self._valid_registration(email, password):
+            self.set_message(tr("account.invalid_registration"), True)
             return
         self.sign_up_requested.emit(email, password)
 
     def set_busy(self, busy: bool) -> None:
+        self._busy = busy
         self._tabs.setEnabled(not busy)
         self._sign_in.setText(tr("account.signing_in") if busy else tr("account.sign_in"))
+        self._update_registration_state()
 
     def set_message(self, message: str, error: bool = False) -> None:
         self._message.setText(message)
@@ -215,68 +261,6 @@ class AuthPage(_CenteredPage):
     def set_email(self, email: str) -> None:
         if email:
             self._login_email.setText(email)
-
-
-class AccountStatusPage(_CenteredPage):
-    refresh_requested = Signal()
-    resend_requested = Signal()
-    sign_out_requested = Signal()
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.add_title(tr("account.status"))
-        self._email = QLabel("—")
-        self._status = QLabel("—")
-        self._expiry = QLabel("—")
-        self._usage = QLabel("—")
-        form = QFormLayout()
-        self._account_label = QLabel()
-        self._status_label = QLabel()
-        self._expires_label = QLabel()
-        self._usage_label = QLabel()
-        form.addRow(self._account_label, self._email)
-        form.addRow(self._status_label, self._status)
-        form.addRow(self._expires_label, self._expiry)
-        form.addRow(self._usage_label, self._usage)
-        self.content.addLayout(form)
-        self._message = QLabel()
-        self._message.setWordWrap(True)
-        self.content.addWidget(self._message)
-        actions = QHBoxLayout()
-        self._resend = QPushButton()
-        self._resend.clicked.connect(self.resend_requested)
-        self._refresh = QPushButton()
-        self._refresh.clicked.connect(self.refresh_requested)
-        self._sign_out = QPushButton()
-        self._sign_out.clicked.connect(self.sign_out_requested)
-        actions.addWidget(self._resend)
-        actions.addStretch()
-        actions.addWidget(self._sign_out)
-        actions.addWidget(self._refresh)
-        self.content.addLayout(actions)
-        language.changed.connect(self._retranslate)
-        self._retranslate()
-
-    def _retranslate(self, *_args) -> None:
-        self._page_title.setText(tr("account.status"))
-        self._account_label.setText(tr("settings.account"))
-        self._status_label.setText(tr("common.status"))
-        self._expires_label.setText(tr("settings.expires"))
-        self._usage_label.setText(tr("settings.usage"))
-        self._resend.setText(tr("account.resend"))
-        self._refresh.setText(tr("common.refresh"))
-        self._sign_out.setText(tr("common.sign_out"))
-
-    def set_profile(self, profile: dict, message: str = "") -> None:
-        usage = profile.get("usage") or {}
-        used = int(usage.get("used_audio_seconds", 0)) / 60
-        remaining = int(usage.get("remaining_audio_seconds", 0)) / 60
-        self._email.setText(profile.get("email") or "—")
-        self._status.setText(profile.get("status") or "restricted")
-        self._expiry.setText(str(profile.get("subscription_expires_at") or "—"))
-        self._usage.setText(f"{used:.1f} min used / {remaining:.1f} min remaining")
-        self._message.setText(message)
-        self._resend.setVisible(not bool(profile.get("email_verified")))
 
 
 class OfflinePage(_CenteredPage):

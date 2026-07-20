@@ -1,5 +1,5 @@
 from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QLabel, QVBoxLayout
+from PySide6.QtWidgets import QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel
 
 from prana_elex.common.languages import LANGUAGE_NAMES
 from prana_elex.ui.icons import phosphor_icon
@@ -16,19 +16,28 @@ class LanguageBlock(QFrame):
         self._suppress_signal = False
         self._detected_code = ""
 
-        layout = QHBoxLayout(self)
+        layout = QGridLayout(self)
         layout.setContentsMargins(28, 14, 28, 14)
-        layout.setSpacing(20)
+        layout.setHorizontalSpacing(20)
+        layout.setVerticalSpacing(6)
+        layout.setColumnStretch(0, 1)
+        layout.setColumnStretch(1, 0)
+        layout.setColumnStretch(2, 1)
 
-        input_block = QVBoxLayout()
-        input_block.setSpacing(6)
         self._input_label = QLabel()
         self._input_label.setObjectName("LangLabel")
+        layout.addWidget(self._input_label, 0, 0)
+
+        self._input_box = QFrame()
+        self._input_box.setObjectName("LanguageInputBox")
+        self._input_box.setFixedHeight(40)
+        input_value_layout = QHBoxLayout(self._input_box)
+        input_value_layout.setContentsMargins(12, 0, 12, 0)
         self._input_lang = QLabel()
         self._input_lang.setObjectName("LangValue")
-        input_block.addWidget(self._input_label)
-        input_block.addWidget(self._input_lang)
-        layout.addLayout(input_block, 1)
+        self._input_lang.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+        input_value_layout.addWidget(self._input_lang)
+        layout.addWidget(self._input_box, 1, 0)
 
         direction = QLabel()
         direction.setObjectName("LanguageDirection")
@@ -42,19 +51,17 @@ class LanguageBlock(QFrame):
             ).pixmap(QSize(18, 18))
         )
         direction.setToolTip("Detected language to output language")
-        layout.addWidget(direction)
+        layout.addWidget(direction, 1, 1, alignment=Qt.AlignCenter)
 
-        output_block = QVBoxLayout()
-        output_block.setSpacing(6)
         self._output_label = QLabel()
         self._output_label.setObjectName("LangLabel")
+        layout.addWidget(self._output_label, 0, 2)
         self._output_combo = QComboBox()
+        self._output_combo.setFixedHeight(40)
         self._output_combo.addItems(LANGUAGE_NAMES.values())
         self._output_combo.setCurrentText(LANGUAGE_NAMES.get("en", "English"))
         self._output_combo.setCursor(Qt.PointingHandCursor)
-        output_block.addWidget(self._output_label)
-        output_block.addWidget(self._output_combo)
-        layout.addLayout(output_block, 1)
+        layout.addWidget(self._output_combo, 1, 2)
 
         self._output_combo.currentTextChanged.connect(self._on_lang_changed)
         language.changed.connect(self._retranslate)

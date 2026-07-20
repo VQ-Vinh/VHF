@@ -21,6 +21,9 @@ class AccountController(QObject):
     state_changed = Signal(object, object, str)
     busy_changed = Signal(bool)
     notice = Signal(str, bool)
+    details_changed = Signal(object, object)
+    details_error = Signal(str)
+    details_loading = Signal(bool)
 
     def __init__(self, backend: BackendClient, parent=None):
         super().__init__(parent)
@@ -29,6 +32,8 @@ class AccountController(QObject):
         self.profile: dict | None = None
         self._busy = False
         self._lock = threading.Lock()
+        self._details_busy = False
+        self._details_lock = threading.Lock()
 
     def _emit_state(self, state: AccountState, profile: dict | None = None, message: str = "") -> None:
         self.state = state
@@ -49,6 +54,23 @@ class AccountController(QObject):
                 with self._lock:
                     self._busy = False
                 self.busy_changed.emit(False)
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def _start_details(self, worker) -> None:
+        with self._details_lock:
+            if self._details_busy:
+                return
+            self._details_busy = True
+        self.details_loading.emit(True)
+
+        def run() -> None:
+            try:
+                worker()
+            finally:
+                with self._details_lock:
+                    self._details_busy = False
+                self.details_loading.emit(False)
 
         threading.Thread(target=run, daemon=True).start()
 
@@ -143,6 +165,65 @@ class AccountController(QObject):
                 self.notice.emit("If the account exists, a password reset email has been sent.", False)
 
         self._start(worker)
+
+    def load_account_center(self) -> None:
+        def worker() -> None:
+            try:
+                profile = self.backend.me()
+                self.profile = profile
+                devices = self.backend.list_devices() if profile.get("email_verified") else []
+                message = self._status_message(profile) if profile.get("status") != "active" else ""
+                self.details_changed.emit(profile, devices)
+                if profile.get("email_verified") and profile.get("status") == "active":
+                    self.backend.ensure_device()
+                    self._emit_state(AccountState.ACTIVE, profile)
+                else:
+                    self._emit_state(AccountState.RESTRICTED, profile, message)
+            except BackendApiError as exc:
+                if exc.code == "NETWORK_ERROR":
+                    self.details_error.emit(str(exc))
+                elif exc.code == "AUTH_REQUIRED" or exc.status == 401:
+                    self.backend.sign_out()
+                    self._emit_state(AccountState.SIGNED_OUT, message=str(exc))
+                elif exc.code in {
+                    "EMAIL_NOT_VERIFIED",
+                    "SUBSCRIPTION_INACTIVE",
+                    "DEVICE_REVOKED",
+                    "DEVICE_LIMIT_REACHED",
+                }:
+                    self.details_error.emit(str(exc))
+                    self._emit_state(AccountState.RESTRICTED, self.profile, str(exc))
+                else:
+                    self.details_error.emit(str(exc))
+            except FirebaseAuthError as exc:
+                self.backend.sign_out()
+                self._emit_state(AccountState.SIGNED_OUT, message=str(exc))
+            except Exception as exc:
+                self.details_error.emit(str(exc))
+
+        self._start_details(worker)
+
+    def revoke_account_device(self, device_id: str) -> None:
+        def worker() -> None:
+            try:
+                if device_id == self.backend.local_device_id:
+                    self.notice.emit("The current device cannot be revoked here.", True)
+                    return
+                self.backend.revoke_device(device_id)
+                profile = self.backend.me()
+                self.profile = profile
+                devices = self.backend.list_devices() if profile.get("email_verified") else []
+                self.details_changed.emit(profile, devices)
+                self.notice.emit("Device revoked.", False)
+            except BackendApiError as exc:
+                self.details_error.emit(str(exc))
+            except FirebaseAuthError as exc:
+                self.backend.sign_out()
+                self._emit_state(AccountState.SIGNED_OUT, message=str(exc))
+            except Exception as exc:
+                self.details_error.emit(str(exc))
+
+        self._start_details(worker)
 
     def sign_out_local(self) -> None:
         self.backend.sign_out()

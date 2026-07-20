@@ -44,6 +44,12 @@ class BackendClient:
     def ready(self) -> bool:
         return bool(self.api_url and self.auth.has_session)
 
+    @property
+    def local_device_id(self) -> str:
+        if self.device is None:
+            self.device = DeviceIdentity()
+        return self.device.id
+
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.auth.id_token()}"}
 
@@ -76,9 +82,12 @@ class BackendClient:
         return response.json()
 
     def revoke_device(self, device_id: str) -> None:
-        response = httpx.delete(
-            f"{self.api_url}/v1/devices/{device_id}", headers=self._headers(), timeout=20
-        )
+        try:
+            response = httpx.delete(
+                f"{self.api_url}/v1/devices/{device_id}", headers=self._headers(), timeout=20
+            )
+        except httpx.RequestError as exc:
+            raise BackendApiError("NETWORK_ERROR", "Cannot reach PRANA API") from exc
         self._raise(response)
 
     def ensure_device(self) -> DeviceIdentity:

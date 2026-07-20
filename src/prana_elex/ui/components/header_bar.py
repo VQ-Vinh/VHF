@@ -7,6 +7,7 @@ from prana_elex.ui.i18n import language, tr
 
 class HeaderBar(QFrame):
     settings_requested = Signal()
+    account_requested = Signal()
     toggle_requested = Signal()
 
     def __init__(self, parent=None):
@@ -33,17 +34,18 @@ class HeaderBar(QFrame):
         self._locale.setObjectName("LocaleSelector")
         self._locale.addItem("EN", "en")
         self._locale.addItem("VI", "vi")
+        self._locale.setFixedHeight(36)
         self._locale.setCurrentIndex(0 if language.locale == "en" else 1)
         self._locale.currentIndexChanged.connect(lambda: language.set_locale(self._locale.currentData()))
-        layout.addWidget(self._locale)
+        layout.addWidget(self._locale, 0, Qt.AlignVCenter)
 
         self._start_stop_btn = QPushButton()
         self._start_stop_btn.setObjectName("StartStopButton")
-        self._start_stop_btn.setFixedHeight(34)
+        self._start_stop_btn.setFixedHeight(36)
         self._start_stop_btn.setIconSize(QSize(14, 14))
         self._start_stop_btn.setCursor(Qt.PointingHandCursor)
         self._start_stop_btn.clicked.connect(self.toggle_requested.emit)
-        layout.addWidget(self._start_stop_btn)
+        layout.addWidget(self._start_stop_btn, 0, Qt.AlignVCenter)
 
         self._settings_btn = QPushButton()
         self._settings_btn.setObjectName("SettingsButton")
@@ -61,11 +63,29 @@ class HeaderBar(QFrame):
         self._settings_btn.setToolTip(tr("header.settings"))
         self._settings_btn.setAccessibleName(tr("header.settings"))
         self._settings_btn.clicked.connect(self.settings_requested.emit)
-        layout.addWidget(self._settings_btn)
+        layout.addWidget(self._settings_btn, 0, Qt.AlignVCenter)
+
+        self._account_btn = QPushButton()
+        self._account_btn.setObjectName("AccountButton")
+        self._account_btn.setFixedSize(36, 36)
+        self._account_btn.setIcon(
+            phosphor_icon(
+                "ph.user-circle",
+                color="#C7DDE2",
+                active_color="#FFFFFF",
+                scale_factor=1.05,
+            )
+        )
+        self._account_btn.setIconSize(QSize(20, 20))
+        self._account_btn.setCursor(Qt.PointingHandCursor)
+        self._account_btn.setToolTip(tr("header.account"))
+        self._account_btn.setAccessibleName(tr("header.account"))
+        self._account_btn.clicked.connect(self.account_requested.emit)
+        layout.addWidget(self._account_btn, 0, Qt.AlignVCenter)
 
         self._rx_badge = QFrame()
         self._rx_badge.setObjectName("RxBadge")
-        self._rx_badge.setFixedHeight(34)
+        self._rx_badge.setFixedHeight(36)
         rx_layout = QHBoxLayout(self._rx_badge)
         rx_layout.setContentsMargins(10, 0, 12, 0)
         rx_layout.setSpacing(6)
@@ -75,7 +95,7 @@ class HeaderBar(QFrame):
         self._rx_label.setObjectName("RxLabel")
         rx_layout.addWidget(self._rx_dot)
         rx_layout.addWidget(self._rx_label)
-        layout.addWidget(self._rx_badge)
+        layout.addWidget(self._rx_badge, 0, Qt.AlignVCenter)
 
         self.set_pipeline_running(False)
         self.set_rx_mode("off")
@@ -86,6 +106,8 @@ class HeaderBar(QFrame):
         self._subtitle.setText(tr("app.subtitle"))
         self._settings_btn.setToolTip(tr("header.settings"))
         self._settings_btn.setAccessibleName(tr("header.settings"))
+        self._account_btn.setToolTip(tr("header.account"))
+        self._account_btn.setAccessibleName(tr("header.account"))
         index = self._locale.findData(language.locale)
         if index >= 0 and index != self._locale.currentIndex():
             self._locale.blockSignals(True)

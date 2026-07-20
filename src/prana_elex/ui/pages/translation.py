@@ -103,7 +103,6 @@ class TranslationPage(QWidget):
     def reset(self) -> None:
         self.chat.clear()
         self.chat.set_state("stopped")
-        self.chat.set_latency(0)
         self.console_output.clear()
         self.retry_button.setVisible(False)
         if self._history is not None:

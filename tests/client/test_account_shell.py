@@ -1,19 +1,27 @@
 from __future__ import annotations
 
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from prana_elex.backend.auth import FirebaseAuthClient
+
+from prana_elex.backend.auth import FirebaseAuthClient, FirebaseAuthError
 from prana_elex.backend.client import BackendApiError, BackendClient
 from prana_elex.storage.account import prepare_data_root
 
 try:
     from PySide6.QtWidgets import QApplication
+    from PySide6.QtTest import QSignalSpy
     from prana_elex.config.schema import AppConfig
     from prana_elex.ui.account import AccountController, AccountState
+    from prana_elex.ui.dialogs.settings import SettingsDialog
+    from prana_elex.ui.components.chat_feed import ChatFeed
+    from prana_elex.ui.components.header_bar import HeaderBar
+    from prana_elex.ui.components.language_block import LanguageBlock
     from prana_elex.ui.pages.account import AuthPage
+    from prana_elex.ui.pages.account_center import AccountCenterPage
     from prana_elex.ui.i18n import language
     from prana_elex.ui.main_window import MainWindow
 except ModuleNotFoundError as exc:
@@ -26,6 +34,12 @@ except ModuleNotFoundError as exc:
     QApplication = None  # type: ignore[assignment]
     AppConfig = None  # type: ignore[assignment]
     MainWindow = None  # type: ignore[assignment]
+    AccountCenterPage = None  # type: ignore[assignment]
+    SettingsDialog = None  # type: ignore[assignment]
+    ChatFeed = None  # type: ignore[assignment]
+    HeaderBar = None  # type: ignore[assignment]
+    LanguageBlock = None  # type: ignore[assignment]
+    QSignalSpy = None  # type: ignore[assignment]
 
 
 class _FakeAuth:
@@ -43,6 +57,19 @@ class _FakeBackend:
         self.profile = profile or {}
         self.error = error
         self.registered = False
+        self.devices = [
+            {
+                "id": "device-current",
+                "name": "Current PC",
+                "platform": "Windows AMD64",
+                "active": True,
+            }
+        ]
+        self.revoked: list[str] = []
+
+    @property
+    def local_device_id(self) -> str:
+        return "device-current"
 
     def me(self) -> dict:
         if self.error:
@@ -55,6 +82,17 @@ class _FakeBackend:
         self.registered = True
         return object()
 
+    def list_devices(self) -> list[dict]:
+        if self.error:
+            raise self.error
+        return self.devices
+
+    def revoke_device(self, device_id: str) -> None:
+        self.revoked.append(device_id)
+        for device in self.devices:
+            if device["id"] == device_id:
+                device["active"] = False
+
     def reset_registration(self) -> None:
         self.registered = False
 
@@ -66,13 +104,27 @@ class _FakeBackend:
 @unittest.skipIf(AccountController is None, "PySide6 is not installed in this test environment")
 class AccountControllerTests(unittest.TestCase):
     @staticmethod
+    def _wait_for_spy(spy, count: int = 1) -> None:
+        deadline = time.monotonic() + 1.0
+        while spy.count() < count and time.monotonic() < deadline:
+            QApplication.processEvents()
+            time.sleep(0.01)
+        if spy.count() < count:
+            raise AssertionError(f"Expected {count} signal emissions, got {spy.count()}")
+
+    @staticmethod
     def _profile(status: str = "active", verified: bool = True) -> dict:
         return {
             "uid": "user-1",
             "email": "user@example.com",
             "email_verified": verified,
             "status": status,
-            "usage": {"used_audio_seconds": 60, "remaining_audio_seconds": 540},
+            "plan_id": "starter",
+            "usage": {
+                "used_audio_seconds": 60,
+                "remaining_audio_seconds": 540,
+                "monthly_audio_seconds": 600,
+            },
         }
 
     def test_active_profile_registers_device_and_enters_translation_state(self) -> None:
@@ -100,6 +152,40 @@ class AccountControllerTests(unittest.TestCase):
         self.assertEqual(controller.state, AccountState.OFFLINE)
         self.assertTrue(backend.auth.has_session)
 
+    def test_expired_auth_returns_to_login(self) -> None:
+        backend = _FakeBackend(error=FirebaseAuthError("Session expired"))
+        controller = AccountController(backend)  # type: ignore[arg-type]
+        controller._load_profile()
+        self.assertEqual(controller.state, AccountState.SIGNED_OUT)
+        self.assertFalse(backend.auth.has_session)
+
+    def test_account_center_loads_details_without_losing_session_on_network_error(self) -> None:
+        app = QApplication.instance() or QApplication([])
+        backend = _FakeBackend(self._profile())
+        controller = AccountController(backend)  # type: ignore[arg-type]
+        changed = QSignalSpy(controller.details_changed)
+        loading = QSignalSpy(controller.details_loading)
+        controller.load_account_center()
+        self._wait_for_spy(changed)
+        self._wait_for_spy(loading, 2)
+        self.assertEqual(changed.at(0)[0]["email"], "user@example.com")
+        self.assertEqual(changed.at(0)[1][0]["id"], "device-current")
+
+        backend.error = BackendApiError("NETWORK_ERROR", "offline")
+        errors = QSignalSpy(controller.details_error)
+        controller.load_account_center()
+        self._wait_for_spy(errors)
+        self._wait_for_spy(loading, 4)
+        self.assertTrue(backend.auth.has_session)
+
+        backend.error = FirebaseAuthError("Session expired")
+        states = QSignalSpy(controller.state_changed)
+        controller.load_account_center()
+        self._wait_for_spy(states)
+        self.assertEqual(controller.state, AccountState.SIGNED_OUT)
+        self.assertFalse(backend.auth.has_session)
+        self.assertIsNotNone(app)
+
     def test_password_reset_uses_firebase_oob_flow(self) -> None:
         auth = FirebaseAuthClient("public-api-key")
         with patch.object(auth, "_identity", return_value={}) as identity:
@@ -118,7 +204,6 @@ class AccountControllerTests(unittest.TestCase):
         sign_out.assert_called_once()
         self.assertIs(client.device, device)
         self.assertFalse(client._registered)
-
 
 class AccountStorageTests(unittest.TestCase):
     def test_account_scoped_storage_moves_back_to_selected_data_folder(self) -> None:
@@ -164,19 +249,128 @@ class AccountShellUiTests(unittest.TestCase):
         self.assertEqual(page._sign_in.text(), "Sign In")
         page.close()
 
+    def test_registration_password_policy_blocks_invalid_passwords(self) -> None:
+        page = AuthPage()
+        spy = QSignalSpy(page.sign_up_requested)
+        page._register_email.setText("user@example.com")
+
+        invalid_passwords = [
+            "Ab1!",
+            "abcdef!",
+            "ABCDEF!",
+            "Abcdef1",
+            "12345!",
+            "Abc1 x",
+        ]
+        for password in invalid_passwords:
+            page._register_password.setText(password)
+            self.assertFalse(page._create.isEnabled(), password)
+            page._emit_sign_up()
+        self.assertEqual(spy.count(), 0)
+
+        page._register_password.setText("Abc1!x")
+        self.assertTrue(page._create.isEnabled())
+        self.assertTrue(all(page._password_checks("Ábc1!x").values()))
+        page._emit_sign_up()
+        self.assertEqual(spy.count(), 1)
+
+        language.set_locale("vi")
+        self.app.processEvents()
+        self.assertIn("chữ cái viết hoa", page._password_requirements.text())
+        language.set_locale("en")
+        page.close()
+
+    def test_translation_header_controls_are_vertically_aligned(self) -> None:
+        header = HeaderBar()
+        header.resize(960, 72)
+        header.show()
+        self.app.processEvents()
+        controls = [
+            header._locale,
+            header._start_stop_btn,
+            header._settings_btn,
+            header._account_btn,
+            header._rx_badge,
+        ]
+        self.assertEqual({control.height() for control in controls}, {36})
+        self.assertEqual(len({control.geometry().center().y() for control in controls}), 1)
+        header.close()
+
+    def test_translation_status_bar_does_not_show_latency(self) -> None:
+        feed = ChatFeed()
+        self.assertFalse(hasattr(feed, "_latency_label"))
+        self.assertIsNotNone(feed._listening_label)
+        self.assertIsNotNone(feed._gcs_label)
+        feed.close()
+
+    def test_language_bar_uses_balanced_input_and_output_fields(self) -> None:
+        block = LanguageBlock()
+        block.resize(960, 96)
+        block.show()
+        self.app.processEvents()
+        self.assertEqual(block._input_box.height(), 40)
+        self.assertEqual(block._output_combo.height(), 40)
+        self.assertEqual(block._input_box.width(), block._output_combo.width())
+        self.assertEqual(block._input_box.y(), block._output_combo.y())
+        self.assertEqual(block._input_label.y(), block._output_label.y())
+
+        language.set_locale("vi")
+        block.set_detected_language("vi")
+        self.app.processEvents()
+        self.assertEqual(block._input_lang.text(), "Tiếng Việt")
+        self.assertLessEqual(
+            block._input_lang.sizeHint().width(), block._input_lang.width()
+        )
+        language.set_locale("en")
+        block.close()
+
+    def test_account_center_localizes_usage_and_protects_current_device(self) -> None:
+        page = AccountCenterPage()
+        profile = AccountControllerTests._profile()
+        devices = [
+            {"id": "device-current", "name": "Current", "platform": "Windows", "active": True},
+            {"id": "device-other", "name": "Other", "platform": "Linux", "active": True},
+            {"id": "device-old", "name": "Old", "platform": "Windows", "active": False},
+        ]
+        page.set_profile(profile, devices, "device-current")
+        revoke_ids = {
+            button.property("device_id")
+            for button in page.findChildren(type(page._refresh))
+            if button.property("device_id")
+        }
+        self.assertEqual(revoke_ids, {"device-other"})
+        self.assertFalse(page._back.isHidden())
+        self.assertIn("10.0 min total", page._usage_text.text())
+
+        language.set_locale("vi")
+        self.app.processEvents()
+        self.assertEqual(page._title.text(), "Trung tâm tài khoản")
+        self.assertIn("Tổng 10.0 phút", page._usage_text.text())
+        language.set_locale("en")
+        page.set_profile(AccountControllerTests._profile("suspended"), devices, "device-current")
+        self.assertTrue(page._back.isHidden())
+        page.close()
+
+    def test_settings_contains_only_application_preferences(self) -> None:
+        dialog = SettingsDialog(-1, "device", [], [])
+        self.assertFalse(hasattr(dialog, "_account_heading"))
+        self.assertFalse(hasattr(dialog, "_sign_out_button"))
+        dialog.close()
+
     def test_main_window_switches_pages_without_closing_on_sign_out(self) -> None:
         class FakeOrchestrator:
-            is_running = False
+            is_running = True
 
             def __init__(self, config, backend):
                 self.config = config
                 self.backend = backend
+                self.stop_calls = 0
 
             def shutdown(self, timeout=15):
                 return True
 
             def stop(self):
-                return None
+                self.stop_calls += 1
 
         profile = AccountControllerTests._profile()
         backend = _FakeBackend(profile)
@@ -189,8 +383,26 @@ class AccountShellUiTests(unittest.TestCase):
                 self.assertIs(window._stack.currentWidget(), window._auth_page)
 
                 window._on_account_state(AccountState.ACTIVE, profile, "")
+                controller.state = AccountState.ACTIVE
                 self.assertIs(window._stack.currentWidget(), window._translation_page)
                 self.assertEqual(window._active_uid, "user-1")
+
+                with patch.object(controller, "load_account_center") as load_details:
+                    window.open_account_center()
+                    self.assertIs(window._stack.currentWidget(), window._account_center)
+                    self.assertEqual(window._orchestrator.stop_calls, 0)
+                    load_details.assert_called_once()
+                    window._close_account_center()
+                    self.assertIs(window._stack.currentWidget(), window._translation_page)
+
+                    window._on_account_state(
+                        AccountState.RESTRICTED,
+                        AccountControllerTests._profile("suspended"),
+                        "",
+                    )
+                    self.assertIs(window._stack.currentWidget(), window._account_center)
+                    self.assertGreaterEqual(window._orchestrator.stop_calls, 1)
+                    self.assertTrue(window._account_center._back.isHidden())
 
                 window._finish_sign_out()
                 self.assertIs(window._stack.currentWidget(), window._auth_page)

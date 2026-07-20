@@ -9,13 +9,13 @@ from prana_elex.ui.dialogs.settings import SettingsDialog
 from prana_elex.ui.i18n import language, tr
 from prana_elex.ui.account import AccountController, AccountState
 from prana_elex.ui.pages.account import (
-    AccountStatusPage,
     AuthPage,
     ConfigErrorPage,
     DataSetupPage,
     LoadingPage,
     OfflinePage,
 )
+from prana_elex.ui.pages.account_center import AccountCenterPage
 from prana_elex.ui.pages.translation import TranslationPage
 from prana_elex.pipeline.orchestrator import PipelineState
 from prana_elex.pipeline.orchestrator import PipelineOrchestrator
@@ -46,6 +46,7 @@ class MainWindow(QMainWindow):
         self._data_root = data_root
         self._active_uid = ""
         self._signing_out = False
+        self._account_center_open = False
 
         self.setWindowTitle("PRANA ELEX")
         self.setMinimumSize(720, 600)
@@ -57,6 +58,7 @@ class MainWindow(QMainWindow):
         self._stack.addWidget(self._translation_page)
         self._header = self._translation_page.header
         self._header.settings_requested.connect(self.open_settings)
+        self._header.account_requested.connect(self.open_account_center)
         self._header.toggle_requested.connect(self._on_toggle_pipeline)
         self._lang_block = self._translation_page.language_block
         self._lang_block.language_changed.connect(self._on_lang_changed)
@@ -73,13 +75,13 @@ class MainWindow(QMainWindow):
 
         self._account_refresh_timer = QTimer(self)
         self._account_refresh_timer.setInterval(30_000)
-        self._account_refresh_timer.timeout.connect(lambda: self._account and self._account.refresh())
+        self._account_refresh_timer.timeout.connect(self._refresh_visible_account_page)
 
         self._loading_page = LoadingPage()
         self._auth_page = AuthPage()
-        self._status_page = AccountStatusPage()
+        self._account_center = AccountCenterPage()
         self._offline_page = OfflinePage()
-        for page in (self._loading_page, self._auth_page, self._status_page, self._offline_page):
+        for page in (self._loading_page, self._auth_page, self._account_center, self._offline_page):
             self._stack.addWidget(page)
 
         self._data_setup_page = None
@@ -96,9 +98,18 @@ class MainWindow(QMainWindow):
         self._auth_page.sign_in_requested.connect(self._on_sign_in)
         self._auth_page.sign_up_requested.connect(self._on_sign_up)
         self._auth_page.reset_requested.connect(self._on_password_reset)
-        self._status_page.refresh_requested.connect(lambda: self._account and self._account.refresh(True))
-        self._status_page.resend_requested.connect(lambda: self._account and self._account.resend_verification())
-        self._status_page.sign_out_requested.connect(self._request_sign_out)
+        self._account_center.refresh_requested.connect(
+            lambda: self._account and self._account.load_account_center()
+        )
+        self._account_center.reset_requested.connect(
+            lambda email: self._account and self._account.request_password_reset(email)
+        )
+        self._account_center.resend_requested.connect(
+            lambda: self._account and self._account.resend_verification()
+        )
+        self._account_center.revoke_requested.connect(self._confirm_revoke_device)
+        self._account_center.sign_out_requested.connect(self._request_sign_out)
+        self._account_center.back_requested.connect(self._close_account_center)
         self._offline_page.retry_requested.connect(lambda: self._account and self._account.refresh(True))
         self._offline_page.sign_out_requested.connect(self._request_sign_out)
         self._sign_out_ready.connect(self._finish_sign_out)
@@ -108,6 +119,11 @@ class MainWindow(QMainWindow):
             self._account.state_changed.connect(self._on_account_state)
             self._account.busy_changed.connect(self._auth_page.set_busy)
             self._account.notice.connect(self._on_account_notice)
+            self._account.details_changed.connect(self._on_account_details)
+            self._account.details_error.connect(
+                lambda message: self._account_center.set_message(message, True)
+            )
+            self._account.details_loading.connect(self._account_center.set_loading)
 
         if self._config_error_page:
             self._stack.setCurrentWidget(self._config_error_page)
@@ -120,6 +136,10 @@ class MainWindow(QMainWindow):
 
     def _retranslate(self, *_args) -> None:
         self._translation_page.retranslate()
+        if self._account_center_open and self._account and self._account.profile:
+            message = self._account_status_message(self._account.profile, "")
+            if message:
+                self._account_center.set_message(message, True)
 
     def start_account_flow(self) -> None:
         if self._account and self._data_root:
@@ -149,10 +169,17 @@ class MainWindow(QMainWindow):
             self._account.request_password_reset(email)
 
     def _on_account_notice(self, message: str, error: bool) -> None:
-        if self._account and self._account.state == AccountState.SIGNED_OUT:
+        if self._stack.currentWidget() is self._account_center:
+            if message.startswith("If the account exists"):
+                message = tr("account.reset_sent")
+            elif message == "Device revoked.":
+                message = tr("account.device_revoked_notice")
+            self._account_center.set_message(message, error)
+        elif self._account and self._account.state == AccountState.SIGNED_OUT:
             self._auth_page.set_message(message, error)
         elif self._account and self._account.state in (AccountState.RESTRICTED, AccountState.OFFLINE):
-            self._status_page.set_profile(self._account.profile or {}, message)
+            self._account_center.set_profile(self._account.profile or {})
+            self._account_center.set_message(message, error)
         else:
             self._auth_page.set_message(message, error)
 
@@ -162,6 +189,7 @@ class MainWindow(QMainWindow):
             return
         if state == AccountState.SIGNED_OUT:
             self._account_refresh_timer.stop()
+            self._account_center_open = False
             self.account_active_changed.emit(False)
             self._auth_page.set_email(self._account.backend.auth.email if self._account else "")
             if message:
@@ -181,18 +209,28 @@ class MainWindow(QMainWindow):
                 # Keep the stopped instance attached so Sign out can wait for
                 # its workers and an Admin reactivation can safely reuse it.
                 self._orchestrator.stop()
-            self._status_page.set_profile(profile, message)
-            self._stack.setCurrentWidget(self._status_page)
+            first_open = not self._account_center_open
+            self._account_center_open = True
+            self._account_center.set_profile(profile)
+            self._account_center.set_message(self._account_status_message(profile, message), True)
+            self._stack.setCurrentWidget(self._account_center)
+            if first_open and self._account:
+                self._account.load_account_center()
             return
         if state == AccountState.ACTIVE:
-            self._account_refresh_timer.stop()
-            self._activate_account(profile)
+            keep_center = self._account_center_open
+            if keep_center:
+                self._account_refresh_timer.start()
+            else:
+                self._account_refresh_timer.stop()
+            self._activate_account(profile, show_translation=not keep_center)
 
-    def _activate_account(self, profile: dict) -> None:
+    def _activate_account(self, profile: dict, show_translation: bool = True) -> None:
         uid = str(profile.get("uid") or "")
         if not uid or not self._data_root:
-            self._status_page.set_profile(profile, "Account identity or Data folder is unavailable.")
-            self._stack.setCurrentWidget(self._status_page)
+            self._account_center.set_profile(profile)
+            self._account_center.set_message("Account identity or Data folder is unavailable.", True)
+            self._stack.setCurrentWidget(self._account_center)
             return
         if self._orchestrator is None or self._active_uid != uid:
             data_root = prepare_data_root(self._data_root, uid)
@@ -204,7 +242,15 @@ class MainWindow(QMainWindow):
             self._active_uid = uid
             self._reset_translation_ui()
         self.account_active_changed.emit(True)
-        self._stack.setCurrentWidget(self._translation_page)
+        if show_translation:
+            self._stack.setCurrentWidget(self._translation_page)
+        else:
+            self._account_center.set_profile(
+                profile,
+                current_device_id=self._account.backend.local_device_id if self._account else "",
+            )
+            self._account_center.set_message("")
+            self._stack.setCurrentWidget(self._account_center)
 
     def _reset_translation_ui(self) -> None:
         self._translation_page.reset()
@@ -214,8 +260,8 @@ class MainWindow(QMainWindow):
             return
         answer = QMessageBox.question(
             self,
-            "Sign out",
-            "Sign out of PRANA ELEX on this computer? Local data and device registration will be kept.",
+            tr("account.sign_out_title"),
+            tr("account.sign_out_body"),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
@@ -242,6 +288,7 @@ class MainWindow(QMainWindow):
         self._orchestrator = None
         self._active_uid = ""
         self._signing_out = False
+        self._account_center_open = False
         self._reset_translation_ui()
         if self._account:
             self._account.sign_out_local()
@@ -267,7 +314,6 @@ class MainWindow(QMainWindow):
             timestamp=result.timestamp,
             confidence=result.confidence,
         )
-        self._chat.set_latency(result.latency_ms)
         self._history_dialog().add_result(result)
         self._log_console(result)
         self._retry_button.setVisible(bool(result.error))
@@ -357,6 +403,69 @@ class MainWindow(QMainWindow):
         self._history_dialog().show()
         self._history_dialog().raise_()
 
+    def open_account_center(self) -> None:
+        if not self._account or self._account.state not in (AccountState.ACTIVE, AccountState.RESTRICTED):
+            return
+        self._account_center_open = True
+        self._account_center.set_profile(
+            self._account.profile or {},
+            current_device_id=self._account.backend.local_device_id,
+        )
+        self._account_center.set_message("")
+        self._stack.setCurrentWidget(self._account_center)
+        self._account_refresh_timer.start()
+        self._account.load_account_center()
+
+    def _close_account_center(self) -> None:
+        if not self._account or self._account.state != AccountState.ACTIVE:
+            return
+        self._account_center_open = False
+        self._account_refresh_timer.stop()
+        self._stack.setCurrentWidget(self._translation_page)
+
+    def _refresh_visible_account_page(self) -> None:
+        if not self._account:
+            return
+        if self._stack.currentWidget() is self._account_center:
+            self._account.load_account_center()
+        else:
+            self._account.refresh()
+
+    def _on_account_details(self, profile: dict, devices: list[dict]) -> None:
+        current_device_id = ""
+        if self._account and profile.get("email_verified"):
+            current_device_id = self._account.backend.local_device_id
+        self._account_center.set_profile(profile, devices, current_device_id)
+        message = self._account_status_message(profile, "")
+        self._account_center.set_message(message, bool(message))
+
+    @staticmethod
+    def _account_status_message(profile: dict, fallback: str) -> str:
+        if not profile.get("email_verified"):
+            return tr("account.verify_required")
+        status = str(profile.get("status") or "registered")
+        key = {
+            "registered": "account.verify_required",
+            "email_verified": "account.pending_message",
+            "pending_payment": "account.pending_message",
+            "expired": "account.expired_message",
+            "suspended": "account.suspended_message",
+        }.get(status)
+        return tr(key) if key else fallback
+
+    def _confirm_revoke_device(self, device_id: str) -> None:
+        if not self._account or device_id == self._account.backend.local_device_id:
+            return
+        answer = QMessageBox.question(
+            self,
+            tr("account.revoke_title"),
+            tr("account.revoke_body"),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer == QMessageBox.Yes:
+            self._account.revoke_account_device(device_id)
+
     def open_settings(self):
         from prana_elex.config.autostart import is_enabled as autostart_is_enabled
         from prana_elex.config.autostart import set_enabled as set_autostart_enabled
@@ -371,39 +480,17 @@ class MainWindow(QMainWindow):
             loopbacks = WASAPIBackend.list_loopback_devices()
         except Exception:
             loopbacks = []
-        try:
-            account = self._orchestrator.get_account()
-        except Exception as exc:
-            logger.warning("Failed to load account status", exc_info=True)
-            account = {"email": "Unavailable", "status": str(exc)}
-        try:
-            account_devices = self._orchestrator.list_devices()
-        except Exception:
-            logger.info("Account devices are unavailable for the current subscription state")
-            account_devices = []
-
         dialog = SettingsDialog(
             current_device=self._config.audio.device_index,
             current_mode=self._config.audio.capture_mode,
             devices=devices,
             loopback_devices=loopbacks,
             autostart_enabled=autostart_is_enabled() if sys.platform.startswith("linux") else None,
-            account=account,
-            account_devices=account_devices,
             parent=self,
         )
         if dialog.exec():
-            if dialog.get_sign_out_requested():
-                self._request_sign_out()
-                return
             mode, device = dialog.get_values()
             autostart = dialog.get_autostart_enabled()
-            revoke_device_id = dialog.get_revoke_device_id()
-            if revoke_device_id:
-                try:
-                    self._orchestrator.revoke_device(revoke_device_id)
-                except Exception:
-                    logger.warning("Failed to revoke device", exc_info=True)
             if autostart is not None:
                 try:
                     set_autostart_enabled(autostart)
