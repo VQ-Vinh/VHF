@@ -14,7 +14,12 @@ from fastapi import HTTPException
 from services.prana_api.audio import validate_wav
 from services.prana_api.memory_repository import MemoryRepository
 from services.prana_api.models import Device, Plan, UserAccount
-from services.prana_api.security import body_hash, canonical_request, verify_device_signature, verify_timestamp
+from services.prana_api.security import (
+    body_hash,
+    canonical_request,
+    verify_device_signature,
+    verify_timestamp,
+)
 
 
 def wav_bytes(seconds: float = 1, rate: int = 16000, channels: int = 1, width: int = 2) -> bytes:

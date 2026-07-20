@@ -13,7 +13,12 @@ from services.prana_api.auth import Identity, require_identity
 from services.prana_api.config import get_settings
 from services.prana_api.errors import api_error
 from services.prana_api.google_services import CloudStorageArchive, GeminiProcessor
-from services.prana_api.models import Device, DeviceRegisterRequest, MeResponse, ProcessingResponse
+from services.prana_api.models import (
+    Device,
+    DeviceRegisterRequest,
+    MeResponse,
+    ProcessingResponse,
+)
 from services.prana_api.repository import FirestoreRepository, Repository
 from services.prana_api.security import (
     body_hash,
@@ -22,7 +27,6 @@ from services.prana_api.security import (
     verify_device_signature,
     verify_timestamp,
 )
-
 
 app = FastAPI(title="PRANA ELEX API", version="1.1.0", docs_url=None, redoc_url=None)
 
@@ -53,10 +57,15 @@ def get_archive() -> CloudStorageArchive:
     return CloudStorageArchive(get_settings())
 
 
-def active_account(identity: Identity, repo: Repository):
+def verified_account(identity: Identity, repo: Repository):
     account = repo.sync_identity(identity.uid, identity.email, identity.email_verified)
     if not account.email_verified:
         raise api_error(403, "EMAIL_NOT_VERIFIED", "Verify your email before using PRANA ELEX")
+    return account
+
+
+def active_account(identity: Identity, repo: Repository):
+    account = verified_account(identity, repo)
     if not account.subscription_active or not account.plan_id:
         raise api_error(403, "SUBSCRIPTION_INACTIVE", "Subscription is not active")
     return account, repo.get_plan(account.plan_id)
@@ -84,7 +93,7 @@ def usage(identity: Identity = Depends(require_identity), repo: Repository = Dep
 
 @app.get("/v1/devices")
 def list_devices(identity: Identity = Depends(require_identity), repo: Repository = Depends(get_repository)):
-    active_account(identity, repo)
+    verified_account(identity, repo)
     return repo.list_devices(identity.uid)
 
 
@@ -105,7 +114,7 @@ def get_device(
     identity: Identity = Depends(require_identity),
     repo: Repository = Depends(get_repository),
 ):
-    active_account(identity, repo)
+    verified_account(identity, repo)
     device = repo.get_device(identity.uid, device_id)
     if not device:
         raise api_error(404, "DEVICE_NOT_FOUND", "Device was not found")
@@ -118,7 +127,7 @@ def revoke_device(
     identity: Identity = Depends(require_identity),
     repo: Repository = Depends(get_repository),
 ):
-    active_account(identity, repo)
+    verified_account(identity, repo)
     repo.revoke_device(identity.uid, device_id)
     return Response(status_code=204)
 

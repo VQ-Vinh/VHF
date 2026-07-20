@@ -18,17 +18,22 @@ from services.prana_api.auth import Identity, require_identity
 from services.prana_api.google_services import ModelResult
 from services.prana_api.main import app, get_archive, get_processor, get_repository
 from services.prana_api.memory_repository import MemoryRepository
-from services.prana_api.models import Device, Plan, ProcessingResponse, UserAccount
+from services.prana_api.models import (
+    Device,
+    Plan,
+    ProcessingResponse,
+    UserAccount,
+)
 from services.prana_api.security import canonical_request
 
 
-def audio_bytes() -> bytes:
+def audio_bytes(seconds: float = 1) -> bytes:
     value = io.BytesIO()
     with wave.open(value, "wb") as wav:
         wav.setnchannels(1)
         wav.setsampwidth(2)
         wav.setframerate(16000)
-        wav.writeframes(b"\0" * 32000)
+        wav.writeframes(b"\0" * int(32000 * seconds))
     return value.getvalue()
 
 
@@ -53,7 +58,6 @@ class FakeProcessor:
             ),
             metrics={"model": "fake", "input_tokens": 1, "output_tokens": 1},
         )
-
 
 class FakeArchive:
     def __init__(self, _settings):
@@ -116,14 +120,42 @@ class SaasApiTests(unittest.TestCase):
             files={"audio": ("audio.wav", audio, "audio/wav")},
         )
 
-    def test_inactive_and_unverified_accounts_are_blocked(self):
+    def test_verified_inactive_account_can_manage_existing_devices(self):
         self.repo.users["user-1"] = self.repo.users["user-1"].model_copy(update={"status": "expired"})
-        response = self.client.get("/v1/devices")
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.json()["detail"]["code"], "SUBSCRIPTION_INACTIVE")
+        listed = self.client.get("/v1/devices")
+        fetched = self.client.get(f"/v1/devices/{self.device_id}")
+        revoked = self.client.delete(f"/v1/devices/{self.device_id}")
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(fetched.status_code, 200)
+        self.assertEqual(revoked.status_code, 204)
+        self.assertFalse(self.repo.get_device("user-1", self.device_id).active)
+
+        register = self.client.post(
+            "/v1/devices/register",
+            json={
+                "device_id": "device-0000000002",
+                "name": "other",
+                "platform": "win",
+                "public_key": "public-key",
+            },
+        )
+        self.assertEqual(register.status_code, 403)
+        self.assertEqual(register.json()["detail"]["code"], "SUBSCRIPTION_INACTIVE")
+        audio = self._audio_request(str(uuid.uuid4()))
+        self.assertEqual(audio.status_code, 403)
+        self.assertEqual(audio.json()["detail"]["code"], "SUBSCRIPTION_INACTIVE")
+
+    def test_unverified_and_cross_tenant_device_access_is_blocked(self):
+        self.identity = Identity(uid="other-user", email="other@example.com", email_verified=True)
+        cross_tenant = self.client.get(f"/v1/devices/{self.device_id}")
+        cross_tenant_delete = self.client.delete(f"/v1/devices/{self.device_id}")
+        self.assertEqual(cross_tenant.status_code, 404)
+        self.assertEqual(cross_tenant_delete.status_code, 404)
+        self.assertTrue(self.repo.get_device("user-1", self.device_id).active)
 
         self.identity = Identity(uid="new-user", email="new@example.com", email_verified=False)
         response = self.client.get("/v1/devices")
+        self.assertEqual(response.status_code, 403)
         self.assertEqual(response.json()["detail"]["code"], "EMAIL_NOT_VERIFIED")
 
     def test_audio_retry_is_cached_and_changed_body_conflicts(self):
