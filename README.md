@@ -50,8 +50,9 @@ Chi tiết ranh giới và chiều phụ thuộc: [`docs/architecture.md`](docs/
    trong cửa sổ PRANA ELEX.
 2. Tài khoản chuyển sang trạng thái chờ kích hoạt; Bên A chọn plan và ngày hết hạn
    trong `prana-admin`.
-3. Người dùng đăng nhập. App tự chuyển giữa Login, Account Status và Translation
-   trong cùng một cửa sổ. Refresh token được lưu bằng Windows Credential Manager
+3. Người dùng đăng nhập. App tự chuyển giữa Login, Account Center và Translation
+   trong cùng một cửa sổ. Account Center cho phép xem gói, usage, thiết bị, gửi
+   email đặt lại mật khẩu và đăng xuất. Refresh token được lưu bằng Windows Credential Manager
    hoặc Secret Service; Raspberry Pi có fallback file `0600`. Mật khẩu không được lưu.
 4. Mỗi installation sinh một Ed25519 private key riêng, không export qua UI. Một
    tài khoản có tối đa hai thiết bị active.
@@ -151,6 +152,9 @@ API client:
 token, device ID, timestamp và chữ ký Ed25519. Plan quyết định phút/tháng, RPM,
 concurrency và số thiết bị. Firestore transaction reserve quota trước Gemini và
 settle sau xử lý.
+
+Tài khoản đã xác minh được xem và revoke thiết bị ngay cả khi gói hết hạn hoặc
+bị tạm khóa; đăng ký thiết bị mới và xử lý audio vẫn yêu cầu subscription active.
 
 ## Hạ tầng production
 
