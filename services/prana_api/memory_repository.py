@@ -6,10 +6,7 @@ from datetime import datetime, timezone
 
 from services.prana_api.errors import api_error
 from services.prana_api.models import Device, Plan, Reservation, Usage, UserAccount
-
-
-def current_period() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m")
+from services.prana_api.repository import identity_updates, usage_period, usage_reset_at
 
 
 class MemoryRepository:
@@ -36,19 +33,21 @@ class MemoryRepository:
                     uid=uid,
                     email=email,
                     email_verified=email_verified,
-                    status="pending_payment" if email_verified else "registered",
+                    status="active" if email_verified else "registered",
+                    plan_id="free" if email_verified else None,
                 )
             else:
-                update = {"email": email, "email_verified": email_verified}
-                if email_verified and account.status in {"registered", "email_verified"}:
-                    update["status"] = "pending_payment"
-                if (
-                    account.status == "active"
-                    and account.subscription_expires_at is not None
-                    and account.subscription_expires_at <= datetime.now(timezone.utc)
-                ):
-                    update["status"] = "expired"
-                account = account.model_copy(update=update)
+                current = account.model_dump()
+                current["email_lower"] = account.email.strip().lower()
+                updates = identity_updates(
+                    current,
+                    email,
+                    email_verified,
+                    datetime.now(timezone.utc),
+                )
+                account = account.model_copy(
+                    update={key: value for key, value in updates.items() if key in UserAccount.model_fields}
+                )
             self.users[uid] = account
             return account
 
@@ -57,9 +56,40 @@ class MemoryRepository:
             raise api_error(403, "SUBSCRIPTION_INACTIVE", "Assigned plan does not exist")
         return self.plans[plan_id]
 
+    def list_plans(self) -> list[Plan]:
+        return sorted(self.plans.values(), key=lambda plan: (plan.sort_order, plan.id))
+
+    def select_plan(self, uid: str, plan: Plan) -> UserAccount:
+        with self.lock:
+            if plan.availability != "available" or plan.id != "free":
+                raise api_error(409, "PLAN_NOT_AVAILABLE", "This plan is not available yet")
+            account = self.users.get(uid)
+            if not account:
+                raise api_error(404, "ACCOUNT_NOT_FOUND", "Account was not found")
+            if not account.email_verified:
+                raise api_error(403, "EMAIL_NOT_VERIFIED", "Verify your email before selecting a plan")
+            if account.status == "suspended":
+                raise api_error(403, "SUBSCRIPTION_INACTIVE", "Account is suspended")
+            account = account.model_copy(update={
+                "status": "active",
+                "plan_id": plan.id,
+                "subscription_expires_at": None,
+            })
+            self.users[uid] = account
+            return account
+
     def get_usage(self, uid: str, plan: Plan) -> Usage:
-        data = self.usage.get((uid, current_period()), {})
-        return Usage(period=current_period(), monthly_audio_seconds=plan.monthly_audio_seconds, **data)
+        now = datetime.now(timezone.utc)
+        period = usage_period(plan, now)
+        data = self.usage.get((uid, period), {})
+        return Usage(
+            period=period,
+            audio_seconds_limit=plan.audio_seconds_limit,
+            monthly_audio_seconds=plan.audio_seconds_limit,
+            quota_period=plan.quota_period,
+            resets_at=usage_reset_at(plan, now),
+            **data,
+        )
 
     def list_devices(self, uid: str) -> list[Device]:
         return list(self.devices.get(uid, {}).values())
@@ -101,15 +131,22 @@ class MemoryRepository:
                 if request["state"] == "processing":
                     raise api_error(409, "REQUEST_IN_PROGRESS", "Request is already processing", retry_after=2)
 
-            usage_key = (uid, current_period())
+            now = datetime.now(timezone.utc)
+            period = usage_period(plan, now)
+            usage_key = (uid, period)
             usage = self.usage.setdefault(
                 usage_key,
                 {"used_audio_seconds": 0, "reserved_audio_seconds": 0, "active_requests": 0, "request_count": 0},
             )
             if usage["active_requests"] >= plan.max_concurrency:
                 raise api_error(429, "RATE_LIMITED", "Too many concurrent requests")
-            if usage["used_audio_seconds"] + usage["reserved_audio_seconds"] + seconds > plan.monthly_audio_seconds:
-                raise api_error(429, "MONTHLY_QUOTA_EXCEEDED", "Monthly audio quota is exhausted")
+            if usage["used_audio_seconds"] + usage["reserved_audio_seconds"] + seconds > plan.audio_seconds_limit:
+                raise api_error(
+                    429,
+                    "DAILY_QUOTA_EXCEEDED" if plan.quota_period == "daily" else "MONTHLY_QUOTA_EXCEEDED",
+                    "Daily audio quota is exhausted" if plan.quota_period == "daily" else "Monthly audio quota is exhausted",
+                    resets_at=usage_reset_at(plan, now).isoformat(),
+                )
             minute = int(time.time() // 60)
             if self.rates.get((uid, minute), 0) >= plan.requests_per_minute:
                 raise api_error(429, "RATE_LIMITED", "Requests-per-minute limit exceeded")
@@ -121,7 +158,12 @@ class MemoryRepository:
             usage["active_requests"] += 1
             self.global_reserved += seconds
             self.rates[(uid, minute)] = self.rates.get((uid, minute), 0) + 1
-            self.requests[key] = {"state": "processing", "body_hash": request_hash, "seconds": seconds}
+            self.requests[key] = {
+                "state": "processing",
+                "body_hash": request_hash,
+                "seconds": seconds,
+                "usage_period": period,
+            }
             return Reservation(request_id=request_id, state="reserved")
 
     def _settle(self, uid: str, request_id: str, response: dict | None, error_code: str | None, metrics: dict) -> None:
@@ -130,7 +172,7 @@ class MemoryRepository:
             if not request or request["state"] != "processing":
                 return
             seconds = request["seconds"]
-            usage = self.usage[(uid, current_period())]
+            usage = self.usage[(uid, request["usage_period"])]
             usage["reserved_audio_seconds"] -= seconds
             usage["active_requests"] -= 1
             self.global_reserved -= seconds

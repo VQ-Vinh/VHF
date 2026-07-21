@@ -13,6 +13,7 @@ locals {
     "iam.googleapis.com",
     "orgpolicy.googleapis.com",
     "run.googleapis.com",
+    "secretmanager.googleapis.com",
     "storage.googleapis.com",
   ])
 }
@@ -56,6 +57,23 @@ resource "google_identity_platform_config" "auth" {
     }
   }
   depends_on = [google_firebase_project.production]
+}
+
+resource "google_identity_platform_default_supported_idp_config" "google" {
+  count           = var.manage_google_idp_provider ? 1 : 0
+  project         = var.project_id
+  idp_id          = "google.com"
+  enabled         = true
+  client_id       = var.google_idp_web_client_id
+  client_secret   = var.google_idp_web_client_secret
+  deletion_policy = "ABANDON"
+  depends_on      = [google_identity_platform_config.auth]
+}
+
+data "google_secret_manager_secret" "google_desktop_oauth" {
+  project    = var.project_id
+  secret_id  = var.google_desktop_oauth_secret_id
+  depends_on = [google_project_service.apis]
 }
 
 resource "google_firebase_web_app" "desktop" {
@@ -225,6 +243,13 @@ resource "google_project_iam_member" "api_firebase_auth" {
   member  = google_service_account.api_runtime.member
 }
 
+resource "google_secret_manager_secret_iam_member" "api_google_oauth_secret" {
+  project   = var.project_id
+  secret_id = data.google_secret_manager_secret.google_desktop_oauth.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = google_service_account.api_runtime.member
+}
+
 resource "google_project_iam_member" "admin_firestore" {
   project = var.project_id
   role    = "roles/datastore.user"
@@ -294,6 +319,31 @@ resource "google_cloud_run_v2_service" "api" {
         value = var.project_id
       }
       env {
+        name  = "PRANA_API_FIREBASE_WEB_API_KEY"
+        value = data.google_firebase_web_app_config.desktop.api_key
+      }
+      env {
+        name  = "PRANA_API_GOOGLE_DESKTOP_OAUTH_CLIENT_ID"
+        value = var.google_desktop_oauth_client_id
+      }
+      env {
+        name = "PRANA_API_GOOGLE_DESKTOP_OAUTH_CLIENT_SECRET"
+        value_source {
+          secret_key_ref {
+            secret  = data.google_secret_manager_secret.google_desktop_oauth.secret_id
+            version = "latest"
+          }
+        }
+      }
+      env {
+        name  = "PRANA_API_GOOGLE_AUTH_INSTANCE_REQUESTS_PER_MINUTE"
+        value = tostring(var.google_auth_instance_requests_per_minute)
+      }
+      env {
+        name  = "PRANA_API_GOOGLE_AUTH_GLOBAL_REQUESTS_PER_MINUTE"
+        value = tostring(var.google_auth_global_requests_per_minute)
+      }
+      env {
         name  = "PRANA_API_GOOGLE_CLOUD_LOCATION"
         value = var.region
       }
@@ -319,7 +369,10 @@ resource "google_cloud_run_v2_service" "api" {
       }
     }
   }
-  depends_on = [google_project_service.apis]
+  depends_on = [
+    google_project_service.apis,
+    google_secret_manager_secret_iam_member.api_google_oauth_secret,
+  ]
 }
 
 resource "google_cloud_run_v2_service" "admin" {

@@ -31,6 +31,57 @@ variable "terraform_operator" {
   description = "IAM principal that manages Firebase, for example user:admin@example.com"
 }
 variable "billing_account" { type = string }
+variable "google_idp_web_client_id" {
+  type        = string
+  default     = ""
+  description = "Google OAuth Web client ID configured for the Identity Platform provider"
+  validation {
+    condition     = !var.manage_google_idp_provider || endswith(var.google_idp_web_client_id, ".apps.googleusercontent.com")
+    error_message = "google_idp_web_client_id must be a Google OAuth client ID."
+  }
+}
+variable "google_idp_web_client_secret" {
+  type        = string
+  default     = ""
+  sensitive   = true
+  description = "Google OAuth Web client secret; keep only in ignored tfvars and protected remote state"
+}
+variable "google_desktop_oauth_client_id" {
+  type        = string
+  description = "Public Desktop OAuth client ID bundled with Windows and Pi clients"
+  validation {
+    condition     = endswith(var.google_desktop_oauth_client_id, ".apps.googleusercontent.com")
+    error_message = "google_desktop_oauth_client_id must be a Google OAuth client ID."
+  }
+}
+variable "manage_google_idp_provider" {
+  type        = bool
+  default     = false
+  description = "Manage the Google Identity Platform provider after Web OAuth credentials are supplied."
+}
+variable "google_desktop_oauth_secret_id" {
+  type        = string
+  default     = "prana-google-desktop-oauth-client-secret"
+  description = "Existing Secret Manager secret containing the Desktop OAuth client secret."
+}
+variable "google_auth_instance_requests_per_minute" {
+  type        = number
+  default     = 60
+  description = "Maximum Google OAuth exchanges per minute on each Cloud Run instance"
+  validation {
+    condition     = var.google_auth_instance_requests_per_minute >= 1 && var.google_auth_instance_requests_per_minute <= 10000
+    error_message = "google_auth_instance_requests_per_minute must be between 1 and 10000."
+  }
+}
+variable "google_auth_global_requests_per_minute" {
+  type        = number
+  default     = 300
+  description = "Maximum Google OAuth exchanges per minute across all API instances"
+  validation {
+    condition     = var.google_auth_global_requests_per_minute >= 1 && var.google_auth_global_requests_per_minute <= 10000
+    error_message = "google_auth_global_requests_per_minute must be between 1 and 10000."
+  }
+}
 variable "budget_currency_code" { type = string }
 variable "monthly_budget_amount" {
   type = number

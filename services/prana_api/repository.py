@@ -14,9 +14,70 @@ def current_period(now: datetime | None = None) -> str:
     return now.strftime("%Y-%m")
 
 
+def usage_period(plan: Plan, now: datetime | None = None) -> str:
+    now = now or datetime.now(timezone.utc)
+    return now.strftime("%Y-%m-%d" if plan.quota_period == "daily" else "%Y-%m")
+
+
+def usage_reset_at(plan: Plan, now: datetime | None = None) -> datetime:
+    now = now or datetime.now(timezone.utc)
+    midnight = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
+    if plan.quota_period == "daily":
+        return midnight + timedelta(days=1)
+    if now.month == 12:
+        return datetime(now.year + 1, 1, 1, tzinfo=timezone.utc)
+    return datetime(now.year, now.month + 1, 1, tzinfo=timezone.utc)
+
+
+def identity_updates(
+    current: dict,
+    email: str,
+    email_verified: bool,
+    now: datetime | None = None,
+) -> dict:
+    """Return only persisted account fields that actually need to change."""
+    now = now or datetime.now(timezone.utc)
+    updates: dict = {}
+    normalized_email = email.strip().lower()
+    if current.get("email") != email:
+        updates["email"] = email
+    if current.get("email_lower") != normalized_email:
+        updates["email_lower"] = normalized_email
+    if bool(current.get("email_verified")) != email_verified:
+        updates["email_verified"] = email_verified
+        if email_verified:
+            updates["email_verified_at"] = firestore.SERVER_TIMESTAMP
+
+    status = current.get("status")
+    expires = current.get("subscription_expires_at")
+    eligible_for_free = status in {
+        "registered",
+        "email_verified",
+        "pending_payment",
+        "expired",
+    }
+    expired_active = (
+        status == "active"
+        and expires is not None
+        and expires <= now
+    )
+    if email_verified and (eligible_for_free or expired_active):
+        desired = {
+            "status": "active",
+            "plan_id": "free",
+            "subscription_expires_at": None,
+        }
+        updates.update(
+            {key: value for key, value in desired.items() if current.get(key) != value}
+        )
+    return updates
+
+
 class Repository(Protocol):
     def sync_identity(self, uid: str, email: str, email_verified: bool) -> UserAccount: ...
     def get_plan(self, plan_id: str) -> Plan: ...
+    def list_plans(self) -> list[Plan]: ...
+    def select_plan(self, uid: str, plan: Plan) -> UserAccount: ...
     def get_usage(self, uid: str, plan: Plan) -> Usage: ...
     def list_devices(self, uid: str) -> list[Device]: ...
     def register_device(self, uid: str, device: Device, max_devices: int) -> Device: ...
@@ -45,35 +106,52 @@ class FirestoreRepository:
 
     def sync_identity(self, uid: str, email: str, email_verified: bool) -> UserAccount:
         ref = self._user_ref(uid)
-        snap = ref.get()
-        if not snap.exists:
-            status = "pending_payment" if email_verified else "registered"
-            data = {
-                "uid": uid,
-                "email": email,
-                "email_lower": email.strip().lower(),
-                "email_verified": email_verified,
-                "status": status,
-                "plan_id": None,
-                "subscription_expires_at": None,
-                "created_at": firestore.SERVER_TIMESTAMP,
-                "updated_at": firestore.SERVER_TIMESTAMP,
-            }
-            ref.set(data)
-            return UserAccount(uid=uid, email=email, email_verified=email_verified, status=status)
-        data = snap.to_dict()
-        updates = {"email": email, "email_lower": email.strip().lower(),
-                   "email_verified": email_verified, "updated_at": firestore.SERVER_TIMESTAMP}
-        if email_verified and data.get("status") in {"registered", "email_verified"}:
-            updates["status"] = "pending_payment"
-            updates["email_verified_at"] = firestore.SERVER_TIMESTAMP
-        expires = data.get("subscription_expires_at")
-        if data.get("status") == "active" and expires is not None and expires <= datetime.now(timezone.utc):
-            updates["status"] = "expired"
-        ref.update(updates)
-        data.update(updates)
-        data["uid"] = uid
-        return UserAccount.model_validate(data)
+
+        @firestore.transactional
+        def run(tx):
+            snap = ref.get(transaction=tx)
+            if not snap.exists:
+                status = "active" if email_verified else "registered"
+                stored = {
+                    "uid": uid,
+                    "email": email,
+                    "email_lower": email.strip().lower(),
+                    "email_verified": email_verified,
+                    "status": status,
+                    "plan_id": "free" if email_verified else None,
+                    "subscription_expires_at": None,
+                    "created_at": firestore.SERVER_TIMESTAMP,
+                    "updated_at": firestore.SERVER_TIMESTAMP,
+                }
+                if email_verified:
+                    stored["email_verified_at"] = firestore.SERVER_TIMESTAMP
+                tx.set(ref, stored)
+                return UserAccount(
+                    uid=uid,
+                    email=email,
+                    email_verified=email_verified,
+                    status=status,
+                    plan_id="free" if email_verified else None,
+                )
+
+            current = snap.to_dict()
+            updates = identity_updates(current, email, email_verified)
+            if updates:
+                tx.update(
+                    ref,
+                    {**updates, "updated_at": firestore.SERVER_TIMESTAMP},
+                )
+                current.update(
+                    {
+                        key: value
+                        for key, value in updates.items()
+                        if key != "email_verified_at"
+                    }
+                )
+            current["uid"] = uid
+            return UserAccount.model_validate(current)
+
+        return run(self.db.transaction())
 
     def get_plan(self, plan_id: str) -> Plan:
         snap = self.db.collection("plans").document(plan_id).get()
@@ -81,11 +159,61 @@ class FirestoreRepository:
             raise api_error(403, "SUBSCRIPTION_INACTIVE", "Assigned plan does not exist")
         return Plan(id=snap.id, **snap.to_dict())
 
+    def list_plans(self) -> list[Plan]:
+        plans = [Plan(id=snap.id, **snap.to_dict()) for snap in self.db.collection("plans").stream()]
+        return sorted(plans, key=lambda plan: (plan.sort_order, plan.id))
+
+    def select_plan(self, uid: str, plan: Plan) -> UserAccount:
+        if plan.availability != "available" or plan.id != "free":
+            raise api_error(409, "PLAN_NOT_AVAILABLE", "This plan is not available yet")
+        user_ref = self._user_ref(uid)
+        event_ref = user_ref.collection("subscription_events").document()
+
+        @firestore.transactional
+        def run(tx):
+            snap = user_ref.get(transaction=tx)
+            if not snap.exists:
+                raise api_error(404, "ACCOUNT_NOT_FOUND", "Account was not found")
+            data = snap.to_dict()
+            if not data.get("email_verified"):
+                raise api_error(403, "EMAIL_NOT_VERIFIED", "Verify your email before selecting a plan")
+            if data.get("status") == "suspended":
+                raise api_error(403, "SUBSCRIPTION_INACTIVE", "Account is suspended")
+            tx.update(user_ref, {
+                "status": "active",
+                "plan_id": plan.id,
+                "subscription_expires_at": None,
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            })
+            tx.set(event_ref, {
+                "action": "plan.selected",
+                "plan_id": plan.id,
+                "source": "self_service",
+                "created_at": firestore.SERVER_TIMESTAMP,
+            })
+            data.update({
+                "status": "active",
+                "plan_id": plan.id,
+                "subscription_expires_at": None,
+            })
+            data["uid"] = uid
+            return UserAccount.model_validate(data)
+
+        return run(self.db.transaction())
+
     def get_usage(self, uid: str, plan: Plan) -> Usage:
-        period = current_period()
+        now = datetime.now(timezone.utc)
+        period = usage_period(plan, now)
         snap = self._user_ref(uid).collection("usage").document(period).get()
         data = snap.to_dict() if snap.exists else {}
-        return Usage(period=period, monthly_audio_seconds=plan.monthly_audio_seconds, **data)
+        return Usage(
+            period=period,
+            audio_seconds_limit=plan.audio_seconds_limit,
+            monthly_audio_seconds=plan.audio_seconds_limit,
+            quota_period=plan.quota_period,
+            resets_at=usage_reset_at(plan, now),
+            **data,
+        )
 
     def list_devices(self, uid: str) -> list[Device]:
         docs = self._user_ref(uid).collection("devices").stream()
@@ -148,17 +276,30 @@ class FirestoreRepository:
                 stale_reserved = int(data.get("reserved_audio_seconds", 0))
 
         now = datetime.now(timezone.utc)
-        period = current_period(now)
+        period = usage_period(plan, now)
         usage_ref = user_ref.collection("usage").document(period)
         usage_snap = usage_ref.get(transaction=tx)
         usage = usage_snap.to_dict() if usage_snap.exists else {}
+        stale_period = str(existing_request.get("usage_period") or "")
+        stale_usage_ref = None
+        stale_usage = {}
+        if stale_reserved and stale_period and stale_period != period:
+            stale_usage_ref = user_ref.collection("usage").document(stale_period)
+            stale_usage_snap = stale_usage_ref.get(transaction=tx)
+            stale_usage = stale_usage_snap.to_dict() if stale_usage_snap.exists else {}
         used = int(usage.get("used_audio_seconds", 0))
-        reserved = max(0, int(usage.get("reserved_audio_seconds", 0)) - stale_reserved)
-        active = max(0, int(usage.get("active_requests", 0)) - (1 if stale_reserved else 0))
+        stale_in_current_period = stale_reserved if stale_period == period else 0
+        reserved = max(0, int(usage.get("reserved_audio_seconds", 0)) - stale_in_current_period)
+        active = max(0, int(usage.get("active_requests", 0)) - (1 if stale_in_current_period else 0))
         if active >= plan.max_concurrency:
             raise api_error(429, "RATE_LIMITED", "Too many concurrent requests")
-        if used + reserved + seconds > plan.monthly_audio_seconds:
-            raise api_error(429, "MONTHLY_QUOTA_EXCEEDED", "Monthly audio quota is exhausted")
+        if used + reserved + seconds > plan.audio_seconds_limit:
+            raise api_error(
+                429,
+                "DAILY_QUOTA_EXCEEDED" if plan.quota_period == "daily" else "MONTHLY_QUOTA_EXCEEDED",
+                "Daily audio quota is exhausted" if plan.quota_period == "daily" else "Monthly audio quota is exhausted",
+                resets_at=usage_reset_at(plan, now).isoformat(),
+            )
 
         minute_key = now.strftime("%Y%m%d%H%M")
         rate_ref = user_ref.collection("rate_minutes").document(minute_key)
@@ -167,21 +308,40 @@ class FirestoreRepository:
         if rate_count >= plan.requests_per_minute:
             raise api_error(429, "RATE_LIMITED", "Requests-per-minute limit exceeded")
 
-        global_refs = [
-            (self.db.collection("system_usage").document(f"daily-{now:%Y%m%d}"), self.global_daily_audio_seconds),
-            (self.db.collection("system_usage").document(f"monthly-{period}"), self.global_monthly_audio_seconds),
-        ]
+        current_global_limits = {
+            f"daily-{now:%Y%m%d}": self.global_daily_audio_seconds,
+            f"monthly-{current_period(now)}": self.global_monthly_audio_seconds,
+        }
+        old_global_keys = set(existing_request.get("global_usage_keys", [])) if stale_reserved else set()
+        all_global_keys = list(dict.fromkeys([*old_global_keys, *current_global_limits]))
         global_values = []
-        for global_ref, limit in global_refs:
+        for key in all_global_keys:
+            global_ref = self.db.collection("system_usage").document(key)
             snap = global_ref.get(transaction=tx)
             value = snap.to_dict() if snap.exists else {}
-            if stale_reserved and global_ref.id in existing_request.get("global_usage_keys", []):
+            if stale_reserved and key in old_global_keys:
                 value["reserved_audio_seconds"] = max(
                     0, int(value.get("reserved_audio_seconds", 0)) - stale_reserved
                 )
+            limit = current_global_limits.get(key, 0)
             if limit > 0 and int(value.get("used_audio_seconds", 0)) + int(value.get("reserved_audio_seconds", 0)) + seconds > limit:
                 raise api_error(503, "SERVICE_USAGE_LIMIT_REACHED", "Service-wide usage limit reached")
-            global_values.append((global_ref, value))
+            global_values.append((global_ref, value, key in current_global_limits))
+
+        if stale_usage_ref is not None:
+            tx.set(
+                stale_usage_ref,
+                {
+                    "reserved_audio_seconds": max(
+                        0, int(stale_usage.get("reserved_audio_seconds", 0)) - stale_reserved
+                    ),
+                    "active_requests": max(
+                        0, int(stale_usage.get("active_requests", 0)) - 1
+                    ),
+                    "updated_at": firestore.SERVER_TIMESTAMP,
+                },
+                merge=True,
+            )
 
         tx.set(
             usage_ref,
@@ -195,12 +355,12 @@ class FirestoreRepository:
             merge=True,
         )
         tx.set(rate_ref, {"count": rate_count + 1, "expires_at": now + timedelta(minutes=2)}, merge=True)
-        for global_ref, value in global_values:
+        for global_ref, value, is_current in global_values:
             tx.set(
                 global_ref,
                 {
                     "used_audio_seconds": int(value.get("used_audio_seconds", 0)),
-                    "reserved_audio_seconds": int(value.get("reserved_audio_seconds", 0)) + seconds,
+                    "reserved_audio_seconds": int(value.get("reserved_audio_seconds", 0)) + (seconds if is_current else 0),
                     "updated_at": firestore.SERVER_TIMESTAMP,
                 },
                 merge=True,
@@ -212,7 +372,9 @@ class FirestoreRepository:
                 "body_hash": request_hash,
                 "reserved_audio_seconds": seconds,
                 "usage_period": period,
-                "global_usage_keys": [ref.id for ref, _value in global_values],
+                "global_usage_keys": [
+                    ref.id for ref, _value, is_current in global_values if is_current
+                ],
                 "created_at": firestore.SERVER_TIMESTAMP,
                 "lease_expires_at": now + timedelta(minutes=4),
             },

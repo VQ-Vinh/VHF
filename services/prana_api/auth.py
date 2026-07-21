@@ -16,6 +16,12 @@ class Identity:
     email_verified: bool
 
 
+@dataclass(frozen=True)
+class FirebaseSession:
+    identity: Identity
+    id_token: str
+
+
 def _ensure_firebase() -> None:
     if not firebase_admin._apps:
         firebase_admin.initialize_app()
@@ -38,3 +44,12 @@ def require_identity(authorization: str | None = Header(default=None)) -> Identi
     if not authorization or not authorization.startswith("Bearer "):
         raise api_error(401, "AUTH_REQUIRED", "Bearer token is required")
     return verify_id_token_value(authorization[7:].strip())
+
+
+def require_firebase_session(
+    authorization: str | None = Header(default=None),
+) -> FirebaseSession:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise api_error(401, "AUTH_REQUIRED", "Bearer token is required")
+    token = authorization[7:].strip()
+    return FirebaseSession(identity=verify_id_token_value(token), id_token=token)

@@ -8,3 +8,4 @@ google-cloud-firestore==2.21.0
 google-cloud-storage==3.3.0
 google-genai==1.28.0
 cryptography==45.0.6
+httpx==0.28.1

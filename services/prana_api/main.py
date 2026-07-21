@@ -7,16 +7,31 @@ from functools import lru_cache
 
 from fastapi import Depends, FastAPI, File, Form, Header, Response, UploadFile
 from fastapi.responses import JSONResponse
+from google.cloud import firestore
 
 from services.prana_api.audio import validate_wav
-from services.prana_api.auth import Identity, require_identity
+from services.prana_api.auth import (
+    FirebaseSession,
+    Identity,
+    require_firebase_session,
+    require_identity,
+)
 from services.prana_api.config import get_settings
 from services.prana_api.errors import api_error
 from services.prana_api.google_services import CloudStorageArchive, GeminiProcessor
+from services.prana_api.google_auth import (
+    AuthRateLimiter,
+    FirestoreAuthRateLimiter,
+    GoogleAuthBroker,
+)
 from services.prana_api.models import (
     Device,
     DeviceRegisterRequest,
+    FirebaseSessionResponse,
+    GoogleAuthorizationRequest,
     MeResponse,
+    Plan,
+    PlanSelectionRequest,
     ProcessingResponse,
 )
 from services.prana_api.repository import FirestoreRepository, Repository
@@ -57,6 +72,31 @@ def get_archive() -> CloudStorageArchive:
     return CloudStorageArchive(get_settings())
 
 
+@lru_cache
+def get_google_auth_broker() -> GoogleAuthBroker:
+    return GoogleAuthBroker(get_settings())
+
+
+@lru_cache
+def get_google_auth_limiter() -> AuthRateLimiter:
+    return AuthRateLimiter(get_settings().google_auth_instance_requests_per_minute)
+
+
+@lru_cache
+def get_google_auth_global_limiter() -> FirestoreAuthRateLimiter:
+    settings = get_settings()
+    db = firestore.Client(project=settings.google_cloud_project or None)
+    return FirestoreAuthRateLimiter(
+        db,
+        settings.google_auth_global_requests_per_minute,
+    )
+
+
+def enforce_google_auth_rate() -> None:
+    get_google_auth_limiter().check()
+    get_google_auth_global_limiter().check()
+
+
 def verified_account(identity: Identity, repo: Repository):
     account = repo.sync_identity(identity.uid, identity.email, identity.email_verified)
     if not account.email_verified:
@@ -76,6 +116,29 @@ def health():
     return {"status": "ok"}
 
 
+@app.post("/v1/auth/google/exchange", response_model=FirebaseSessionResponse)
+def exchange_google_session(
+    authorization: GoogleAuthorizationRequest,
+    _rate_limit: None = Depends(enforce_google_auth_rate),
+    broker: GoogleAuthBroker = Depends(get_google_auth_broker),
+):
+    return broker.exchange(authorization)
+
+
+@app.post("/v1/auth/google/link", response_model=FirebaseSessionResponse)
+def link_google_session(
+    authorization: GoogleAuthorizationRequest,
+    _rate_limit: None = Depends(enforce_google_auth_rate),
+    session: FirebaseSession = Depends(require_firebase_session),
+    broker: GoogleAuthBroker = Depends(get_google_auth_broker),
+):
+    return broker.exchange(
+        authorization,
+        firebase_id_token=session.id_token,
+        expected_email=session.identity.email,
+    )
+
+
 @app.get("/v1/me", response_model=MeResponse)
 def me(identity: Identity = Depends(require_identity), repo: Repository = Depends(get_repository)):
     account = repo.sync_identity(identity.uid, identity.email, identity.email_verified)
@@ -83,6 +146,31 @@ def me(identity: Identity = Depends(require_identity), repo: Repository = Depend
     if account.plan_id:
         usage = repo.get_usage(identity.uid, repo.get_plan(account.plan_id))
     return MeResponse(**account.model_dump(), usage=usage)
+
+
+@app.get("/v1/plans", response_model=list[Plan])
+def plans(
+    response: Response,
+    _identity: Identity = Depends(require_identity),
+    repo: Repository = Depends(get_repository),
+):
+    response.headers["Cache-Control"] = "no-store"
+    return repo.list_plans()
+
+
+@app.post("/v1/subscription/select", response_model=MeResponse)
+def select_subscription(
+    request: PlanSelectionRequest,
+    identity: Identity = Depends(require_identity),
+    repo: Repository = Depends(get_repository),
+):
+    account = verified_account(identity, repo)
+    plan = repo.get_plan(request.plan_id)
+    account = repo.select_plan(account.uid, plan)
+    return MeResponse(
+        **account.model_dump(),
+        usage=repo.get_usage(account.uid, plan),
+    )
 
 
 @app.get("/v1/usage")

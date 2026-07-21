@@ -12,6 +12,11 @@ class Settings(BaseSettings):
     google_cloud_project: str = ""
     google_cloud_location: str = "us-central1"
     firebase_project_id: str = ""
+    firebase_web_api_key: str = ""
+    google_desktop_oauth_client_id: str = ""
+    google_desktop_oauth_client_secret: str = ""
+    google_auth_instance_requests_per_minute: int = 60
+    google_auth_global_requests_per_minute: int = 300
     storage_bucket: str = ""
     gemini_model: str = "gemini-2.5-flash"
     max_audio_bytes: int = 10 * 1024 * 1024
