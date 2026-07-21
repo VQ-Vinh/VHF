@@ -47,11 +47,11 @@ class WASAPIBackend(AudioBackend):
         device_info = None
 
         if mode == "loopback":
-            device_info = self._find_loopback_device(pa)
-            if device_info is None and mode == "loopback":
+            device_info = self._find_loopback_device(pa, config.device_index)
+            if device_info is None:
                 raise AudioDeviceNotFoundError(
                     "No WASAPI loopback device found. "
-                    "Try capture_mode = 'device' or set a specific device_index."
+                    "Try capture_mode = 'device' or select a loopback device."
                 )
 
         if device_info is None:
@@ -127,12 +127,39 @@ class WASAPIBackend(AudioBackend):
     def is_running(self) -> bool:
         return self._running
 
-    def _find_loopback_device(self, pa) -> dict | None:
+    @staticmethod
+    def _is_loopback_device(info: dict) -> bool:
+        return (
+            info.get("maxInputChannels", 0) > 0
+            and "loopback" in str(info.get("name", "")).lower()
+        )
+
+    def _find_loopback_device(self, pa, device_index: int = -1) -> dict | None:
+        if device_index >= 0:
+            try:
+                info = pa.get_device_info_by_index(device_index)
+            except Exception as e:
+                raise AudioDeviceNotFoundError(
+                    f"Loopback device index {device_index} not found: {e}"
+                ) from e
+
+            if not self._is_loopback_device(info):
+                raise AudioDeviceNotFoundError(
+                    f"Device [{device_index}] {info.get('name', 'Unknown')} "
+                    "is not a WASAPI loopback input"
+                )
+
+            logger.info(
+                "Using selected loopback device",
+                extra={"device": info["name"], "device_index": device_index},
+            )
+            return info
+
         count = pa.get_device_count()
         for i in range(count):
             try:
                 info = pa.get_device_info_by_index(i)
-                if info["maxInputChannels"] > 0 and "loopback" in info["name"].lower():
+                if self._is_loopback_device(info):
                     logger.info("Found loopback device", extra={"device": info["name"]})
                     return info
             except Exception:
