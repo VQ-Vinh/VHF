@@ -29,6 +29,7 @@ class _EventBusBridge(QObject):
     state_changed = Signal(object, str)
     error_occurred = Signal(str)
     access_denied = Signal(str, str)
+    quota_exhausted = Signal(str, str, str)
     pipeline_started = Signal()
 
     def __init__(self):
@@ -38,6 +39,7 @@ class _EventBusBridge(QObject):
         event_bus.on("state_changed", self.state_changed.emit)
         event_bus.on("error_occurred", self.error_occurred.emit)
         event_bus.on("access_denied", self.access_denied.emit)
+        event_bus.on("quota_exhausted", self.quota_exhausted.emit)
         event_bus.on("pipeline_started", self.pipeline_started.emit)
 
 
@@ -124,6 +126,7 @@ def run_app(
         config.backend.api_url,
         config.backend.firebase_api_key,
         config.backend.timeout_seconds,
+        config.backend.google_oauth_client_id,
     )
     account = AccountController(backend)
     bridge = _EventBusBridge()
@@ -141,6 +144,7 @@ def run_app(
     bridge.state_changed.connect(tray._on_state_changed)
     bridge.error_occurred.connect(window._on_error)
     bridge.access_denied.connect(window.on_access_denied)
+    bridge.quota_exhausted.connect(window.on_quota_exhausted)
     window.account_active_changed.connect(tray.set_authenticated)
 
     loop = qasync.QEventLoop(app)

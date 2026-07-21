@@ -69,6 +69,11 @@ QCheckBox { color: #24444F; spacing: 8px; }
 #FeedEmptyState { background: transparent; border: none; }
 #FeedEmptyTitle { font-size: 18px; font-weight: 700; color: #102F3A; }
 #FeedEmptyBody { font-size: 13px; color: #607683; padding-top: 4px; }
+#QuotaBanner {
+    margin: 10px 28px 0 28px; padding: 11px 14px;
+    background: #FFF3D8; color: #6D4A00;
+    border: 1px solid #E7B850; border-radius: 9px; font-weight: 650;
+}
 #ChatBubble {
     background: #FFFFFF; border: 1px solid #BFD0D7;
     border-radius: 12px; margin: 6px 0; padding: 0 16px;
@@ -124,6 +129,13 @@ QPushButton#StartStopButton[mode="transition"] { background: #EDF2F4; color: #60
 #AccountCard QPushButton { min-height: 40px; font-size: 13px; }
 #AccountCard QCheckBox { min-height: 30px; color: #24444F; }
 #PasswordRequirements { font-size: 11px; line-height: 1.35; color: #607683; }
+#GoogleButton {
+    min-height: 44px; background: #FFFFFF; color: #17313A;
+    border: 1px solid #B8C8D0; font-weight: 700; text-align: center;
+}
+#GoogleButton:hover { background: #F5F9FA; border-color: #7FA7B0; }
+#GoogleCancelButton { min-height: 44px; }
+#AuthDividerText { color: #738791; font-size: 11px; }
 #PasswordToggle {
     min-height: 30px; max-width: 170px; padding: 0;
     background: transparent; border: none; color: #355762; text-align: left;
@@ -157,6 +169,32 @@ QLabel#AccountCenterMessage[kind="error"] { background: #F9E1E5; color: #A42A3A;
 QLabel#DeviceBadge[state="current"] { background: #D9EFF1; color: #006975; }
 QLabel#DeviceBadge[state="active"] { background: #DDF3E8; color: #166440; }
 QLabel#DeviceBadge[state="revoked"] { background: #EDF0F2; color: #72838B; }
+
+/* Subscription plans */
+#PlansPage { background: #EAF1F4; }
+#PlansScroll, #PlansScrollContent { background: transparent; border: none; }
+#PlansTitle { font-size: 25px; font-weight: 750; color: #102F3A; }
+#PlansSubtitle, #PlansMuted { color: #607683; }
+#PlansMessage { padding: 10px 12px; border-radius: 8px; }
+QLabel#PlansMessage[kind="success"] { background: #DDF3E8; color: #166440; }
+QLabel#PlansMessage[kind="error"] { background: #F9E1E5; color: #A42A3A; }
+#PlanCard {
+    background: #FCFDFD; border: 1px solid #CBD7DE; border-radius: 14px;
+}
+QFrame#PlanCard[current="true"] { border: 2px solid #087F8C; background: #F5FCFC; }
+#PlanName { font-size: 21px; font-weight: 750; color: #102F3A; }
+#PlanQuota { font-size: 18px; font-weight: 700; color: #006B76; }
+#PlanDetailLabel { color: #607683; font-size: 11px; font-weight: 650; }
+#PlanDetailValue { color: #102F3A; font-size: 13px; font-weight: 750; }
+#PlanBadge {
+    padding: 4px 9px; border-radius: 8px; background: #D9EFF1;
+    color: #006975; font-size: 10px; font-weight: 750;
+}
+#PlanAvailabilityBadge {
+    padding: 4px 9px; border-radius: 8px; font-size: 10px; font-weight: 750;
+}
+QLabel#PlanAvailabilityBadge[availability="available"] { background: #DDF3E8; color: #166440; }
+QLabel#PlanAvailabilityBadge[availability="coming_soon"] { background: #FFF0CF; color: #986000; }
 
 /* Dialogs and tables */
 #SettingsDialog, #HistoryDialog { background: #EAF1F4; }

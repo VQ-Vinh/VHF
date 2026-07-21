@@ -24,6 +24,7 @@ silero_model_path = ""
 [backend]
 api_url = "http://127.0.0.1:8080"
 firebase_api_key = ""
+google_oauth_client_id = "515336425252-aqkkoc9j9pmji0bsedg7g8hid398ee21.apps.googleusercontent.com"
 timeout_seconds = 150
 
 [translation]

@@ -36,13 +36,19 @@ class AccountCenterPage(QWidget):
     revoke_requested = Signal(str)
     sign_out_requested = Signal()
     back_requested = Signal()
+    link_google_requested = Signal()
+    google_cancel_requested = Signal()
+    manage_plan_requested = Signal()
 
-    def __init__(self, parent=None):
+    def __init__(self, google_enabled: bool = False, parent=None):
         super().__init__(parent)
         self.setObjectName("AccountCenterPage")
         self._profile: dict = {}
         self._devices: list[dict] = []
         self._current_device_id = ""
+        self._providers: list[str] = []
+        self._google_enabled = google_enabled
+        self._google_waiting = False
         self._message_text = ""
         self._message_error = False
 
@@ -105,6 +111,43 @@ class AccountCenterPage(QWidget):
         self._expires = self._detail_row(profile_layout)
         self._content.addWidget(profile_card)
 
+        self._login_methods_card = QFrame()
+        self._login_methods_card.setObjectName("AccountCenterCard")
+        login_methods_layout = QVBoxLayout(self._login_methods_card)
+        login_methods_layout.setContentsMargins(20, 18, 20, 18)
+        login_methods_layout.setSpacing(10)
+        self._login_methods_heading = QLabel()
+        self._login_methods_heading.setObjectName("AccountCenterSectionTitle")
+        login_methods_layout.addWidget(self._login_methods_heading)
+        password_row = QHBoxLayout()
+        self._password_method = QLabel()
+        self._password_method.setObjectName("AccountCenterValue")
+        self._password_status = QLabel()
+        self._password_status.setObjectName("DeviceBadge")
+        password_row.addWidget(self._password_method)
+        password_row.addStretch()
+        password_row.addWidget(self._password_status)
+        login_methods_layout.addLayout(password_row)
+        google_row = QHBoxLayout()
+        self._google_method = QLabel("Google")
+        self._google_method.setObjectName("AccountCenterValue")
+        self._google_status = QLabel()
+        self._google_status.setObjectName("DeviceBadge")
+        self._link_google = QPushButton()
+        self._link_google.setObjectName("GoogleLinkButton")
+        self._link_google.clicked.connect(self.link_google_requested)
+        self._cancel_google = QPushButton()
+        self._cancel_google.clicked.connect(self.google_cancel_requested)
+        self._cancel_google.setVisible(False)
+        google_row.addWidget(self._google_method)
+        google_row.addStretch()
+        google_row.addWidget(self._google_status)
+        google_row.addWidget(self._link_google)
+        google_row.addWidget(self._cancel_google)
+        login_methods_layout.addLayout(google_row)
+        self._login_methods_card.setVisible(google_enabled)
+        self._content.addWidget(self._login_methods_card)
+
         usage_card = QFrame()
         usage_card.setObjectName("AccountCenterCard")
         usage_layout = QVBoxLayout(usage_card)
@@ -120,6 +163,9 @@ class AccountCenterPage(QWidget):
         self._usage_text = QLabel("—")
         self._usage_text.setObjectName("AccountCenterMuted")
         usage_layout.addWidget(self._usage_text)
+        self._usage_reset = QLabel("—")
+        self._usage_reset.setObjectName("AccountCenterMuted")
+        usage_layout.addWidget(self._usage_reset)
         self._content.addWidget(usage_card)
 
         devices_card = QFrame()
@@ -146,13 +192,16 @@ class AccountCenterPage(QWidget):
         self._resend.clicked.connect(self.resend_requested)
         self._sign_out = QPushButton()
         self._sign_out.clicked.connect(self.sign_out_requested)
+        self._manage_plan = QPushButton()
+        self._manage_plan.setObjectName("PrimaryButton")
+        self._manage_plan.clicked.connect(self.manage_plan_requested)
         self._refresh = QPushButton()
-        self._refresh.setObjectName("PrimaryButton")
         self._refresh.clicked.connect(self.refresh_requested)
         actions.addWidget(self._reset_password)
         actions.addWidget(self._resend)
         actions.addWidget(self._sign_out)
         actions.addStretch()
+        actions.addWidget(self._manage_plan)
         actions.addWidget(self._refresh)
         root.addLayout(actions)
 
@@ -178,6 +227,8 @@ class AccountCenterPage(QWidget):
         self._subtitle.setText(tr("account.center_subtitle"))
         self._back.setText(tr("account.back_translation"))
         self._profile_heading.setText(tr("account.profile"))
+        self._login_methods_heading.setText(tr("account.login_methods"))
+        self._password_method.setText(tr("account.password_method"))
         self._email[0].setText(tr("account.email"))
         self._verified[0].setText(tr("account.verification"))
         self._subscription[0].setText(tr("settings.subscription"))
@@ -188,9 +239,16 @@ class AccountCenterPage(QWidget):
         self._reset_password.setText(tr("account.reset_password"))
         self._resend.setText(tr("account.resend"))
         self._sign_out.setText(tr("common.sign_out"))
+        self._manage_plan.setText(tr("account.manage_plan"))
         self._refresh.setText(tr("common.refresh"))
+        self._cancel_google.setText(tr("common.cancel"))
         self._sync_locale(language.locale)
-        self.set_profile(self._profile, self._devices, self._current_device_id)
+        self.set_profile(
+            self._profile,
+            self._devices,
+            self._current_device_id,
+            self._providers,
+        )
         self.set_message(self._message_text, self._message_error)
 
     def _sync_locale(self, locale: str) -> None:
@@ -205,12 +263,15 @@ class AccountCenterPage(QWidget):
         profile: dict,
         devices: list[dict] | None = None,
         current_device_id: str = "",
+        providers: list[str] | None = None,
     ) -> None:
         self._profile = dict(profile or {})
         if devices is not None:
             self._devices = list(devices)
         if current_device_id:
             self._current_device_id = current_device_id
+        if providers is not None:
+            self._providers = list(providers)
 
         verified = bool(self._profile.get("email_verified"))
         status = str(self._profile.get("status") or "registered")
@@ -221,10 +282,44 @@ class AccountCenterPage(QWidget):
         self._expires[1].setText(_format_datetime(self._profile.get("subscription_expires_at")))
         self._back.setVisible(verified and status == "active")
         self._resend.setVisible(not verified)
+        google_linked = "google.com" in self._providers
+        password_linked = "password" in self._providers
+        self._password_status.setText(
+            tr("account.method_available")
+            if password_linked
+            else tr("account.method_unavailable")
+        )
+        self._password_status.setProperty(
+            "state", "active" if password_linked else "revoked"
+        )
+        self._password_status.style().unpolish(self._password_status)
+        self._password_status.style().polish(self._password_status)
+        self._google_status.setText(
+            tr("account.google_linked")
+            if google_linked
+            else tr("account.google_not_linked")
+        )
+        self._google_status.setProperty("state", "active" if google_linked else "revoked")
+        self._google_status.style().unpolish(self._google_status)
+        self._google_status.style().polish(self._google_status)
+        self._link_google.setVisible(not google_linked)
+        self._link_google.setEnabled(not self._google_waiting)
+        self._link_google.setText(
+            tr("account.google_waiting")
+            if self._google_waiting
+            else tr("account.link_google")
+        )
 
         usage = self._profile.get("usage") or {}
         used = max(0, int(usage.get("used_audio_seconds", 0)))
-        total = max(0, int(usage.get("monthly_audio_seconds", 0)))
+        total = max(
+            0,
+            int(
+                usage.get("audio_seconds_limit")
+                or usage.get("monthly_audio_seconds")
+                or 0
+            ),
+        )
         remaining = max(0, int(usage.get("remaining_audio_seconds", max(0, total - used))))
         self._usage_progress.setMaximum(max(1, total))
         self._usage_progress.setValue(min(used, total) if total else 0)
@@ -235,6 +330,12 @@ class AccountCenterPage(QWidget):
                 remaining=f"{remaining / 60:.1f}",
                 total=f"{total / 60:.1f}",
             )
+        )
+        reset_value = usage.get("resets_at")
+        self._usage_reset.setText(
+            tr("account.usage_resets", time=_format_datetime(reset_value))
+            if reset_value
+            else "—"
         )
         self._rebuild_devices()
 
@@ -288,6 +389,17 @@ class AccountCenterPage(QWidget):
     def set_loading(self, loading: bool) -> None:
         self._refresh.setEnabled(not loading)
         self._refresh.setText(tr("account.refreshing") if loading else tr("common.refresh"))
+
+    def set_google_waiting(self, waiting: bool) -> None:
+        self._google_waiting = waiting
+        linked = "google.com" in self._providers
+        self._link_google.setVisible(not linked)
+        self._link_google.setEnabled(not waiting)
+        self._link_google.setText(
+            tr("account.google_waiting") if waiting else tr("account.link_google")
+        )
+        self._cancel_google.setVisible(waiting)
+        self._cancel_google.setEnabled(waiting)
 
     def set_message(self, message: str, error: bool = False) -> None:
         self._message_text = message

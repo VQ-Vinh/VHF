@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 from PySide6.QtCore import QSize, Qt, QTimer
-from PySide6.QtWidgets import QHBoxLayout, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLabel, QHBoxLayout, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget
 
 from prana_elex.ui.components.chat_feed import ChatFeed
 from prana_elex.ui.components.header_bar import HeaderBar
@@ -47,6 +48,16 @@ class TranslationPage(QWidget):
         self.language_block = LanguageBlock()
         self.language_block.set_target_language(target_language)
         layout.addWidget(self.language_block)
+
+        self.quota_banner = QLabel()
+        self.quota_banner.setObjectName("QuotaBanner")
+        self.quota_banner.setWordWrap(True)
+        self.quota_banner.setVisible(False)
+        layout.addWidget(self.quota_banner)
+        self._quota_reset_at: datetime | None = None
+        self._quota_timer = QTimer(self)
+        self._quota_timer.setInterval(1000)
+        self._quota_timer.timeout.connect(self._update_quota_banner)
 
         self.chat = ChatFeed()
         layout.addWidget(self.chat, stretch=1)
@@ -99,12 +110,14 @@ class TranslationPage(QWidget):
     def retranslate(self) -> None:
         self.console_toggle.setText(tr("console.title"))
         self.retry_button.setText(tr("console.retry"))
+        self._update_quota_banner()
 
     def reset(self) -> None:
         self.chat.clear()
         self.chat.set_state("stopped")
         self.console_output.clear()
         self.retry_button.setVisible(False)
+        self.clear_quota_exhausted()
         if self._history is not None:
             self._history.clear()
 
@@ -117,6 +130,40 @@ class TranslationPage(QWidget):
             f"{result.confidence:>4.0%}  "
             f"{result.latency_ms:>6.0f}ms  "
             f"{status}"
+        )
+
+    def show_quota_exhausted(self, resets_at: str) -> None:
+        try:
+            self._quota_reset_at = datetime.fromisoformat(resets_at.replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            self._quota_reset_at = None
+        self.quota_banner.setVisible(True)
+        self._quota_timer.start()
+        self._update_quota_banner()
+
+    def clear_quota_exhausted(self) -> None:
+        self._quota_timer.stop()
+        self._quota_reset_at = None
+        self.quota_banner.setVisible(False)
+
+    def _update_quota_banner(self) -> None:
+        if self._quota_reset_at is None:
+            if self.quota_banner.isVisible():
+                self.quota_banner.setText(tr("quota.exhausted"))
+            return
+        now = datetime.now(timezone.utc)
+        reset_utc = self._quota_reset_at.astimezone(timezone.utc)
+        remaining_seconds = max(0, int((reset_utc - now).total_seconds()))
+        if remaining_seconds <= 0:
+            self.clear_quota_exhausted()
+            return
+        hours, remainder = divmod(remaining_seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        local_time = self._quota_reset_at.astimezone().strftime("%Y-%m-%d %H:%M")
+        remaining = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+        self.quota_banner.setText(
+            f"{tr('quota.exhausted')}\n"
+            f"{tr('quota.retry_at', time=local_time, remaining=remaining)}"
         )
 
     def toggle_console(self) -> None:

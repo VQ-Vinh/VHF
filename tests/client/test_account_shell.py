@@ -22,6 +22,8 @@ try:
     from prana_elex.ui.components.language_block import LanguageBlock
     from prana_elex.ui.pages.account import AuthPage
     from prana_elex.ui.pages.account_center import AccountCenterPage
+    from prana_elex.ui.pages.plans import PlansPage
+    from prana_elex.ui.pages.translation import TranslationPage
     from prana_elex.ui.i18n import language
     from prana_elex.ui.main_window import MainWindow
 except ModuleNotFoundError as exc:
@@ -35,6 +37,8 @@ except ModuleNotFoundError as exc:
     AppConfig = None  # type: ignore[assignment]
     MainWindow = None  # type: ignore[assignment]
     AccountCenterPage = None  # type: ignore[assignment]
+    PlansPage = None  # type: ignore[assignment]
+    TranslationPage = None  # type: ignore[assignment]
     SettingsDialog = None  # type: ignore[assignment]
     ChatFeed = None  # type: ignore[assignment]
     HeaderBar = None  # type: ignore[assignment]
@@ -46,9 +50,13 @@ class _FakeAuth:
     def __init__(self, has_session: bool = True):
         self.has_session = has_session
         self.email = "user@example.com"
+        self.google_enabled = False
 
     def sign_out(self) -> None:
         self.has_session = False
+
+    def provider_ids(self) -> list[str]:
+        return []
 
 
 class _FakeBackend:
@@ -66,12 +74,14 @@ class _FakeBackend:
             }
         ]
         self.revoked: list[str] = []
+        self.me_calls = 0
 
     @property
     def local_device_id(self) -> str:
         return "device-current"
 
     def me(self) -> dict:
+        self.me_calls += 1
         if self.error:
             raise self.error
         return self.profile
@@ -92,6 +102,23 @@ class _FakeBackend:
         for device in self.devices:
             if device["id"] == device_id:
                 device["active"] = False
+
+    def list_plans(self) -> list[dict]:
+        return [
+            {"id": "free", "name": "Free", "audio_seconds_limit": 600,
+             "quota_period": "daily", "availability": "available", "sort_order": 10,
+             "requests_per_minute": 30, "max_concurrency": 2, "max_devices": 2},
+            {"id": "plus", "name": "Plus", "audio_seconds_limit": 3600,
+             "quota_period": "daily", "availability": "coming_soon", "sort_order": 20,
+             "requests_per_minute": 30, "max_concurrency": 2, "max_devices": 2},
+            {"id": "pro", "name": "Pro", "audio_seconds_limit": 10800,
+             "quota_period": "daily", "availability": "coming_soon", "sort_order": 30,
+             "requests_per_minute": 30, "max_concurrency": 2, "max_devices": 2},
+        ]
+
+    def select_plan(self, plan_id: str) -> dict:
+        self.profile = {**self.profile, "status": "active", "plan_id": plan_id}
+        return self.profile
 
     def reset_registration(self) -> None:
         self.registered = False
@@ -170,6 +197,7 @@ class AccountControllerTests(unittest.TestCase):
         self._wait_for_spy(loading, 2)
         self.assertEqual(changed.at(0)[0]["email"], "user@example.com")
         self.assertEqual(changed.at(0)[1][0]["id"], "device-current")
+        self.assertEqual(changed.at(0)[2], [])
 
         backend.error = BackendApiError("NETWORK_ERROR", "offline")
         errors = QSignalSpy(controller.details_error)
@@ -193,6 +221,17 @@ class AccountControllerTests(unittest.TestCase):
         identity.assert_called_once_with(
             "sendOobCode", {"requestType": "PASSWORD_RESET", "email": "user@example.com"}
         )
+
+    def test_plan_polling_does_not_reload_profile(self) -> None:
+        app = QApplication.instance() or QApplication([])
+        backend = _FakeBackend(self._profile())
+        controller = AccountController(backend)  # type: ignore[arg-type]
+        changed = QSignalSpy(controller.plans_changed)
+        controller.load_plans()
+        self._wait_for_spy(changed)
+        self.assertEqual(backend.me_calls, 0)
+        self.assertEqual(changed.at(0)[1][0]["id"], "free")
+        self.assertIsNotNone(app)
 
     def test_backend_sign_out_keeps_device_identity_and_resets_registration(self) -> None:
         client = BackendClient("https://api.example.com", "public-api-key")
@@ -239,14 +278,31 @@ class AccountShellUiTests(unittest.TestCase):
         page.close()
 
     def test_auth_page_switches_language_without_recreation(self) -> None:
-        page = AuthPage()
+        page = AuthPage(google_enabled=True)
         language.set_locale("vi")
         self.app.processEvents()
         self.assertEqual(page._sign_in.text(), "Đăng nhập")
         self.assertEqual(page._forgot_password.text(), "Quên mật khẩu")
+        self.assertEqual(page._google.text(), "Tiếp tục với Google")
         language.set_locale("en")
         self.app.processEvents()
         self.assertEqual(page._sign_in.text(), "Sign In")
+        self.assertEqual(page._google.text(), "Continue with Google")
+        page.close()
+
+    def test_google_button_is_shared_and_supports_cancel_state(self) -> None:
+        page = AuthPage(google_enabled=True)
+        requested = QSignalSpy(page.google_requested)
+        cancelled = QSignalSpy(page.google_cancel_requested)
+        page._google.click()
+        self.assertEqual(requested.count(), 1)
+        page.set_google_waiting(True)
+        self.assertTrue(page._cancel_google.isVisible() or not page.isVisible())
+        self.assertEqual(page._google.text(), "Waiting for Google sign-in…")
+        page._cancel_google.click()
+        self.assertEqual(cancelled.count(), 1)
+        page.set_google_waiting(False)
+        self.assertTrue(page._cancel_google.isHidden())
         page.close()
 
     def test_registration_password_policy_blocks_invalid_passwords(self) -> None:
@@ -325,14 +381,14 @@ class AccountShellUiTests(unittest.TestCase):
         block.close()
 
     def test_account_center_localizes_usage_and_protects_current_device(self) -> None:
-        page = AccountCenterPage()
+        page = AccountCenterPage(google_enabled=True)
         profile = AccountControllerTests._profile()
         devices = [
             {"id": "device-current", "name": "Current", "platform": "Windows", "active": True},
             {"id": "device-other", "name": "Other", "platform": "Linux", "active": True},
             {"id": "device-old", "name": "Old", "platform": "Windows", "active": False},
         ]
-        page.set_profile(profile, devices, "device-current")
+        page.set_profile(profile, devices, "device-current", ["password"])
         revoke_ids = {
             button.property("device_id")
             for button in page.findChildren(type(page._refresh))
@@ -341,6 +397,11 @@ class AccountShellUiTests(unittest.TestCase):
         self.assertEqual(revoke_ids, {"device-other"})
         self.assertFalse(page._back.isHidden())
         self.assertIn("10.0 min total", page._usage_text.text())
+        self.assertEqual(page._password_status.text(), "Available")
+        self.assertFalse(page._link_google.isHidden())
+        page.set_profile(profile, devices, "device-current", ["google.com", "password"])
+        self.assertTrue(page._link_google.isHidden())
+        self.assertEqual(page._google_status.text(), "Linked")
 
         language.set_locale("vi")
         self.app.processEvents()
@@ -349,6 +410,77 @@ class AccountShellUiTests(unittest.TestCase):
         language.set_locale("en")
         page.set_profile(AccountControllerTests._profile("suspended"), devices, "device-current")
         self.assertTrue(page._back.isHidden())
+        page.close()
+
+    def test_plans_page_shows_current_and_disables_unreleased_tiers(self) -> None:
+        page = PlansPage()
+        plans = _FakeBackend().list_plans()
+        page.set_data({"plan_id": "free"}, plans)
+        buttons = page.findChildren(type(page._refresh))
+        labels = [button.text() for button in buttons]
+        self.assertIn("Your current plan", labels)
+        self.assertEqual(labels.count("Coming soon"), 2)
+        self.assertEqual(len(page.findChildren(type(page._title), "PlanName")), 3)
+        values = {
+            (label.property("plan_id"), label.property("field")): label.text()
+            for label in page.findChildren(type(page._title), "PlanDetailValue")
+        }
+        self.assertEqual(values[("free", "requests_per_minute")], "30")
+        self.assertEqual(values[("plus", "max_concurrency")], "2")
+        self.assertEqual(values[("pro", "max_devices")], "2")
+
+        updated = [dict(plan) for plan in plans]
+        updated[0].update({
+            "name": "Free Updated", "audio_seconds_limit": 1_200,
+            "requests_per_minute": 40, "max_concurrency": 3,
+            "max_devices": 4, "sort_order": 40,
+        })
+        page.set_data({"plan_id": "free"}, updated)
+        self.app.processEvents()
+        self.assertEqual(page._plans[0]["id"], "plus")
+        self.assertEqual(page._plans[-1]["name"], "Free Updated")
+        free_values = {
+            label.property("field"): label.text()
+            for label in page._card_widgets[-1].findChildren(
+                type(page._title), "PlanDetailValue"
+            )
+        }
+        self.assertEqual(free_values, {
+            "requests_per_minute": "40",
+            "max_concurrency": "3",
+            "max_devices": "4",
+        })
+
+        page.resize(1_120, 720)
+        page.show()
+        self.app.processEvents()
+        self.assertEqual(page._column_count, 3)
+        page.resize(760, 720)
+        self.app.processEvents()
+        self.assertEqual(page._column_count, 2)
+        page.resize(540, 720)
+        self.app.processEvents()
+        self.assertEqual(page._column_count, 1)
+        page.set_message("Offline", True)
+        self.assertEqual(len(page._card_widgets), 3)
+        language.set_locale("vi")
+        self.app.processEvents()
+        self.assertIn("Chọn gói", page._title.text())
+        language.set_locale("en")
+        page.close()
+
+    def test_quota_banner_counts_down_and_keeps_retry_available(self) -> None:
+        from datetime import datetime, timedelta, timezone
+
+        page = TranslationPage("en")
+        reset = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
+        page.show_quota_exhausted(reset)
+        self.assertFalse(page.quota_banner.isHidden())
+        self.assertIn("Daily quota exhausted", page.quota_banner.text())
+        self.assertIn("00:04:", page.quota_banner.text())
+        page.clear_quota_exhausted()
+        self.assertTrue(page.quota_banner.isHidden())
+        page.close_logging()
         page.close()
 
     def test_settings_contains_only_application_preferences(self) -> None:
@@ -394,6 +526,18 @@ class AccountShellUiTests(unittest.TestCase):
                     load_details.assert_called_once()
                     window._close_account_center()
                     self.assertIs(window._stack.currentWidget(), window._translation_page)
+
+                    with patch.object(controller, "load_plans") as load_plans:
+                        window.open_plans()
+                        self.assertIs(window._stack.currentWidget(), window._plans_page)
+                        self.assertTrue(window._account_refresh_timer.isActive())
+                        self.assertEqual(window._account_refresh_timer.interval(), 30_000)
+                        load_plans.assert_called_once()
+                        window._refresh_visible_account_page()
+                        self.assertEqual(load_plans.call_count, 2)
+                    window._back_to_account_center()
+                    self.assertIs(window._stack.currentWidget(), window._account_center)
+                    window._close_account_center()
 
                     window._on_account_state(
                         AccountState.RESTRICTED,

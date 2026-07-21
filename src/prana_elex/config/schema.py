@@ -36,6 +36,7 @@ class VADConfig(BaseModel):
 class BackendConfig(BaseModel):
     api_url: str = ""
     firebase_api_key: str = ""
+    google_oauth_client_id: str = ""
     timeout_seconds: float = 150.0
 
 

@@ -14,10 +14,18 @@ def validate(path: Path) -> list[str]:
     errors = []
     api_url = str(backend.get("api_url", ""))
     api_key = str(backend.get("firebase_api_key", ""))
+    google_client_id = str(backend.get("google_oauth_client_id", ""))
     if not api_url.startswith("https://") or "REPLACE_WITH" in api_url:
         errors.append("backend.api_url must be the production HTTPS Cloud Run URL")
     if not api_key or "REPLACE_WITH" in api_key:
         errors.append("backend.firebase_api_key must contain the Firebase Web API key")
+    if (
+        not google_client_id.endswith(".apps.googleusercontent.com")
+        or "REPLACE_WITH" in google_client_id
+    ):
+        errors.append(
+            "backend.google_oauth_client_id must contain the Google Desktop OAuth client ID"
+        )
     return errors
 
 

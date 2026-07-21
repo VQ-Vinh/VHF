@@ -24,6 +24,7 @@ silero_model_path = ""
 [backend]
 api_url = "https://prana-api-owuilj5d4a-uc.a.run.app"
 firebase_api_key = "AIzaSyBTG4ltR5PJMH9_TmsKPSF3fNSUgbCbevU"
+google_oauth_client_id = "515336425252-aqkkoc9j9pmji0bsedg7g8hid398ee21.apps.googleusercontent.com"
 timeout_seconds = 150
 
 [translation]

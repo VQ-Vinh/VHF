@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -81,11 +84,50 @@ class AuthPage(_CenteredPage):
     sign_in_requested = Signal(str, str)
     sign_up_requested = Signal(str, str)
     reset_requested = Signal(str)
+    google_requested = Signal()
+    google_cancel_requested = Signal()
 
-    def __init__(self, parent=None):
+    def __init__(self, google_enabled: bool = False, parent=None):
         super().__init__(parent)
-        self.card.setMinimumHeight(600)
+        self.card.setMinimumHeight(680)
+        self._google_enabled = google_enabled
+        self._google_waiting = False
         self.add_title(tr("account.welcome"), tr("account.subtitle"))
+
+        google_row = QHBoxLayout()
+        google_row.setSpacing(10)
+        self._google = QPushButton()
+        self._google.setObjectName("GoogleButton")
+        self._google.setCursor(Qt.PointingHandCursor)
+        icon_path = Path(__file__).resolve().parents[1] / "resources" / "google-g.svg"
+        self._google.setIcon(QIcon(str(icon_path)))
+        self._google.setIconSize(QSize(20, 20))
+        self._google.clicked.connect(self.google_requested)
+        self._cancel_google = QPushButton()
+        self._cancel_google.setObjectName("GoogleCancelButton")
+        self._cancel_google.clicked.connect(self.google_cancel_requested)
+        self._cancel_google.setVisible(False)
+        google_row.addWidget(self._google, stretch=1)
+        google_row.addWidget(self._cancel_google)
+        self.content.addLayout(google_row)
+
+        self._google_divider = QWidget()
+        divider_layout = QHBoxLayout(self._google_divider)
+        divider_layout.setContentsMargins(0, 0, 0, 0)
+        divider_layout.setSpacing(12)
+        left_line = QFrame()
+        left_line.setFrameShape(QFrame.HLine)
+        right_line = QFrame()
+        right_line.setFrameShape(QFrame.HLine)
+        self._divider_text = QLabel()
+        self._divider_text.setObjectName("AuthDividerText")
+        divider_layout.addWidget(left_line, stretch=1)
+        divider_layout.addWidget(self._divider_text)
+        divider_layout.addWidget(right_line, stretch=1)
+        self.content.addWidget(self._google_divider)
+
+        self._google.setVisible(google_enabled)
+        self._google_divider.setVisible(google_enabled)
         self._tabs = QTabWidget()
         self._tabs.setMinimumHeight(390)
         self._tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -193,6 +235,13 @@ class AuthPage(_CenteredPage):
         self._forgot_password.setText(tr("account.forgot"))
         self._sign_in.setText(tr("account.sign_in"))
         self._create.setText(tr("account.create"))
+        self._google.setText(
+            tr("account.google_waiting")
+            if self._google_waiting
+            else tr("account.continue_google")
+        )
+        self._cancel_google.setText(tr("common.cancel"))
+        self._divider_text.setText(tr("account.continue_email"))
         self._tabs.setTabText(0, tr("account.sign_in"))
         self._tabs.setTabText(1, tr("account.create"))
         self._update_registration_state()
@@ -252,7 +301,17 @@ class AuthPage(_CenteredPage):
         self._busy = busy
         self._tabs.setEnabled(not busy)
         self._sign_in.setText(tr("account.signing_in") if busy else tr("account.sign_in"))
+        self._google.setEnabled(self._google_enabled and not busy)
+        self._cancel_google.setEnabled(self._google_waiting)
         self._update_registration_state()
+
+    def set_google_waiting(self, waiting: bool) -> None:
+        self._google_waiting = waiting
+        self._google.setText(
+            tr("account.google_waiting") if waiting else tr("account.continue_google")
+        )
+        self._cancel_google.setVisible(waiting)
+        self._cancel_google.setEnabled(waiting)
 
     def set_message(self, message: str, error: bool = False) -> None:
         self._message.setText(message)

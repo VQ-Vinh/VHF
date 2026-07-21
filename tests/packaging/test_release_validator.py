@@ -14,12 +14,13 @@ class ReleaseValidatorTests(unittest.TestCase):
             "PRANA_ELEX.exe",
             "_internal/config/windows-device.toml",
             "_internal/prana_elex/ui/resources/styles.qss",
+            "_internal/prana_elex/ui/resources/google-g.svg",
         ):
             path = bundle / relative
             path.parent.mkdir(parents=True, exist_ok=True)
             if path.suffix == ".toml":
                 path.write_text(
-                    '[backend]\napi_url = "https://api.example.run.app"\nfirebase_api_key = "public-key"\n',
+                    '[backend]\napi_url = "https://api.example.run.app"\nfirebase_api_key = "public-key"\ngoogle_oauth_client_id = "123-example.apps.googleusercontent.com"\n',
                     encoding="utf-8",
                 )
             else:
@@ -41,7 +42,7 @@ class ReleaseValidatorTests(unittest.TestCase):
             bundle = self._windows_bundle(Path(temporary))
             config = bundle / "_internal/config/windows-device.toml"
             config.write_text(
-                '[backend]\napi_url = "https://REPLACE_WITH_PRANA_API_URL"\nfirebase_api_key = ""\n',
+                '[backend]\napi_url = "https://REPLACE_WITH_PRANA_API_URL"\nfirebase_api_key = ""\ngoogle_oauth_client_id = ""\n',
                 encoding="utf-8",
             )
             self.assertEqual(validate("windows", bundle), 1)

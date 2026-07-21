@@ -2,7 +2,8 @@ import sys
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import QTimer, Signal
+from PySide6.QtCore import QTimer, QUrl, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QMainWindow, QMessageBox, QStackedWidget
 
 from prana_elex.ui.dialogs.settings import SettingsDialog
@@ -16,6 +17,7 @@ from prana_elex.ui.pages.account import (
     OfflinePage,
 )
 from prana_elex.ui.pages.account_center import AccountCenterPage
+from prana_elex.ui.pages.plans import PlansPage
 from prana_elex.ui.pages.translation import TranslationPage
 from prana_elex.pipeline.orchestrator import PipelineState
 from prana_elex.pipeline.orchestrator import PipelineOrchestrator
@@ -47,6 +49,7 @@ class MainWindow(QMainWindow):
         self._active_uid = ""
         self._signing_out = False
         self._account_center_open = False
+        self._plans_open = False
 
         self.setWindowTitle("PRANA ELEX")
         self.setMinimumSize(720, 600)
@@ -78,10 +81,20 @@ class MainWindow(QMainWindow):
         self._account_refresh_timer.timeout.connect(self._refresh_visible_account_page)
 
         self._loading_page = LoadingPage()
-        self._auth_page = AuthPage()
-        self._account_center = AccountCenterPage()
+        google_enabled = bool(
+            self._account and self._account.backend.auth.google_enabled
+        )
+        self._auth_page = AuthPage(google_enabled=google_enabled)
+        self._account_center = AccountCenterPage(google_enabled=google_enabled)
+        self._plans_page = PlansPage()
         self._offline_page = OfflinePage()
-        for page in (self._loading_page, self._auth_page, self._account_center, self._offline_page):
+        for page in (
+            self._loading_page,
+            self._auth_page,
+            self._account_center,
+            self._plans_page,
+            self._offline_page,
+        ):
             self._stack.addWidget(page)
 
         self._data_setup_page = None
@@ -98,6 +111,12 @@ class MainWindow(QMainWindow):
         self._auth_page.sign_in_requested.connect(self._on_sign_in)
         self._auth_page.sign_up_requested.connect(self._on_sign_up)
         self._auth_page.reset_requested.connect(self._on_password_reset)
+        self._auth_page.google_requested.connect(
+            lambda: self._account and self._account.sign_in_with_google()
+        )
+        self._auth_page.google_cancel_requested.connect(
+            lambda: self._account and self._account.cancel_google_oauth()
+        )
         self._account_center.refresh_requested.connect(
             lambda: self._account and self._account.load_account_center()
         )
@@ -110,6 +129,20 @@ class MainWindow(QMainWindow):
         self._account_center.revoke_requested.connect(self._confirm_revoke_device)
         self._account_center.sign_out_requested.connect(self._request_sign_out)
         self._account_center.back_requested.connect(self._close_account_center)
+        self._account_center.link_google_requested.connect(
+            lambda: self._account and self._account.link_google_account()
+        )
+        self._account_center.google_cancel_requested.connect(
+            lambda: self._account and self._account.cancel_google_oauth()
+        )
+        self._account_center.manage_plan_requested.connect(self.open_plans)
+        self._plans_page.back_requested.connect(self._back_to_account_center)
+        self._plans_page.refresh_requested.connect(
+            lambda: self._account and self._account.load_plans()
+        )
+        self._plans_page.select_requested.connect(
+            lambda plan_id: self._account and self._account.select_plan(plan_id)
+        )
         self._offline_page.retry_requested.connect(lambda: self._account and self._account.refresh(True))
         self._offline_page.sign_out_requested.connect(self._request_sign_out)
         self._sign_out_ready.connect(self._finish_sign_out)
@@ -124,6 +157,20 @@ class MainWindow(QMainWindow):
                 lambda message: self._account_center.set_message(message, True)
             )
             self._account.details_loading.connect(self._account_center.set_loading)
+            self._account.google_browser_requested.connect(
+                self._open_google_authorization
+            )
+            self._account.google_flow_changed.connect(
+                self._auth_page.set_google_waiting
+            )
+            self._account.google_flow_changed.connect(
+                self._account_center.set_google_waiting
+            )
+            self._account.plans_changed.connect(self._on_plans_changed)
+            self._account.plans_error.connect(
+                lambda message: self._plans_page.set_message(message, True)
+            )
+            self._account.plans_loading.connect(self._plans_page.set_loading)
 
         if self._config_error_page:
             self._stack.setCurrentWidget(self._config_error_page)
@@ -169,6 +216,29 @@ class MainWindow(QMainWindow):
             self._account.request_password_reset(email)
 
     def _on_account_notice(self, message: str, error: bool) -> None:
+        if message.startswith("GOOGLE:"):
+            code = message.partition(":")[2]
+            key = {
+                "ACCOUNT_CREATED": "account.google_account_created",
+                "GOOGLE_LINKED": "account.google_link_success",
+                "GOOGLE_AUTH_CANCELLED": "account.google_cancelled",
+                "GOOGLE_AUTH_TIMEOUT": "account.google_timeout",
+                "GOOGLE_CALLBACK_UNAVAILABLE": "account.google_callback_unavailable",
+                "GOOGLE_BROWSER_FAILED": "account.google_browser_failed",
+                "GOOGLE_OAUTH_NOT_CONFIGURED": "account.google_not_configured",
+                "EMAIL_EXISTS": "account.google_account_exists",
+                "ACCOUNT_EXISTS_WITH_DIFFERENT_CREDENTIAL": "account.google_account_exists",
+                "FEDERATED_USER_ID_ALREADY_LINKED": "account.google_account_exists",
+                "INVALID_IDP_RESPONSE": "account.google_provider_mismatch",
+                "OPERATION_NOT_ALLOWED": "account.google_provider_disabled",
+                "CONFIGURATION_NOT_FOUND": "account.google_provider_disabled",
+                "GOOGLE_AUTH_NOT_CONFIGURED": "account.google_provider_disabled",
+                "GOOGLE_AUTH_UNAVAILABLE": "account.google_network_error",
+                "GOOGLE_EMAIL_MISMATCH": "account.google_email_mismatch",
+                "NETWORK_ERROR": "account.google_network_error",
+                "GOOGLE_LINK_FAILED": "account.google_link_failed",
+            }.get(code, "account.google_failed")
+            message = tr(key)
         if self._stack.currentWidget() is self._account_center:
             if message.startswith("If the account exists"):
                 message = tr("account.reset_sent")
@@ -183,6 +253,20 @@ class MainWindow(QMainWindow):
         else:
             self._auth_page.set_message(message, error)
 
+    def _open_google_authorization(self, url: str) -> None:
+        if QDesktopServices.openUrl(QUrl(url)):
+            return
+        if self._account:
+            self._account.cancel_google_oauth(
+                "GOOGLE_BROWSER_FAILED",
+                "The system browser could not be opened",
+            )
+            return
+        self._auth_page.set_message(
+            tr("account.google_browser_failed"),
+            True,
+        )
+
     def _on_account_state(self, state: AccountState, profile: dict, message: str) -> None:
         if state == AccountState.LOADING:
             self._stack.setCurrentWidget(self._loading_page)
@@ -190,6 +274,7 @@ class MainWindow(QMainWindow):
         if state == AccountState.SIGNED_OUT:
             self._account_refresh_timer.stop()
             self._account_center_open = False
+            self._plans_open = False
             self.account_active_changed.emit(False)
             self._auth_page.set_email(self._account.backend.auth.email if self._account else "")
             if message:
@@ -211,6 +296,7 @@ class MainWindow(QMainWindow):
                 self._orchestrator.stop()
             first_open = not self._account_center_open
             self._account_center_open = True
+            self._plans_open = False
             self._account_center.set_profile(profile)
             self._account_center.set_message(self._account_status_message(profile, message), True)
             self._stack.setCurrentWidget(self._account_center)
@@ -218,12 +304,12 @@ class MainWindow(QMainWindow):
                 self._account.load_account_center()
             return
         if state == AccountState.ACTIVE:
-            keep_center = self._account_center_open
-            if keep_center:
+            keep_account_page = self._account_center_open or self._plans_open
+            if keep_account_page:
                 self._account_refresh_timer.start()
             else:
                 self._account_refresh_timer.stop()
-            self._activate_account(profile, show_translation=not keep_center)
+            self._activate_account(profile, show_translation=not keep_account_page)
 
     def _activate_account(self, profile: dict, show_translation: bool = True) -> None:
         uid = str(profile.get("uid") or "")
@@ -245,12 +331,16 @@ class MainWindow(QMainWindow):
         if show_translation:
             self._stack.setCurrentWidget(self._translation_page)
         else:
-            self._account_center.set_profile(
-                profile,
-                current_device_id=self._account.backend.local_device_id if self._account else "",
-            )
-            self._account_center.set_message("")
-            self._stack.setCurrentWidget(self._account_center)
+            if self._plans_open:
+                self._plans_page.set_profile(profile)
+                self._stack.setCurrentWidget(self._plans_page)
+            else:
+                self._account_center.set_profile(
+                    profile,
+                    current_device_id=self._account.backend.local_device_id if self._account else "",
+                )
+                self._account_center.set_message("")
+                self._stack.setCurrentWidget(self._account_center)
 
     def _reset_translation_ui(self) -> None:
         self._translation_page.reset()
@@ -289,6 +379,7 @@ class MainWindow(QMainWindow):
         self._active_uid = ""
         self._signing_out = False
         self._account_center_open = False
+        self._plans_open = False
         self._reset_translation_ui()
         if self._account:
             self._account.sign_out_local()
@@ -303,10 +394,19 @@ class MainWindow(QMainWindow):
             self._orchestrator.stop()
         self._account.restrict(code, message)
 
+    def on_quota_exhausted(self, _code: str, message: str, resets_at: str) -> None:
+        if self._orchestrator:
+            self._orchestrator.stop()
+        self._translation_page.show_quota_exhausted(resets_at)
+        self._retry_button.setVisible(True)
+        self._on_error(message)
+
     def _on_result(self, result):
         if result.error:
             detail = result.processing_notes[0] if result.processing_notes else result.error
             self._on_error(f"{result.error}: {detail}")
+        else:
+            self._translation_page.clear_quota_exhausted()
         self._chat.add_message(
             source=result.detected_language,
             transcript=result.transcript_restored,
@@ -407,6 +507,7 @@ class MainWindow(QMainWindow):
         if not self._account or self._account.state not in (AccountState.ACTIVE, AccountState.RESTRICTED):
             return
         self._account_center_open = True
+        self._plans_open = False
         self._account_center.set_profile(
             self._account.profile or {},
             current_device_id=self._account.backend.local_device_id,
@@ -420,6 +521,7 @@ class MainWindow(QMainWindow):
         if not self._account or self._account.state != AccountState.ACTIVE:
             return
         self._account_center_open = False
+        self._plans_open = False
         self._account_refresh_timer.stop()
         self._stack.setCurrentWidget(self._translation_page)
 
@@ -428,14 +530,49 @@ class MainWindow(QMainWindow):
             return
         if self._stack.currentWidget() is self._account_center:
             self._account.load_account_center()
+        elif self._stack.currentWidget() is self._plans_page:
+            self._account.load_plans()
         else:
             self._account.refresh()
 
-    def _on_account_details(self, profile: dict, devices: list[dict]) -> None:
+    def open_plans(self) -> None:
+        if not self._account or self._account.state not in (AccountState.ACTIVE, AccountState.RESTRICTED):
+            return
+        self._account_center_open = False
+        self._plans_open = True
+        self._plans_page.set_profile(self._account.profile or {})
+        self._plans_page.set_message("")
+        self._stack.setCurrentWidget(self._plans_page)
+        self._account_refresh_timer.start()
+        self._account.load_plans()
+
+    def _back_to_account_center(self) -> None:
+        if not self._account:
+            return
+        self._plans_open = False
+        self.open_account_center()
+
+    def _on_plans_changed(self, profile: dict, plans: list[dict]) -> None:
+        self._plans_page.set_data(profile, plans)
+        self._plans_page.set_message("")
+        if self._plans_open:
+            self._stack.setCurrentWidget(self._plans_page)
+
+    def _on_account_details(
+        self,
+        profile: dict,
+        devices: list[dict],
+        providers: list[str],
+    ) -> None:
         current_device_id = ""
         if self._account and profile.get("email_verified"):
             current_device_id = self._account.backend.local_device_id
-        self._account_center.set_profile(profile, devices, current_device_id)
+        self._account_center.set_profile(
+            profile,
+            devices,
+            current_device_id,
+            providers,
+        )
         message = self._account_status_message(profile, "")
         self._account_center.set_message(message, bool(message))
 

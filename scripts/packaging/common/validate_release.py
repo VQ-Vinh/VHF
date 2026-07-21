@@ -22,11 +22,13 @@ REQUIRED_FILES = {
         "PRANA_ELEX.exe",
         "_internal/config/windows-device.toml",
         "_internal/prana_elex/ui/resources/styles.qss",
+        "_internal/prana_elex/ui/resources/google-g.svg",
     },
     "linux-arm64": {
         "PRANA_ELEX",
         "_internal/config/raspberry-pi.toml",
         "_internal/prana_elex/ui/resources/styles.qss",
+        "_internal/prana_elex/ui/resources/google-g.svg",
         "prana-elex.desktop",
     },
 }
@@ -94,11 +96,20 @@ def _validate_backend_config(path: Path | None) -> list[str]:
         return [f"Cannot parse backend build config: {path.name}"]
     api_url = str(backend.get("api_url", ""))
     firebase_key = str(backend.get("firebase_api_key", ""))
+    google_client_id = str(backend.get("google_oauth_client_id", ""))
+    errors: list[str] = []
     if not api_url.startswith("https://") or "REPLACE_WITH" in api_url:
-        return ["Release backend.api_url must be the production HTTPS Cloud Run URL"]
+        errors.append("Release backend.api_url must be the production HTTPS Cloud Run URL")
     if not firebase_key or "REPLACE_WITH" in firebase_key:
-        return ["Release backend.firebase_api_key must contain the Firebase Web API key"]
-    return []
+        errors.append("Release backend.firebase_api_key must contain the Firebase Web API key")
+    if (
+        not google_client_id.endswith(".apps.googleusercontent.com")
+        or "REPLACE_WITH" in google_client_id
+    ):
+        errors.append(
+            "Release backend.google_oauth_client_id must contain the Google Desktop OAuth client ID"
+        )
+    return errors
 
 
 def validate(platform_name: str, bundle: Path) -> int:

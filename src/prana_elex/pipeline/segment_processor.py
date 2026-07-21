@@ -29,6 +29,7 @@ ACCESS_ERROR_CODES = {
     "DEVICE_REVOKED",
     "DEVICE_LIMIT_REACHED",
 }
+QUOTA_ERROR_CODES = {"DAILY_QUOTA_EXCEEDED", "MONTHLY_QUOTA_EXCEEDED"}
 
 
 @dataclass
@@ -93,6 +94,7 @@ class SegmentProcessor:
             self.last_backend_ok = False
             self.backend_error = f"{exc.code}: {exc}"
             self._emit_access_error(exc)
+            self._emit_quota_error(exc)
             result = ProcessingResult(
                 session_id=sid,
                 sequence=seq,
@@ -212,6 +214,7 @@ class SegmentProcessor:
             self.last_backend_ok = False
             self.backend_error = f"{exc.code}: {exc}"
             self._emit_access_error(exc)
+            self._emit_quota_error(exc)
             event_bus.emit("error_occurred", self.backend_error)
 
     def clear_failures(self) -> None:
@@ -227,6 +230,16 @@ class SegmentProcessor:
     def _emit_access_error(error: BackendApiError) -> None:
         if error.code in ACCESS_ERROR_CODES:
             event_bus.emit("access_denied", error.code, str(error))
+
+    @staticmethod
+    def _emit_quota_error(error: BackendApiError) -> None:
+        if error.code in QUOTA_ERROR_CODES:
+            event_bus.emit(
+                "quota_exhausted",
+                error.code,
+                str(error),
+                str(error.detail.get("resets_at") or ""),
+            )
 
     @staticmethod
     def print_result(result: ProcessingResult) -> None:

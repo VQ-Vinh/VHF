@@ -7,6 +7,11 @@ from PySide6.QtCore import QObject, Signal
 
 from prana_elex.backend.auth import FirebaseAuthError
 from prana_elex.backend.client import BackendApiError, BackendClient
+from prana_elex.backend.google_oauth import (
+    GoogleOAuthAuthorization,
+    GoogleOAuthError,
+    GoogleOAuthSession,
+)
 
 
 class AccountState(Enum):
@@ -21,9 +26,14 @@ class AccountController(QObject):
     state_changed = Signal(object, object, str)
     busy_changed = Signal(bool)
     notice = Signal(str, bool)
-    details_changed = Signal(object, object)
+    details_changed = Signal(object, object, object)
     details_error = Signal(str)
     details_loading = Signal(bool)
+    google_browser_requested = Signal(str)
+    google_flow_changed = Signal(bool)
+    plans_changed = Signal(object, object)
+    plans_error = Signal(str)
+    plans_loading = Signal(bool)
 
     def __init__(self, backend: BackendClient, parent=None):
         super().__init__(parent)
@@ -34,6 +44,10 @@ class AccountController(QObject):
         self._lock = threading.Lock()
         self._details_busy = False
         self._details_lock = threading.Lock()
+        self._google_session: GoogleOAuthSession | None = None
+        self._google_lock = threading.Lock()
+        self._plans_busy = False
+        self._plans_lock = threading.Lock()
 
     def _emit_state(self, state: AccountState, profile: dict | None = None, message: str = "") -> None:
         self.state = state
@@ -74,6 +88,23 @@ class AccountController(QObject):
 
         threading.Thread(target=run, daemon=True).start()
 
+    def _start_plans(self, worker) -> None:
+        with self._plans_lock:
+            if self._plans_busy:
+                return
+            self._plans_busy = True
+        self.plans_loading.emit(True)
+
+        def run() -> None:
+            try:
+                worker()
+            finally:
+                with self._plans_lock:
+                    self._plans_busy = False
+                self.plans_loading.emit(False)
+
+        threading.Thread(target=run, daemon=True).start()
+
     def initialize(self) -> None:
         if not self.backend.auth.has_session:
             self._emit_state(AccountState.SIGNED_OUT)
@@ -98,8 +129,11 @@ class AccountController(QObject):
                 self.backend.sign_out()
                 self._emit_state(AccountState.SIGNED_OUT, message=str(exc))
         except FirebaseAuthError as exc:
-            self.backend.sign_out()
-            self._emit_state(AccountState.SIGNED_OUT, message=str(exc))
+            if exc.code == "NETWORK_ERROR":
+                self._emit_state(AccountState.OFFLINE, self.profile, str(exc))
+            else:
+                self.backend.sign_out()
+                self._emit_state(AccountState.SIGNED_OUT, message=str(exc))
         except Exception as exc:
             self._emit_state(AccountState.OFFLINE, self.profile, str(exc))
 
@@ -146,6 +180,62 @@ class AccountController(QObject):
 
         self._start(worker)
 
+    def sign_in_with_google(self) -> None:
+        def worker() -> None:
+            try:
+                authorization = self._authorize_google()
+                is_new = self.backend.sign_in_with_google(authorization)
+                self.backend.reset_registration()
+                if is_new:
+                    self.notice.emit("GOOGLE:ACCOUNT_CREATED", False)
+                self._load_profile()
+            except (GoogleOAuthError, FirebaseAuthError, BackendApiError) as exc:
+                code = getattr(exc, "code", "GOOGLE_AUTH_FAILED")
+                self.notice.emit(f"GOOGLE:{code}", code != "GOOGLE_AUTH_CANCELLED")
+            except Exception:
+                self.notice.emit("GOOGLE:GOOGLE_AUTH_FAILED", True)
+
+        self._start(worker)
+
+    def link_google_account(self) -> None:
+        def worker() -> None:
+            try:
+                authorization = self._authorize_google()
+                self.backend.link_google(authorization)
+                profile, devices, providers = self._load_account_details()
+                self.details_changed.emit(profile, devices, providers)
+                self.notice.emit("GOOGLE:GOOGLE_LINKED", False)
+            except (GoogleOAuthError, FirebaseAuthError, BackendApiError) as exc:
+                code = getattr(exc, "code", "GOOGLE_LINK_FAILED")
+                self.notice.emit(f"GOOGLE:{code}", code != "GOOGLE_AUTH_CANCELLED")
+            except Exception:
+                self.notice.emit("GOOGLE:GOOGLE_LINK_FAILED", True)
+
+        self._start_details(worker)
+
+    def _authorize_google(self) -> GoogleOAuthAuthorization:
+        session = self.backend.auth.begin_google_oauth()
+        with self._google_lock:
+            self._google_session = session
+        self.google_flow_changed.emit(True)
+        self.google_browser_requested.emit(session.authorization_url)
+        try:
+            return session.wait()
+        finally:
+            with self._google_lock:
+                self._google_session = None
+            self.google_flow_changed.emit(False)
+
+    def cancel_google_oauth(
+        self,
+        code: str = "GOOGLE_AUTH_CANCELLED",
+        message: str = "Google sign-in was cancelled",
+    ) -> None:
+        with self._google_lock:
+            session = self._google_session
+        if session is not None:
+            session.cancel(code, message)
+
     def resend_verification(self) -> None:
         def worker() -> None:
             try:
@@ -169,11 +259,9 @@ class AccountController(QObject):
     def load_account_center(self) -> None:
         def worker() -> None:
             try:
-                profile = self.backend.me()
-                self.profile = profile
-                devices = self.backend.list_devices() if profile.get("email_verified") else []
+                profile, devices, providers = self._load_account_details()
                 message = self._status_message(profile) if profile.get("status") != "active" else ""
-                self.details_changed.emit(profile, devices)
+                self.details_changed.emit(profile, devices, providers)
                 if profile.get("email_verified") and profile.get("status") == "active":
                     self.backend.ensure_device()
                     self._emit_state(AccountState.ACTIVE, profile)
@@ -196,12 +284,62 @@ class AccountController(QObject):
                 else:
                     self.details_error.emit(str(exc))
             except FirebaseAuthError as exc:
-                self.backend.sign_out()
-                self._emit_state(AccountState.SIGNED_OUT, message=str(exc))
+                if exc.code == "NETWORK_ERROR":
+                    self.details_error.emit(str(exc))
+                else:
+                    self.backend.sign_out()
+                    self._emit_state(AccountState.SIGNED_OUT, message=str(exc))
             except Exception as exc:
                 self.details_error.emit(str(exc))
 
         self._start_details(worker)
+
+    def load_plans(self) -> None:
+        def worker() -> None:
+            try:
+                plans = self.backend.list_plans()
+                self.plans_changed.emit(dict(self.profile or {}), plans)
+            except (BackendApiError, FirebaseAuthError) as exc:
+                if getattr(exc, "code", "") == "AUTH_REQUIRED" or getattr(exc, "status", 0) == 401:
+                    self.backend.sign_out()
+                    self._emit_state(AccountState.SIGNED_OUT, message=str(exc))
+                else:
+                    self.plans_error.emit(str(exc))
+            except Exception as exc:
+                self.plans_error.emit(str(exc))
+
+        self._start_plans(worker)
+
+    def select_plan(self, plan_id: str) -> None:
+        def worker() -> None:
+            try:
+                profile = self.backend.select_plan(plan_id)
+                plans = self.backend.list_plans()
+                self.profile = profile
+                self.plans_changed.emit(profile, plans)
+                self.backend.reset_registration()
+                if profile.get("email_verified") and profile.get("status") == "active":
+                    self.backend.ensure_device()
+                    self._emit_state(AccountState.ACTIVE, profile)
+                else:
+                    self._emit_state(
+                        AccountState.RESTRICTED,
+                        profile,
+                        self._status_message(profile),
+                    )
+            except (BackendApiError, FirebaseAuthError) as exc:
+                self.plans_error.emit(str(exc))
+            except Exception as exc:
+                self.plans_error.emit(str(exc))
+
+        self._start_plans(worker)
+
+    def _load_account_details(self) -> tuple[dict, list[dict], list[str]]:
+        profile = self.backend.me()
+        self.profile = profile
+        devices = self.backend.list_devices() if profile.get("email_verified") else []
+        providers = self.backend.auth.provider_ids()
+        return profile, devices, providers
 
     def revoke_account_device(self, device_id: str) -> None:
         def worker() -> None:
@@ -210,16 +348,17 @@ class AccountController(QObject):
                     self.notice.emit("The current device cannot be revoked here.", True)
                     return
                 self.backend.revoke_device(device_id)
-                profile = self.backend.me()
-                self.profile = profile
-                devices = self.backend.list_devices() if profile.get("email_verified") else []
-                self.details_changed.emit(profile, devices)
+                profile, devices, providers = self._load_account_details()
+                self.details_changed.emit(profile, devices, providers)
                 self.notice.emit("Device revoked.", False)
             except BackendApiError as exc:
                 self.details_error.emit(str(exc))
             except FirebaseAuthError as exc:
-                self.backend.sign_out()
-                self._emit_state(AccountState.SIGNED_OUT, message=str(exc))
+                if exc.code == "NETWORK_ERROR":
+                    self.details_error.emit(str(exc))
+                else:
+                    self.backend.sign_out()
+                    self._emit_state(AccountState.SIGNED_OUT, message=str(exc))
             except Exception as exc:
                 self.details_error.emit(str(exc))
 

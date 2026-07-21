@@ -12,12 +12,12 @@ class ClientBuildConfigTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "client.toml"
             path.write_text(
-                '[backend]\napi_url="https://REPLACE_WITH_API"\nfirebase_api_key=""\n',
+                '[backend]\napi_url="https://REPLACE_WITH_API"\nfirebase_api_key=""\ngoogle_oauth_client_id=""\n',
                 encoding="utf-8",
             )
             self.assertTrue(validate(path))
             path.write_text(
-                '[backend]\napi_url="https://api.example.run.app"\nfirebase_api_key="public-key"\n',
+                '[backend]\napi_url="https://api.example.run.app"\nfirebase_api_key="public-key"\ngoogle_oauth_client_id="123-example.apps.googleusercontent.com"\n',
                 encoding="utf-8",
             )
             self.assertEqual(validate(path), [])

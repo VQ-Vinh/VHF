@@ -8,15 +8,17 @@ from pathlib import Path
 import httpx
 
 from prana_elex.backend.auth import FirebaseAuthClient
+from prana_elex.backend.google_oauth import GoogleOAuthAuthorization
 from prana_elex.backend.device import DeviceIdentity
 from prana_elex.pipeline.models import ProcessingResult
 
 
 class BackendApiError(RuntimeError):
-    def __init__(self, code: str, message: str, status: int = 0):
+    def __init__(self, code: str, message: str, status: int = 0, detail: dict | None = None):
         super().__init__(message)
         self.code = code
         self.status = status
+        self.detail = dict(detail or {})
 
 
 def canonical_request(
@@ -33,9 +35,18 @@ def canonical_request(
 
 
 class BackendClient:
-    def __init__(self, api_url: str, firebase_api_key: str, timeout_seconds: float = 150):
+    def __init__(
+        self,
+        api_url: str,
+        firebase_api_key: str,
+        timeout_seconds: float = 150,
+        google_oauth_client_id: str = "",
+    ):
         self.api_url = api_url.rstrip("/")
-        self.auth = FirebaseAuthClient(firebase_api_key)
+        self.auth = FirebaseAuthClient(
+            firebase_api_key,
+            google_oauth_client_id=google_oauth_client_id,
+        )
         self.device: DeviceIdentity | None = None
         self.timeout = timeout_seconds
         self._registered = False
@@ -57,13 +68,15 @@ class BackendClient:
     def _raise(response: httpx.Response) -> None:
         if not response.is_error:
             return
+        detail = {}
         try:
-            detail = response.json().get("detail", {})
+            raw_detail = response.json().get("detail", {})
+            detail = raw_detail if isinstance(raw_detail, dict) else {}
             code = detail.get("code", "API_ERROR")
-            message = detail.get("message", response.text)
+            message = detail.get("message", str(raw_detail) or response.text)
         except Exception:
             code, message = "API_ERROR", response.text
-        raise BackendApiError(code, message, response.status_code)
+        raise BackendApiError(code, message, response.status_code, detail)
 
     def me(self) -> dict:
         try:
@@ -73,9 +86,66 @@ class BackendClient:
         self._raise(response)
         return response.json()
 
+    def sign_in_with_google(self, authorization: GoogleOAuthAuthorization) -> bool:
+        data = self._google_auth_request("exchange", authorization, authenticated=False)
+        return self.auth.accept_firebase_session(data)
+
+    def link_google(self, authorization: GoogleOAuthAuthorization) -> None:
+        data = self._google_auth_request("link", authorization, authenticated=True)
+        self.auth.accept_firebase_session(data)
+
+    def _google_auth_request(
+        self,
+        operation: str,
+        authorization: GoogleOAuthAuthorization,
+        *,
+        authenticated: bool,
+    ) -> dict:
+        headers = self._headers() if authenticated else {}
+        try:
+            response = httpx.post(
+                f"{self.api_url}/v1/auth/google/{operation}",
+                headers=headers,
+                json={
+                    "code": authorization.code,
+                    "code_verifier": authorization.code_verifier,
+                    "redirect_uri": authorization.redirect_uri,
+                },
+                timeout=30,
+            )
+        except httpx.RequestError as exc:
+            raise BackendApiError(
+                "NETWORK_ERROR", "Cannot reach PRANA authentication service"
+            ) from exc
+        self._raise(response)
+        return response.json()
+
     def list_devices(self) -> list[dict]:
         try:
             response = httpx.get(f"{self.api_url}/v1/devices", headers=self._headers(), timeout=20)
+        except httpx.RequestError as exc:
+            raise BackendApiError("NETWORK_ERROR", "Cannot reach PRANA API") from exc
+        self._raise(response)
+        return response.json()
+
+    def list_plans(self) -> list[dict]:
+        try:
+            response = httpx.get(
+                f"{self.api_url}/v1/plans", headers=self._headers(), timeout=20
+            )
+        except httpx.RequestError as exc:
+            raise BackendApiError("NETWORK_ERROR", "Cannot reach PRANA API") from exc
+        self._raise(response)
+        return response.json()
+
+    def select_plan(self, plan_id: str) -> dict:
+        try:
+            response = httpx.post(
+                f"{self.api_url}/v1/subscription/select",
+                headers=self._headers(),
+                json={"plan_id": plan_id},
+                timeout=20,
+            )
         except httpx.RequestError as exc:
             raise BackendApiError("NETWORK_ERROR", "Cannot reach PRANA API") from exc
         self._raise(response)

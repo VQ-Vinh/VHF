@@ -11,6 +11,7 @@ datas = collect_data_files("silero_vad")
 datas += collect_data_files("qtawesome")
 datas += [
     (str(PROJECT_ROOT / "src/prana_elex/ui/resources/styles.qss"), "prana_elex/ui/resources"),
+    (str(PROJECT_ROOT / "src/prana_elex/ui/resources/google-g.svg"), "prana_elex/ui/resources"),
     (str(PROJECT_ROOT / "config/profiles/raspberry-pi.toml"), "config"),
 ]
 

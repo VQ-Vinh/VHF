@@ -50,6 +50,7 @@ class PipelineOrchestrator:
             config.backend.api_url,
             config.backend.firebase_api_key,
             config.backend.timeout_seconds,
+            config.backend.google_oauth_client_id,
         )
         self._segment_processor = SegmentProcessor(config, self._backend, self._storage)
         self._vad = self._create_vad()
