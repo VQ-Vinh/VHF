@@ -48,10 +48,11 @@ Chi tiết ranh giới và chiều phụ thuộc: [`docs/architecture.md`](docs/
 1. Windows chọn data folder trong installer; Linux/source chọn trong trang Data Setup
    tích hợp. Người dùng tạo tài khoản bằng email/password và xác minh email ngay
    trong cửa sổ PRANA ELEX.
-2. Tài khoản chuyển sang trạng thái chờ kích hoạt; Bên A chọn plan và ngày hết hạn
-   trong `prana-admin`.
+2. Sau khi xác minh email, backend tự động kích hoạt gói Free với 10 phút audio
+   mỗi ngày UTC. Không cần Admin duyệt. Plus (60 phút/ngày) và Pro (180
+   phút/ngày) được hiển thị trong app ở trạng thái sắp phát hành.
 3. Người dùng đăng nhập. App tự chuyển giữa Login, Account Center và Translation
-   trong cùng một cửa sổ. Account Center cho phép xem gói, usage, thiết bị, gửi
+   trong cùng một cửa sổ. Account Center cho phép xem/chọn gói, usage ngày, thiết bị, gửi
    email đặt lại mật khẩu và đăng xuất. Refresh token được lưu bằng Windows Credential Manager
    hoặc Secret Service; Raspberry Pi có fallback file `0600`. Mật khẩu không được lưu.
 4. Mỗi installation sinh một Ed25519 private key riêng, không export qua UI. Một
@@ -59,7 +60,8 @@ Chi tiết ranh giới và chiều phụ thuộc: [`docs/architecture.md`](docs/
 5. Mỗi WAV dùng một `request_id` ổn định. Retry cùng nội dung không gọi Gemini và
    không tính quota lần hai.
 
-Admin MVP kích hoạt/gia hạn thủ công; chưa tích hợp cổng thanh toán.
+Admin vẫn có thể suspend/reactivate tài khoản nhưng không cấp gói thủ công.
+Chưa tích hợp cổng thanh toán; Plus và Pro không thể đăng ký ở client hoặc API.
 
 ## Chạy client từ source
 
@@ -92,10 +94,13 @@ chạy source; cấu hình cả hai file trong `config/profiles/` trước khi b
 [backend]
 api_url = "https://prana-api-....run.app"
 firebase_api_key = "Firebase Web API key"
+google_oauth_client_id = "Google Desktop OAuth client ID ending in .apps.googleusercontent.com"
 timeout_seconds = 150
 ```
 
-Không đặt Google credential, JSON key hoặc biến
+`google_oauth_client_id` là định danh public, không phải client secret. Nếu để trống
+khi chạy source, nút Google sẽ được ẩn; release build bắt buộc phải có client ID hợp
+lệ. Không đặt Google credential, OAuth client secret, JSON key hoặc biến
 `GOOGLE_APPLICATION_CREDENTIALS` trên máy client.
 
 ## Chạy backend local
@@ -149,7 +154,7 @@ API client:
 - `POST /v1/audio/process`
 
 `audio/process` nhận WAV mono 16 kHz PCM16 tối đa 120 giây/10 MiB, Firebase ID
-token, device ID, timestamp và chữ ký Ed25519. Plan quyết định phút/tháng, RPM,
+token, device ID, timestamp và chữ ký Ed25519. Plan quyết định phút/ngày UTC, RPM,
 concurrency và số thiết bị. Firestore transaction reserve quota trước Gemini và
 settle sau xử lý.
 
@@ -186,7 +191,37 @@ docker push us-central1-docker.pkg.dev/PROJECT/prana-elex/prana-admin:1.1.0
 terraform apply
 ```
 
-Sau `apply`, đưa output `firebase_web_api_key` + `api_url` vào hai build profile.
+Sau `apply`, đưa output `firebase_web_api_key`, `api_url` và
+`google_desktop_oauth_client_id` vào hai build profile.
+
+### Cấu hình Google sign-in
+
+Google sign-in dùng Authorization Code + PKCE và callback loopback
+`127.0.0.1`; ứng dụng mở trình duyệt hệ thống, không nhúng trình duyệt. App gửi
+authorization code và PKCE verifier qua HTTPS cho PRANA API. Cloud Run đọc Desktop
+client secret từ Secret Manager, đổi code lấy Google token rồi đổi ngay sang Firebase
+session. App chỉ lưu Firebase refresh token; Google token và Desktop secret không được
+trả về hoặc đóng gói trong client. Cấu hình staging theo thứ tự:
+
+1. Trong Google Auth Platform, cấu hình consent screen loại External, trạng thái
+   Testing và thêm email QA vào Test users.
+2. Tạo một OAuth client loại Web application cho Identity Platform và một OAuth
+   client loại Desktop app dùng chung cho Windows/Pi.
+3. Ghi Web client ID/secret và public Desktop client ID vào file
+   `infra/terraform/terraform.tfvars` bị ignore, sau đó chạy `terraform plan` và
+   `terraform apply`.
+4. Trong Identity Platform/Firebase Authentication > Sign-in method > Google, thêm
+   Desktop client ID vào danh sách OAuth client IDs từ project bên ngoài (external
+   client IDs). Terraform provider chưa quản lý trường danh sách này nên đây là bước
+   console có chủ đích.
+5. Chép Desktop client ID public vào `backend.google_oauth_client_id` của config
+   source và hai build profile. Không chép Web client secret vào app.
+6. Tạo Secret Manager secret `prana-google-desktop-oauth-client-secret` chứa Desktop
+   client secret. Chỉ `prana-api-runtime` được cấp `secretAccessor`; không đưa giá trị
+   secret vào Terraform state hoặc repository.
+
+Production phải dùng bộ OAuth clients riêng và publish consent screen trước khi mở
+cho mọi tài khoản Gmail/Google Workspace.
 
 Terraform không chứa project ID, billing account, admin email hoặc credential
 thật. Lần bật IAP đầu tiên ở project không thuộc Organization có thể cần hoàn tất

@@ -2,7 +2,7 @@
 
 ## 1. Mục đích
 
-Tài liệu này hướng dẫn đội QA kiểm thử toàn bộ hành trình PRANA ELEX, từ cài đặt ứng dụng Windows đến đăng ký tài khoản, kích hoạt gói trên Web Admin, dịch audio, quản lý quota, thiết bị, nâng cấp và gỡ cài đặt.
+Tài liệu này hướng dẫn đội QA kiểm thử toàn bộ hành trình PRANA ELEX, từ cài đặt ứng dụng Windows đến đăng ký tài khoản, tự động nhận gói Free, dịch audio, quản lý quota, thiết bị, nâng cấp và gỡ cài đặt.
 
 Phạm vi chính:
 
@@ -19,12 +19,15 @@ Không sử dụng tài khoản, email hoặc dữ liệu khách hàng thật tr
 |---|---|
 | Môi trường | Staging |
 | Windows installer | `PRANA_ELEX_Setup_1.1.0_x64.exe` |
+| PRANA API | <https://prana-api-owuilj5d4a-uc.a.run.app> |
+| PRANA API revision tại thời điểm viết | `prana-api-00011-8jc` (`1.1.0-staging.9`) |
 | Web Admin | <https://prana-admin-owuilj5d4a-uc.a.run.app> |
 | Web Admin revision tại thời điểm viết | `prana-admin-00004-mvg` |
 | Project staging | `prana-elex-staging-2816` |
 | Trình duyệt khuyến nghị | Chrome hoặc Edge bản mới nhất |
 
-Trước mỗi đợt test, QA Lead phải cập nhật lại phiên bản installer, revision Web Admin và ngày chạy test nếu chúng đã thay đổi.
+Trước mỗi đợt test, QA Lead phải cập nhật lại phiên bản installer, revision PRANA API,
+revision Web Admin và ngày chạy test nếu chúng đã thay đổi.
 
 ### Thông tin test run
 
@@ -60,7 +63,7 @@ Tester Web Admin cần:
 
 - Tài khoản Google đã được cấp quyền IAP và nằm trong allowlist Admin.
 - Tài khoản hiện đang sử dụng: `technical@samaser.com.vn`.
-- Quyền tạo/cập nhật plan, kích hoạt user, đổi trạng thái và quản lý thiết bị trên staging.
+- Quyền xem catalog plan, đổi trạng thái và quản lý thiết bị trên staging.
 
 ### 3.3. Dữ liệu test
 
@@ -71,6 +74,8 @@ Chuẩn bị tối thiểu:
 - Một đoạn giọng nói liên tục dài khoảng 31 giây để test chia segment 15 giây.
 - Một đoạn chỉ có im lặng hoặc nhiễu nền.
 - Một email user test mới chưa đăng ký Firebase.
+- Một tài khoản Google nằm trong danh sách Test users của OAuth consent screen.
+- Một tài khoản Email/Password có cùng email Google để kiểm thử liên kết provider.
 - Nếu test giới hạn thiết bị: ba máy hoặc ba Windows user profile độc lập.
 
 Không dùng audio có thông tin cá nhân, bí mật kinh doanh hoặc nội dung của khách hàng.
@@ -247,8 +252,8 @@ Thực hiện trên máy hoặc snapshot riêng:
 - Sau đăng ký, app chuyển đến Trung tâm tài khoản ở trạng thái restricted.
 - Trước xác minh, app hiển thị yêu cầu xác minh email và không cho dịch.
 - Resend gửi lại email nhưng không tạo tài khoản mới.
-- Sau xác minh, trạng thái chuyển sang **Chờ kích hoạt**.
-- Pipeline chưa chạy cho đến khi Admin kích hoạt plan.
+- Sau xác minh, tài khoản tự chuyển sang **Hoạt động** với gói **Free**.
+- Pipeline có thể chạy ngay, không cần Admin kích hoạt.
 
 ### TC-AUTH-04: Đăng nhập sai và quên mật khẩu
 
@@ -264,6 +269,41 @@ Thực hiện trên máy hoặc snapshot riêng:
 - Luồng quên mật khẩu luôn trả thông báo trung tính.
 - Email tồn tại nhận được thư đặt lại mật khẩu.
 - UI không tiết lộ email nào đã hoặc chưa đăng ký.
+
+### TC-AUTH-05: Đăng ký và đăng nhập bằng Google
+
+1. Đăng xuất khỏi app và xác nhận trang xác thực có nút **Tiếp tục với Google**.
+2. Nhấn nút Google; xác nhận trình duyệt hệ thống mở màn hình chọn tài khoản.
+3. Chọn một tài khoản trong danh sách Test users của consent screen.
+4. Quay lại app sau khi trình duyệt báo hoàn tất.
+5. Mở Account Center và xác nhận gói Free, usage ngày và thiết bị.
+6. Thử dịch audio.
+7. Đăng xuất, đăng nhập lại bằng Google và khởi động lại app.
+
+**Kết quả mong đợi:**
+
+- Callback dùng địa chỉ `127.0.0.1` và không hiển thị token trong URL/nội dung trang.
+- Tài khoản mới xuất hiện một lần ở trạng thái active, email đã verified và plan là Free.
+- Subscription, device và quota hoạt động giống Email/Password mà không cần Admin duyệt.
+- Mỗi lần bấm Google đều hiện màn hình chọn tài khoản.
+- App tự đăng nhập sau restart bằng Firebase session; không lưu Google token.
+
+### TC-AUTH-06: Liên kết Google với tài khoản Email/Password
+
+1. Đăng nhập bằng tài khoản Email/Password đã có subscription và usage.
+2. Ghi lại email, UID trong Admin, plan, usage, thiết bị và Data folder.
+3. Mở Account Center, chọn **Liên kết tài khoản Google**.
+4. Trước tiên chọn một Google email khác; xác nhận liên kết bị từ chối.
+5. Thử lại và chọn Google email trùng chính xác với tài khoản hiện tại.
+6. Đăng xuất rồi đăng nhập bằng Google.
+7. Đối chiếu lại UID, plan, usage, thiết bị và dữ liệu local.
+
+**Kết quả mong đợi:**
+
+- Email khác bị chặn và không tạo Firebase user trùng.
+- Email đúng được hiển thị là đã liên kết; Email/Password vẫn sử dụng được.
+- UID, subscription, quota, device và Data folder không thay đổi.
+- App không cung cấp thao tác unlink trong phiên bản này.
 
 ## 8. Kiểm thử Web Admin
 
@@ -316,27 +356,28 @@ Thực hiện trên máy hoặc snapshot riêng:
 - Audit log hiển thị action, operator và thời gian.
 - Không tràn email hoặc timestamp ra ngoài panel.
 
-### TC-ADM-04: Tạo hoặc cập nhật plan QA
-
-Không tạo Plan ID mới cho mỗi lần chạy test vì Web Admin hiện chưa có chức năng xóa plan. Dùng lại một plan chuyên dụng, ví dụ `qa-e2e`.
+### TC-ADM-04: Kiểm tra chỉnh sửa thông số gói
 
 1. Mở **Gói dịch vụ**.
-2. Nhập:
-   - Plan ID: `qa-e2e`.
-   - Display name: `QA E2E 100 Minutes`.
-   - Minutes per month: `100`.
-   - Requests per minute: `30`.
-3. Nhấn **Lưu gói**.
-4. Kiểm tra plan trong bảng bên phải.
+2. Kiểm tra ba card Free, Plus và Pro.
+3. Ghi lại số phút/ngày hiện tại của Free là `N`.
+4. Đổi Free thành `N + 1` phút/ngày rồi nhấn **Lưu gói**.
+5. Refresh trang và xác nhận giá trị mới vẫn được giữ.
+6. Mở trang Plans trong app và giữ trang này mở.
+7. Chờ tối đa 30 giây hoặc nhấn **Refresh**, sau đó xác nhận card Free hiển thị `N + 1`.
+8. Quay lại Account Center và xác nhận Daily usage sử dụng giới hạn mới.
+9. Đổi Free trở lại `N` phút/ngày và xác nhận app đồng bộ lại.
 
 **Kết quả mong đợi:**
 
-- Hiển thị thông báo lưu thành công.
-- Plan có 100 phút mỗi tháng và 30 request mỗi phút.
-- Trường trên Web Admin dùng đơn vị **phút/tháng**. Nhập `100` nghĩa là 100 phút, không phải 100 giây.
-- Backend có thể lưu nội bộ thành `6000` giây; đây không phải lỗi.
+- Chỉ có Free, Plus và Pro; không còn StagingTest.
+- Có thể chỉnh tên, phút/ngày, RPM, concurrency, số thiết bị và thứ tự hiển thị.
+- Giá trị ngoài khoảng cho phép bị trình duyệt/backend từ chối.
+- Thay đổi có hiệu lực ngay và xuất hiện trong audit log.
+- Plus hiển thị 60 phút/ngày; Pro hiển thị 180 phút/ngày.
+- Plus và Pro có trạng thái Sắp phát hành.
 
-### TC-ADM-05: Tìm và kích hoạt user
+### TC-ADM-05: Tìm và quản lý trạng thái user
 
 1. Mở **Người dùng**.
 2. Tìm theo email user test.
@@ -345,34 +386,33 @@ Không tạo Plan ID mới cho mỗi lần chạy test vì Web Admin hiện chư
 5. Xác nhận:
    - Email đúng.
    - Email verified là Có/Yes.
-   - Trạng thái đang chờ kích hoạt.
-6. Trong vùng Subscription:
-   - Chọn plan `qa-e2e`.
-   - Nhập `30` ngày.
-   - Nhấn **Kích hoạt hoặc gia hạn**.
-7. Kiểm tra trạng thái và ngày hết hạn.
+   - Trạng thái Hoạt động.
+   - Plan là `free` và không có ngày hết hạn.
+6. Chuyển trạng thái sang Suspended rồi kiểm tra app bị chặn.
+7. Chuyển lại Active và kiểm tra tài khoản trở về Free.
 8. Quay lại Dashboard và kiểm tra audit log.
 
 **Kết quả mong đợi:**
 
-- User chuyển sang **Hoạt động**.
-- Plan ID và ngày hết hạn được cập nhật.
-- Audit có action kích hoạt subscription với đúng operator.
-- Nhấn kích hoạt lặp lại sẽ gia hạn từ ngày hết hạn hiện tại nếu gói chưa hết hạn.
+- User Free hoạt động mà không cần thao tác cấp plan.
+- Suspend chặn dịch; Active khôi phục plan Free không hết hạn.
+- Audit có action đổi trạng thái với đúng operator.
 
-## 9. Quay lại app sau khi Admin kích hoạt
+## 9. Kiểm tra gói tự phục vụ trong app
 
-### TC-APP-01: Nhận trạng thái active
+### TC-APP-01: Nhận Free và mở trang Plans
 
 1. Quay lại PRANA ELEX.
 2. Tại Trung tâm tài khoản, nhấn **Làm mới**.
-3. Kiểm tra email, xác minh, plan, ngày hết hạn và usage.
-4. Nhấn **Quay lại màn hình dịch**.
+3. Kiểm tra email, xác minh, plan Free và usage hôm nay.
+4. Nhấn **Quản lý gói** và kiểm tra ba card.
+5. Quay lại màn hình dịch.
 
 **Kết quả mong đợi:**
 
 - Subscription hiển thị **Đang hoạt động**.
-- Tổng quota hiển thị khoảng 100 phút với plan `qa-e2e`.
+- Tổng quota khớp giá trị Free hiện tại trên Web Admin và hiển thị thời điểm reset ngày kế tiếp.
+- Free là gói hiện tại; nút Plus và Pro bị vô hiệu hóa với nhãn Sắp phát hành.
 - Thiết bị hiện tại xuất hiện với badge **Thiết bị này**.
 - App vào được màn hình Translation.
 
@@ -568,38 +608,37 @@ Số segment thực tế có thể thay đổi nếu file chứa khoảng lặng
 - Sau khi có mạng, retry thành công và không tạo bản ghi quota trùng cho cùng request ID.
 - Lỗi preview language không tồn tại vì chức năng preview đã bị gỡ.
 
-### TC-ERR-02: Hết quota tháng
+### TC-ERR-02: Hết quota ngày
 
-Chỉ thực hiện với plan QA riêng, không thay đổi plan đang dùng cho user khác.
-
-1. Trong Web Admin, cập nhật plan `qa-e2e` xuống quota nhỏ, ví dụ 1 phút.
-2. Dịch đủ audio để đạt giới hạn.
-3. Thử gửi thêm một segment.
-4. Mở Account Center và nhấn Refresh.
-5. Trong Web Admin, cập nhật lại plan thành 100 phút.
-6. Quay lại app, Refresh và retry failed audio.
+1. Ghi lại quota Free hiện tại trên Web Admin và dùng tài khoản Free riêng để dịch đủ quota đó trong ngày UTC.
+2. Thử gửi thêm một segment.
+3. Mở Account Center và nhấn Refresh.
+4. Kiểm tra banner quota và thời gian đếm ngược tới 00:00 UTC.
+5. Sau khi sang kỳ UTC mới, nhấn Retry Failed Audio.
 
 **Kết quả mong đợi:**
 
-- Khi hết quota, app hiển thị `API ERROR` hoặc lỗi quota phù hợp.
+- App hiển thị `DAILY_QUOTA_EXCEEDED`, dừng pipeline và giữ WAV local.
 - Usage cho thấy 0 phút còn lại.
 - App không tự đăng xuất và không mất failed audio.
-- Sau khi tăng quota, app tiếp tục dịch và Retry Failed Audio hoạt động.
+- Sau thời điểm reset, usage ngày mới bắt đầu từ 0 và Retry Failed Audio hoạt động.
 
 ## 13. Trạng thái subscription và thiết bị
 
 ### TC-STATE-01: Suspend và khôi phục tài khoản
 
 1. Khi app đang active, mở user trên Web Admin.
-2. Chọn status **Suspended/Tạm khóa** và cập nhật.
-3. Trên app, nhấn Refresh trong Account Center hoặc chờ lần refresh tự động.
-4. Thử bắt đầu dịch.
-5. Trên Web Admin, đổi status về **Active/Hoạt động**.
-6. Trên app, nhấn Refresh.
+2. Mở Account Center trên app và nhấn **Refresh** liên tục trong khi Admin thao tác bước tiếp theo.
+3. Trên Web Admin, chọn status **Suspended/Tạm khóa** và cập nhật.
+4. Tiếp tục refresh app hoặc để auto-refresh chạy ít nhất hai chu kỳ, rồi refresh lại trang user trên Admin.
+5. Thử bắt đầu dịch.
+6. Trên Web Admin, đổi status về **Active/Hoạt động**.
+7. Trên app, nhấn Refresh.
 
 **Kết quả mong đợi:**
 
 - Khi suspended, pipeline dừng và app vào Account Center restricted.
+- Trạng thái trên Firestore/Web Admin vẫn là `suspended`; request đồng bộ danh tính từ app không được ghi đè thành `active` hoặc Free.
 - App hiển thị đúng thông báo tạm khóa và không có nút Back to Translation.
 - Sau khi active lại, app quay về trạng thái có thể dịch.
 - Audit log ghi cả hai thay đổi trạng thái.
@@ -664,7 +703,7 @@ Chỉ thực hiện với plan QA riêng, không thay đổi plan đang dùng ch
 1. Tìm user bằng email đầy đủ.
 2. Tìm user bằng UID đầy đủ.
 3. Lọc theo từng status.
-4. Lọc theo plan `qa-e2e`.
+4. Lọc theo plan `free`.
 5. Kết hợp status và plan.
 6. Nếu có trên 25 user, kiểm tra Next page và First page.
 7. Xóa bộ lọc.
@@ -889,14 +928,63 @@ Một test run được chấp nhận khi:
 
 ## Phụ lục B: Quick smoke test sau mỗi deploy
 
-1. Mở Web Admin bằng tài khoản IAP hợp lệ.
-2. Kiểm tra Dashboard, Users và Plans trả trang bình thường.
-3. Đăng nhập app bằng user active.
-4. Refresh Account Center.
-5. Chạy một đoạn audio 10 giây.
-6. Xác nhận transcript, translation và API OK.
-7. Kiểm tra usage tăng trên app và Web Admin.
-8. Sign out rồi sign in lại.
-9. Xác nhận không tạo thêm device.
+1. Mở `PRANA API /health` và xác nhận trả `{"status":"ok"}`.
+2. Xác nhận revision API/Admin đúng với test run trước khi tiếp tục.
+3. Mở Web Admin bằng tài khoản IAP hợp lệ.
+4. Kiểm tra Dashboard, Users và Plans trả trang bình thường.
+5. Đăng nhập app bằng Email/Password và Google trên hai lượt độc lập.
+6. Refresh Account Center.
+7. Mở Plans, giữ trang trong ít nhất 30 giây và xác nhận catalog không biến mất hoặc quay về giá trị cũ.
+8. Chạy một đoạn audio 10 giây.
+9. Xác nhận transcript, translation và API OK.
+10. Kiểm tra usage tăng trên app và Web Admin.
+11. Sign out rồi sign in lại.
+12. Xác nhận không tạo thêm device.
 
-Nếu một trong chín bước thất bại, dừng phát hành và mở defect trước khi build installer production.
+Nếu một trong mười hai bước thất bại, dừng phát hành và mở defect trước khi build installer production.
+
+## Phụ lục C: Regression kỹ thuật bắt buộc trước khi phát hành
+
+Các kiểm tra dưới đây dành cho QA Lead hoặc Backend tester; không dùng công cụ tạo tải
+trực tiếp lên staging nếu chưa được người quản lý môi trường chấp thuận.
+
+### REG-API-01: Transaction đồng bộ danh tính
+
+1. Chạy:
+
+   ```powershell
+   .venv\backend\Scripts\python.exe -m unittest tests.api.test_subscription_plans -v
+   ```
+
+2. Xác nhận test profile không đổi không phát sinh update và tài khoản suspended không nhận lại Free.
+3. Thực hiện lại `TC-STATE-01` trên staging để kiểm tra hành vi đồng thời thực tế.
+
+**Kết quả mong đợi:** toàn bộ test đạt; trạng thái Suspend luôn thắng khi Admin và app cập nhật đồng thời.
+
+### REG-API-02: OAuth rate-limit không phụ thuộc IP
+
+1. Chạy:
+
+   ```powershell
+   .venv\backend\Scripts\python.exe -m unittest tests.api.test_google_auth -v
+   ```
+
+2. Xác nhận các test sau đạt:
+   - Queue cục bộ có kích thước hữu hạn và chặn sau giới hạn instance.
+   - Hai instance giả lập dùng chung bộ đếm Firestore.
+   - Request vượt giới hạn toàn cục bị chặn trước Google token exchange.
+   - Cửa sổ mới reset bộ đếm.
+   - Firestore lỗi trả `503 GOOGLE_AUTH_UNAVAILABLE`.
+3. Trên staging, thực hiện một lượt đăng nhập Google bình thường để xác nhận limiter không chặn traffic hợp lệ.
+
+**Kết quả mong đợi:** không dùng `X-Forwarded-For` làm khóa; lỗi giới hạn trả `429 RATE_LIMITED` và `Retry-After`; lỗi Firestore fail closed.
+
+### REG-API-03: Plans polling không ghi user document
+
+1. Ghi lại `updated_at` của user test trong Firestore hoặc công cụ quan sát được cấp quyền.
+2. Mở trang Plans trong app và để polling chạy ít nhất ba chu kỳ, tối thiểu 90 giây.
+3. Không đăng nhập lại, không chọn plan và không quay về Account Center trong thời gian này.
+4. Đọc lại `updated_at` của user.
+5. Quay về Account Center và xác nhận profile/usage được tải mới.
+
+**Kết quả mong đợi:** catalog Plans vẫn cập nhật nhưng `updated_at` của user không thay đổi; Account Center vẫn nhận profile và usage mới khi mở lại.
