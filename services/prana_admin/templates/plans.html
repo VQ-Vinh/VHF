@@ -1,20 +1,23 @@
 {% extends "base.html" %}
 {% block content %}
 <header class="page-heading"><div><h1>{{ t('plans.title') }}</h1><p>{{ t('plans.subtitle') }}</p></div></header>
-<div class="plans-layout">
-  <section class="panel plan-editor" aria-labelledby="plan-editor-title">
-    <div class="panel-heading"><div><h2 id="plan-editor-title">{{ t('plans.create') }}</h2><p>{{ t('plans.create_hint') }}</p></div></div>
-    <form class="plan-form" method="post" action="/plans">
-      <label><span>{{ t('plans.id') }}</span><input name="plan_id" placeholder="starter" required pattern="[a-z0-9-]+"></label>
-      <label><span>{{ t('plans.name') }}</span><input name="name" placeholder="Starter" required></label>
-      <label><span>{{ t('plans.minutes') }}</span><input name="monthly_audio_minutes" type="number" min="1" required></label>
-      <label><span>{{ t('plans.rpm') }}</span><input name="requests_per_minute" type="number" value="30" min="1" required></label>
-      <button class="button primary">{{ t('plans.save') }}</button>
+<div class="catalog-grid">
+  {% for plan in plans %}
+  <article class="panel catalog-card {% if plan.id == 'free' %}featured{% endif %}">
+    {% set availability = plan.availability|default('available', true) %}{% set audio_limit = plan.audio_seconds_limit|default(plan.monthly_audio_seconds, true) %}
+    <div class="catalog-heading"><div><code>{{ plan.id }}</code><h2>{{ plan.name }}</h2></div><span class="badge {% if availability == 'available' %}active{% else %}pending_payment{% endif %}">{{ t('plans.' ~ availability) }}</span></div>
+    <form class="plan-form catalog-plan-form" method="post" action="/plans/{{ plan.id }}">
+      <label><span>{{ t('plans.name') }}</span><input name="name" value="{{ plan.name }}" maxlength="40" required></label>
+      <label><span>{{ t('plans.minutes_daily') }}</span><input name="daily_minutes" type="number" min="1" max="1440" value="{{ '%.0f'|format(audio_limit / 60) }}" required></label>
+      <div class="plan-field-grid">
+        <label><span>{{ t('plans.rpm') }}</span><input name="requests_per_minute" type="number" min="1" max="600" value="{{ plan.requests_per_minute }}" required></label>
+        <label><span>{{ t('plans.concurrency') }}</span><input name="max_concurrency" type="number" min="1" max="10" value="{{ plan.max_concurrency }}" required></label>
+        <label><span>{{ t('plans.devices') }}</span><input name="max_devices" type="number" min="1" max="10" value="{{ plan.max_devices }}" required></label>
+        <label><span>{{ t('plans.sort_order') }}</span><input name="sort_order" type="number" min="0" max="1000" value="{{ plan.sort_order }}" required></label>
+      </div>
+      <button class="button primary" type="submit">{{ t('plans.save') }}</button>
     </form>
-  </section>
-  <section class="panel table-panel" aria-labelledby="plan-list-title">
-    <div class="panel-heading"><div><h2 id="plan-list-title">{{ t('plans.configured') }}</h2><p>{{ t('plans.configured_hint') }}</p></div></div>
-    <div class="table-wrap"><table><thead><tr><th>{{ t('plans.id') }}</th><th>{{ t('plans.name') }}</th><th class="numeric-cell">{{ t('plans.minutes') }}</th><th class="numeric-cell">{{ t('plans.rpm') }}</th></tr></thead><tbody>{% for plan in plans %}<tr><td><code>{{ plan.id }}</code></td><td><strong>{{ plan.name }}</strong></td><td class="numeric-cell">{{ '%.0f'|format(plan.monthly_audio_seconds / 60) }}</td><td class="numeric-cell">{{ plan.requests_per_minute }}</td></tr>{% else %}<tr><td colspan="4" class="empty">{{ t('plans.empty') }}</td></tr>{% endfor %}</tbody></table></div>
-  </section>
+  </article>
+  {% else %}<p class="empty">{{ t('plans.empty') }}</p>{% endfor %}
 </div>
 {% endblock %}

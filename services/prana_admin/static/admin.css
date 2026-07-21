@@ -441,6 +441,15 @@ tbody tr:last-child td { border-bottom: 0; }
 .plan-editor { position: sticky; top: 78px; }
 .plan-form { display: grid; gap: 13px; }
 .plan-form .button { margin-top: 3px; }
+.catalog-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.catalog-card { min-height: 300px; }
+.catalog-card.featured { border: 2px solid var(--accent); background: #f7fdfd; }
+.catalog-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.catalog-heading h2 { margin: 9px 0 0; font-size: 24px; }
+.catalog-quota { display: block; margin: 24px 0; color: var(--accent-dark); font-size: 22px; }
+.catalog-plan-form { margin-top: 22px; }
+.plan-field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.muted-copy { margin: 0 0 16px; color: var(--text-muted); line-height: 1.6; }
 .pagination { display: flex; justify-content: flex-end; gap: 8px; }
 
 .notice {
@@ -476,7 +485,7 @@ code { padding: 3px 6px; color: #31525e; background: #edf3f5; border-radius: 5px
   .menu-button { display: inline-flex; align-items: center; min-height: 36px; padding: 0 12px; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-control); font-weight: 700; }
   .topbar-context { display: none; }
   .page-container { padding: 28px 22px 48px; }
-  .dashboard-grid, .detail-grid, .plans-layout { grid-template-columns: 1fr; }
+  .dashboard-grid, .detail-grid, .plans-layout, .catalog-grid { grid-template-columns: 1fr; }
   .plan-editor { position: static; }
 }
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlencode, urlsplit
 
@@ -19,6 +19,7 @@ from services.prana_admin.i18n import translator
 
 BASE_DIR = Path(__file__).resolve().parent
 USER_STATUSES = ("registered", "email_verified", "pending_payment", "active", "expired", "suspended")
+EDITABLE_PLAN_IDS = ("free", "plus", "pro")
 PAGE_SIZE = 25
 
 app = FastAPI(title="PRANA ELEX Admin", docs_url=None, redoc_url=None)
@@ -99,7 +100,17 @@ def _decode_cursor(value: str) -> str:
 
 
 def _plan_rows(db) -> list[dict]:
-    return [{"id": snap.id, **snap.to_dict()} for snap in db.collection("plans").stream()]
+    plans = []
+    for snap in db.collection("plans").stream():
+        item = {"id": snap.id, **snap.to_dict()}
+        item["audio_seconds_limit"] = int(
+            item.get("audio_seconds_limit") or item.get("monthly_audio_seconds") or 0
+        )
+        item.setdefault("quota_period", "monthly")
+        item.setdefault("availability", "available")
+        item.setdefault("sort_order", 0)
+        plans.append(item)
+    return sorted(plans, key=lambda item: (int(item["sort_order"]), item["id"]))
 
 
 @app.get("/health")
@@ -203,33 +214,24 @@ def user_detail(request: Request, uid: str,
                    user=user, plans=_plan_rows(db), devices=devices, usage=usage)
 
 
-@app.post("/users/{uid}/activate")
-def activate_user(uid: str, plan_id: str = Form(), days: int = Form(30),
-                  operator: str = Header(default=None, alias="X-Goog-Authenticated-User-Email")):
-    email = _operator(operator)
-    db = _db()
-    if not db.collection("plans").document(plan_id).get().exists:
-        raise HTTPException(400, "Plan not found")
-    user_ref = db.collection("users").document(uid)
-    current = user_ref.get().to_dict() or {}
-    now = datetime.now(timezone.utc)
-    current_expiry = current.get("subscription_expires_at")
-    base = current_expiry if current_expiry and current_expiry > now else now
-    user_ref.update({"status": "active", "plan_id": plan_id,
-                     "subscription_expires_at": base + timedelta(days=max(1, days)),
-                     "updated_at": firestore.SERVER_TIMESTAMP})
-    _audit(db, email, "subscription.activate", uid, {"plan_id": plan_id, "days": days})
-    return _redirect(f"/users/{uid}", "subscription_updated")
-
-
 @app.post("/users/{uid}/status")
 def set_status(uid: str, status: str = Form(),
                operator: str = Header(default=None, alias="X-Goog-Authenticated-User-Email")):
     email = _operator(operator)
-    if status not in {"active", "expired", "suspended"}:
+    if status not in {"active", "suspended"}:
         raise HTTPException(400, "Invalid status")
     db = _db()
-    db.collection("users").document(uid).update({"status": status, "updated_at": firestore.SERVER_TIMESTAMP})
+    user_ref = db.collection("users").document(uid)
+    snapshot = user_ref.get()
+    if not snapshot.exists:
+        raise HTTPException(404, "User not found")
+    user = snapshot.to_dict()
+    if status == "active" and not user.get("email_verified"):
+        raise HTTPException(409, "Email must be verified before reactivation")
+    update = {"status": status, "updated_at": firestore.SERVER_TIMESTAMP}
+    if status == "active":
+        update.update({"plan_id": "free", "subscription_expires_at": None})
+    user_ref.update(update)
     _audit(db, email, f"user.{status}", uid)
     return _redirect(f"/users/{uid}", "status_updated")
 
@@ -268,18 +270,63 @@ def plans_page(request: Request, operator: str = Header(default=None, alias="X-G
     return _render(request, "plans.html", email, "Plans", "plans", plans=_plan_rows(_db()))
 
 
-@app.post("/plans")
-def save_plan(plan_id: str = Form(), name: str = Form(), monthly_audio_minutes: int | None = Form(None),
-              requests_per_minute: int = Form(), monthly_audio_seconds: int | None = Form(None),
-              operator: str = Header(default=None, alias="X-Goog-Authenticated-User-Email")):
+@app.post("/plans/{plan_id}")
+def update_plan(
+    plan_id: str,
+    name: str = Form(...),
+    daily_minutes: int = Form(...),
+    requests_per_minute: int = Form(...),
+    max_concurrency: int = Form(...),
+    max_devices: int = Form(...),
+    sort_order: int = Form(...),
+    operator: str = Header(default=None, alias="X-Goog-Authenticated-User-Email"),
+):
     email = _operator(operator)
-    seconds = monthly_audio_seconds if monthly_audio_seconds is not None else int(monthly_audio_minutes or 0) * 60
-    if seconds <= 0 or requests_per_minute <= 0:
-        raise HTTPException(400, "Plan limits must be positive")
+    if plan_id not in EDITABLE_PLAN_IDS:
+        raise HTTPException(404, "Plan is not editable")
+    display_name = name.strip()
+    if not display_name or len(display_name) > 40:
+        raise HTTPException(422, "Plan name must contain 1 to 40 characters")
+    limits = {
+        "daily_minutes": (daily_minutes, 1, 1_440),
+        "requests_per_minute": (requests_per_minute, 1, 600),
+        "max_concurrency": (max_concurrency, 1, 10),
+        "max_devices": (max_devices, 1, 10),
+        "sort_order": (sort_order, 0, 1_000),
+    }
+    for field, (value, minimum, maximum) in limits.items():
+        if not minimum <= value <= maximum:
+            raise HTTPException(422, f"{field} must be between {minimum} and {maximum}")
+
     db = _db()
-    db.collection("plans").document(plan_id).set(
-        {"name": name, "monthly_audio_seconds": seconds, "requests_per_minute": requests_per_minute,
-         "max_concurrency": 2, "max_devices": 2, "updated_at": firestore.SERVER_TIMESTAMP}, merge=True
+    ref = db.collection("plans").document(plan_id)
+    snapshot = ref.get()
+    if not snapshot.exists:
+        raise HTTPException(404, "Plan not found")
+    before = snapshot.to_dict()
+    audio_seconds_limit = daily_minutes * 60
+    updates = {
+        "name": display_name,
+        "audio_seconds_limit": audio_seconds_limit,
+        # Compatibility for app 1.1.0 during the rollout window.
+        "monthly_audio_seconds": audio_seconds_limit,
+        "quota_period": "daily",
+        "requests_per_minute": requests_per_minute,
+        "max_concurrency": max_concurrency,
+        "max_devices": max_devices,
+        "sort_order": sort_order,
+        "updated_at": firestore.SERVER_TIMESTAMP,
+        "updated_by": email,
+    }
+    ref.update(updates)
+    _audit(
+        db,
+        email,
+        "plan.update",
+        plan_id,
+        {
+            "before": {key: before.get(key) for key in updates if key not in {"updated_at", "updated_by"}},
+            "after": {key: value for key, value in updates.items() if key not in {"updated_at", "updated_by"}},
+        },
     )
-    _audit(db, email, "plan.save", plan_id)
     return _redirect("/plans", "plan_saved")
