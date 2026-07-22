@@ -13,6 +13,7 @@
         <label><span>{{ t('plans.rpm') }}</span><input name="requests_per_minute" type="number" min="1" max="600" value="{{ plan.requests_per_minute }}" required></label>
         <label><span>{{ t('plans.concurrency') }}</span><input name="max_concurrency" type="number" min="1" max="10" value="{{ plan.max_concurrency }}" required></label>
         <label><span>{{ t('plans.devices') }}</span><input name="max_devices" type="number" min="1" max="10" value="{{ plan.max_devices }}" required></label>
+        <label><span>{{ t('plans.stations') }}</span><input name="max_stations" type="number" min="1" max="20" value="{{ plan.max_stations or 2 }}" required></label>
         <label><span>{{ t('plans.sort_order') }}</span><input name="sort_order" type="number" min="0" max="1000" value="{{ plan.sort_order }}" required></label>
       </div>
       <button class="button primary" type="submit">{{ t('plans.save') }}</button>

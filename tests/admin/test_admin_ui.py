@@ -6,7 +6,15 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from starlette.requests import Request
 
-from services.prana_admin.main import _decode_cursor, _operator, _render, app, templates
+from services.prana_admin.main import (
+    _decode_cursor,
+    _operator,
+    _render,
+    _station_stop_transition,
+    _station_transfer_data,
+    app,
+    templates,
+)
 
 
 class _PlanSnapshot:
@@ -173,6 +181,50 @@ class AdminUiTests(unittest.TestCase):
 
     def test_cursor_rejects_invalid_values(self) -> None:
         self.assertEqual(_decode_cursor("not-a-valid-cursor"), "")
+
+    def test_station_transfer_stops_capture_and_resets_projection(self) -> None:
+        ready, stop_update = _station_stop_transition(
+            {
+                "capture_state": "recording",
+                "observed_generation": 7,
+                "desired_state": {"running": True, "generation": 7, "target_language": "vi"},
+            }
+        )
+        self.assertFalse(ready)
+        self.assertFalse(stop_update["desired_state"]["running"])
+        self.assertEqual(stop_update["desired_state"]["generation"], 8)
+
+        ready, repeated_update = _station_stop_transition(
+            {
+                "capture_state": "recording",
+                "observed_generation": 7,
+                "desired_state": {"running": False, "generation": 8, "target_language": "vi"},
+            }
+        )
+        self.assertFalse(ready)
+        self.assertIsNone(repeated_update)
+
+        ready, stop_update = _station_stop_transition(
+            {
+                "capture_state": "idle",
+                "observed_generation": 8,
+                "desired_state": {"running": False, "generation": 8, "target_language": "vi"},
+            }
+        )
+        self.assertTrue(ready)
+        self.assertIsNone(stop_update)
+
+        registry_update, projection = _station_transfer_data(
+            "station-1",
+            {
+                "name": "Bridge Pi", "platform": "Linux aarch64",
+                "desired_state": {"running": False, "generation": 8, "target_language": "vi"},
+            },
+        )
+        self.assertFalse(registry_update["desired_state"]["running"])
+        self.assertEqual(registry_update["desired_state"]["generation"], 8)
+        self.assertEqual(projection["station_id"], "station-1")
+        self.assertFalse(projection["online"])
 
 
 if __name__ == "__main__":

@@ -57,6 +57,46 @@ def _audit(db, operator: str, action: str, target_uid: str, details: dict | None
     )
 
 
+def _station_stop_transition(registry: dict) -> tuple[bool, dict | None]:
+    desired = dict(registry.get("desired_state") or {})
+    generation = int(desired.get("generation", 0))
+    if desired.get("running", False):
+        desired["running"] = False
+        desired["generation"] = generation + 1
+        return False, {
+            "desired_state": desired,
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        }
+    observed = int(registry.get("observed_generation", 0))
+    capture_state = str(registry.get("capture_state", "idle"))
+    return observed >= generation and capture_state in {"idle", "error"}, None
+
+
+def _station_transfer_data(station_id: str, registry: dict) -> tuple[dict, dict]:
+    desired = dict(registry.get("desired_state") or {})
+    desired["running"] = False
+    registry_update = {
+        "active": True,
+        "desired_state": desired,
+        "updated_at": firestore.SERVER_TIMESTAMP,
+    }
+    projection = {
+        "station_id": station_id,
+        "name": registry.get("name", "PRANA station"),
+        "platform": registry.get("platform", "unknown"),
+        "active": True,
+        "online": False,
+        "capture_state": "idle",
+        "desired_state": desired,
+        "observed_generation": 0,
+        "session_id": "",
+        "sequence": 0,
+        "created_at": firestore.SERVER_TIMESTAMP,
+        "updated_at": firestore.SERVER_TIMESTAMP,
+    }
+    return registry_update, projection
+
+
 def _locale(request: Request) -> str:
     value = request.cookies.get("prana_admin_locale", "en")
     return value if value in {"en", "vi"} else "en"
@@ -109,6 +149,7 @@ def _plan_rows(db) -> list[dict]:
         item.setdefault("quota_period", "monthly")
         item.setdefault("availability", "available")
         item.setdefault("sort_order", 0)
+        item.setdefault("max_stations", 2)
         plans.append(item)
     return sorted(plans, key=lambda item: (int(item["sort_order"]), item["id"]))
 
@@ -207,11 +248,12 @@ def user_detail(request: Request, uid: str,
     user = snap.to_dict()
     user["expires"] = _format_datetime(user.get("subscription_expires_at"))
     devices = [{"id": item.id, **item.to_dict()} for item in snap.reference.collection("devices").stream()]
+    stations = [{"id": item.id, **item.to_dict()} for item in snap.reference.collection("stations").stream()]
     usage = [{"period": item.id, "minutes": int(item.to_dict().get("used_audio_seconds", 0)) / 60,
               "requests": int(item.to_dict().get("request_count", 0))}
              for item in snap.reference.collection("usage").stream()]
     return _render(request, "user_detail.html", email, user.get("email", "User"), "users", uid=uid,
-                   user=user, plans=_plan_rows(db), devices=devices, usage=usage)
+                   user=user, plans=_plan_rows(db), devices=devices, stations=stations, usage=usage)
 
 
 @app.post("/users/{uid}/status")
@@ -264,6 +306,101 @@ def allow_device_reenrollment(uid: str, device_id: str,
     return _redirect(f"/users/{uid}", "device_reenrollment")
 
 
+@app.post("/users/{uid}/stations/{station_id}/transfer")
+def transfer_station(
+    uid: str,
+    station_id: str,
+    target_email: str = Form(),
+    operator: str = Header(default=None, alias="X-Goog-Authenticated-User-Email"),
+):
+    email = _operator(operator)
+    target_email = target_email.strip().lower()
+    if not target_email or "@" not in target_email:
+        raise HTTPException(422, "A valid target email is required")
+    db = _db()
+    matches = list(
+        db.collection("users")
+        .where(filter=FieldFilter("email_lower", "==", target_email))
+        .limit(2)
+        .stream()
+    )
+    if len(matches) != 1:
+        raise HTTPException(404, "Target account was not found")
+    target_uid = matches[0].id
+    if target_uid == uid:
+        raise HTTPException(409, "Station already belongs to this account")
+
+    registry_ref = db.collection("station_registry").document(station_id)
+    source_projection = db.collection("users").document(uid).collection("stations").document(station_id)
+    target_user_ref = db.collection("users").document(target_uid)
+    target_projection = target_user_ref.collection("stations").document(station_id)
+
+    @firestore.transactional
+    def run(tx):
+        registry_snap = registry_ref.get(transaction=tx)
+        target_user_snap = target_user_ref.get(transaction=tx)
+        target_projection_snap = target_projection.get(transaction=tx)
+        if not registry_snap.exists or registry_snap.to_dict().get("owner_uid") != uid:
+            raise HTTPException(404, "Station was not found for the source account")
+        target_user = target_user_snap.to_dict() if target_user_snap.exists else {}
+        if not target_user.get("email_verified") or target_user.get("status") != "active":
+            raise HTTPException(409, "Target account must be active and email verified")
+        plan_id = target_user.get("plan_id")
+        plan_snap = db.collection("subscription_plans").document(plan_id or "").get(transaction=tx)
+        max_stations = int((plan_snap.to_dict() if plan_snap.exists else {}).get("max_stations", 2))
+        target_stations = target_user_ref.collection("stations")
+        active_target = list(target_stations.where("active", "==", True).stream(transaction=tx))
+        target_projection_data = (
+            target_projection_snap.to_dict() if target_projection_snap.exists else {}
+        )
+        if not target_projection_data.get("active", False) and len(active_target) >= max_stations:
+            raise HTTPException(409, "Target account has reached its station limit")
+        registry = registry_snap.to_dict()
+        ready_to_transfer, stop_update = _station_stop_transition(registry)
+        if not ready_to_transfer:
+            if stop_update is not None:
+                tx.update(registry_ref, stop_update)
+                tx.set(
+                    source_projection,
+                    {
+                        "desired_state": stop_update["desired_state"],
+                        "updated_at": firestore.SERVER_TIMESTAMP,
+                    },
+                    merge=True,
+                )
+            return "stopping"
+        registry_update, projection = _station_transfer_data(station_id, registry)
+        registry_update["owner_uid"] = target_uid
+        tx.update(
+            registry_ref,
+            registry_update,
+        )
+        tx.set(
+            source_projection,
+            {
+                "active": False,
+                "online": False,
+                "transferred_to": target_uid,
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            },
+            merge=True,
+        )
+        tx.set(target_projection, projection)
+        return "transferred"
+
+    outcome = run(db.transaction())
+    if outcome == "stopping":
+        return _redirect(f"/users/{uid}", "station_stopping")
+    _audit(
+        db,
+        email,
+        "station.transfer",
+        uid,
+        {"station_id": station_id, "target_uid": target_uid, "target_email": target_email},
+    )
+    return _redirect(f"/users/{uid}", "station_transferred")
+
+
 @app.get("/plans", response_class=HTMLResponse)
 def plans_page(request: Request, operator: str = Header(default=None, alias="X-Goog-Authenticated-User-Email")):
     email = _operator(operator)
@@ -278,6 +415,7 @@ def update_plan(
     requests_per_minute: int = Form(...),
     max_concurrency: int = Form(...),
     max_devices: int = Form(...),
+    max_stations: int = Form(2),
     sort_order: int = Form(...),
     operator: str = Header(default=None, alias="X-Goog-Authenticated-User-Email"),
 ):
@@ -292,6 +430,7 @@ def update_plan(
         "requests_per_minute": (requests_per_minute, 1, 600),
         "max_concurrency": (max_concurrency, 1, 10),
         "max_devices": (max_devices, 1, 10),
+        "max_stations": (max_stations, 1, 20),
         "sort_order": (sort_order, 0, 1_000),
     }
     for field, (value, minimum, maximum) in limits.items():
@@ -314,6 +453,7 @@ def update_plan(
         "requests_per_minute": requests_per_minute,
         "max_concurrency": max_concurrency,
         "max_devices": max_devices,
+        "max_stations": max_stations,
         "sort_order": sort_order,
         "updated_at": firestore.SERVER_TIMESTAMP,
         "updated_by": email,
