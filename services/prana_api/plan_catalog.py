@@ -15,6 +15,7 @@ PLAN_CATALOG = (
         requests_per_minute=30,
         max_concurrency=2,
         max_devices=2,
+        max_stations=2,
     ),
     Plan(
         id="plus",
@@ -27,6 +28,7 @@ PLAN_CATALOG = (
         requests_per_minute=30,
         max_concurrency=2,
         max_devices=2,
+        max_stations=2,
     ),
     Plan(
         id="pro",
@@ -39,6 +41,7 @@ PLAN_CATALOG = (
         requests_per_minute=30,
         max_concurrency=2,
         max_devices=2,
+        max_stations=2,
     ),
 )
 

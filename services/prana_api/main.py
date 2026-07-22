@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import hashlib
+import secrets
 import time
 import re
 import uuid
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 
-from fastapi import Depends, FastAPI, File, Form, Header, Response, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, Response, UploadFile
 from fastapi.responses import JSONResponse
 from google.cloud import firestore
 
@@ -33,17 +36,29 @@ from services.prana_api.models import (
     Plan,
     PlanSelectionRequest,
     ProcessingResponse,
+    Station,
+    StationActivationClaimRequest,
+    StationClaimRequest,
+    StationDesiredState,
+    StationDesiredStatePatch,
+    StationHeartbeat,
+    StationPairingRequest,
+    StationPairingResponse,
+    StationProvisionRequest,
+    StationProvisionResponse,
 )
 from services.prana_api.repository import FirestoreRepository, Repository
 from services.prana_api.security import (
     body_hash,
     canonical_request,
+    canonical_station_request,
     idempotency_hash,
+    station_payload_hash,
     verify_device_signature,
     verify_timestamp,
 )
 
-app = FastAPI(title="PRANA ELEX API", version="1.1.0", docs_url=None, redoc_url=None)
+app = FastAPI(title="PRANA ELEX API", version="1.2.0", docs_url=None, redoc_url=None)
 
 
 @app.exception_handler(Exception)
@@ -109,6 +124,61 @@ def active_account(identity: Identity, repo: Repository):
     if not account.subscription_active or not account.plan_id:
         raise api_error(403, "SUBSCRIPTION_INACTIVE", "Subscription is not active")
     return account, repo.get_plan(account.plan_id)
+
+
+def _pairing_hash(pairing_id: str, code: str) -> str:
+    return hashlib.sha256(f"{pairing_id}:{code}".encode("utf-8")).hexdigest()
+
+
+def _activation_hash(station_id: str, code: str) -> str:
+    return hashlib.sha256(f"{station_id}:{code}".encode("utf-8")).hexdigest()
+
+
+def _validate_request_id(value: str) -> None:
+    try:
+        uuid.UUID(value)
+    except ValueError as exc:
+        raise api_error(422, "INVALID_REQUEST", "X-Request-ID must be a UUID") from exc
+
+
+def _authenticate_station_request(
+    *,
+    station_id: str,
+    method: str,
+    path: str,
+    request_id: str,
+    request_timestamp: str,
+    signature: str,
+    payload: dict,
+    repo: Repository,
+) -> dict:
+    settings = get_settings()
+    _validate_request_id(request_id)
+    verify_timestamp(request_timestamp, settings.signature_clock_skew_seconds)
+    station = repo.get_station_registry(station_id)
+    if not station:
+        raise api_error(403, "STATION_NOT_PAIRED", "Station has not been paired")
+    if not station.get("active", True):
+        raise api_error(403, "STATION_REVOKED", "Station is not active")
+    verify_device_signature(
+        station["public_key"],
+        signature,
+        canonical_station_request(
+            method,
+            path,
+            request_id,
+            request_timestamp,
+            station_payload_hash(payload),
+        ),
+    )
+    repo.consume_station_request(
+        station_id,
+        request_id,
+        datetime.now(timezone.utc) + timedelta(minutes=10),
+    )
+    if not station.get("owner_uid"):
+        raise api_error(403, "STATION_NOT_PAIRED", "Station has not been paired")
+    return station
 
 
 @app.get("/health")
@@ -220,6 +290,219 @@ def revoke_device(
     return Response(status_code=204)
 
 
+@app.post("/v1/station-pairings", response_model=StationPairingResponse)
+def create_station_pairing(
+    request: StationPairingRequest,
+    station_id: str = Header(alias="X-Station-ID"),
+    request_id: str = Header(alias="X-Request-ID"),
+    request_timestamp: str = Header(alias="X-Timestamp"),
+    signature: str = Header(alias="X-Signature"),
+    repo: Repository = Depends(get_repository),
+):
+    if station_id != request.station_id:
+        raise api_error(422, "INVALID_REQUEST", "Station header and body do not match")
+    _validate_request_id(request_id)
+    verify_timestamp(request_timestamp, get_settings().signature_clock_skew_seconds)
+    verify_device_signature(
+        request.public_key,
+        signature,
+        canonical_station_request(
+            "POST",
+            "/v1/station-pairings",
+            request_id,
+            request_timestamp,
+            station_payload_hash(request.model_dump()),
+        ),
+    )
+    pairing_id = str(uuid.uuid4())
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    pairing_code = "".join(secrets.choice(alphabet) for _ in range(8))
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+    repo.create_station_pairing(
+        request,
+        pairing_id,
+        _pairing_hash(pairing_id, pairing_code),
+        expires_at,
+    )
+    repo.consume_station_request(
+        station_id,
+        request_id,
+        datetime.now(timezone.utc) + timedelta(minutes=10),
+    )
+    return StationPairingResponse(
+        pairing_id=pairing_id,
+        pairing_code=pairing_code,
+        qr_payload=f"prana-elex:///pair?pairing_id={pairing_id}&code={pairing_code}",
+        expires_at=expires_at,
+    )
+
+
+@app.post("/v1/station-provisions", response_model=StationProvisionResponse)
+def provision_station(
+    request: StationProvisionRequest,
+    station_id: str = Header(alias="X-Station-ID"),
+    request_id: str = Header(alias="X-Request-ID"),
+    request_timestamp: str = Header(alias="X-Timestamp"),
+    signature: str = Header(alias="X-Signature"),
+    repo: Repository = Depends(get_repository),
+):
+    if station_id != request.station_id:
+        raise api_error(422, "INVALID_REQUEST", "Station header and body do not match")
+    _validate_request_id(request_id)
+    verify_timestamp(request_timestamp, get_settings().signature_clock_skew_seconds)
+    verify_device_signature(
+        request.public_key,
+        signature,
+        canonical_station_request(
+            "POST",
+            "/v1/station-provisions",
+            request_id,
+            request_timestamp,
+            station_payload_hash(request.model_dump()),
+        ),
+    )
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    value = None
+    for _ in range(5):
+        setup_id = "".join(secrets.choice(alphabet) for _ in range(10))
+        try:
+            value = repo.provision_station(request, setup_id)
+            break
+        except HTTPException as exc:
+            detail = exc.detail if isinstance(exc.detail, dict) else {}
+            if detail.get("code") != "SETUP_ID_CONFLICT":
+                raise
+    if value is None:
+        raise api_error(503, "SETUP_ID_UNAVAILABLE", "Could not allocate a setup ID")
+    repo.consume_station_request(
+        station_id,
+        request_id,
+        datetime.now(timezone.utc) + timedelta(minutes=10),
+    )
+    return StationProvisionResponse.model_validate(value)
+
+
+@app.post("/v1/station-activations/claim", response_model=Station)
+def claim_station_activation(
+    request: StationActivationClaimRequest,
+    http_request: Request,
+    identity: Identity = Depends(require_identity),
+    repo: Repository = Depends(get_repository),
+):
+    _account, plan = active_account(identity, repo)
+    client_ip = http_request.client.host if http_request.client else "unknown"
+    repo.check_activation_claim_rate(identity.uid, request.setup_id, client_ip)
+    return repo.claim_station_activation(
+        identity.uid,
+        request.setup_id,
+        request.activation_code,
+        plan.max_stations,
+    )
+
+
+@app.post("/v1/station-pairings/{pairing_id}/claim", response_model=Station)
+def claim_station(
+    pairing_id: str,
+    request: StationClaimRequest,
+    identity: Identity = Depends(require_identity),
+    repo: Repository = Depends(get_repository),
+):
+    _account, plan = active_account(identity, repo)
+    repo.check_pairing_claim_rate(identity.uid, pairing_id)
+    return repo.claim_station(
+        identity.uid,
+        pairing_id,
+        _pairing_hash(pairing_id, request.pairing_code.upper()),
+        plan.max_stations,
+    )
+
+
+@app.get("/v1/stations", response_model=list[Station])
+def list_stations(
+    identity: Identity = Depends(require_identity),
+    repo: Repository = Depends(get_repository),
+):
+    active_account(identity, repo)
+    return repo.list_stations(identity.uid)
+
+
+@app.delete("/v1/stations/{station_id}", status_code=204)
+def revoke_station(
+    station_id: str,
+    identity: Identity = Depends(require_identity),
+    repo: Repository = Depends(get_repository),
+):
+    verified_account(identity, repo)
+    repo.revoke_station(identity.uid, station_id)
+    return Response(status_code=204)
+
+
+@app.patch("/v1/stations/{station_id}/desired-state", response_model=StationDesiredState)
+def update_station_desired_state(
+    station_id: str,
+    request: StationDesiredStatePatch,
+    identity: Identity = Depends(require_identity),
+    repo: Repository = Depends(get_repository),
+):
+    active_account(identity, repo)
+    updates = request.model_dump(exclude={"retry"}, exclude_none=True)
+    if request.retry:
+        updates["retry_generation_increment"] = True
+    if not updates:
+        raise api_error(422, "INVALID_REQUEST", "No desired state change was supplied")
+    return repo.update_station_desired_state(identity.uid, station_id, updates)
+
+
+@app.get("/v1/stations/{station_id}/desired-state", response_model=StationDesiredState)
+def get_station_desired_state(
+    station_id: str,
+    signed_station_id: str = Header(alias="X-Station-ID"),
+    request_id: str = Header(alias="X-Request-ID"),
+    request_timestamp: str = Header(alias="X-Timestamp"),
+    signature: str = Header(alias="X-Signature"),
+    repo: Repository = Depends(get_repository),
+):
+    if signed_station_id != station_id:
+        raise api_error(403, "STATION_REVOKED", "Station identity does not match")
+    station = _authenticate_station_request(
+        station_id=station_id,
+        method="GET",
+        path=f"/v1/stations/{station_id}/desired-state",
+        request_id=request_id,
+        request_timestamp=request_timestamp,
+        signature=signature,
+        payload={},
+        repo=repo,
+    )
+    return StationDesiredState.model_validate(station.get("desired_state") or {})
+
+
+@app.post("/v1/stations/{station_id}/heartbeat", status_code=204)
+def station_heartbeat(
+    station_id: str,
+    request: StationHeartbeat,
+    signed_station_id: str = Header(alias="X-Station-ID"),
+    request_id: str = Header(alias="X-Request-ID"),
+    request_timestamp: str = Header(alias="X-Timestamp"),
+    signature: str = Header(alias="X-Signature"),
+    repo: Repository = Depends(get_repository),
+):
+    if signed_station_id != station_id:
+        raise api_error(403, "STATION_REVOKED", "Station identity does not match")
+    _authenticate_station_request(
+        station_id=station_id,
+        method="POST",
+        path=f"/v1/stations/{station_id}/heartbeat",
+        request_id=request_id,
+        request_timestamp=request_timestamp,
+        signature=signature,
+        payload=request.model_dump(),
+        repo=repo,
+    )
+    repo.heartbeat_station(station_id, request)
+    return Response(status_code=204)
+
+
 @app.post("/v1/audio/process", response_model=ProcessingResponse)
 def process_audio(
     audio: UploadFile = File(),
@@ -283,3 +566,112 @@ def process_audio(
         raise api_error(503, "SERVICE_USAGE_LIMIT_REACHED", "Result was processed but cloud archival is temporarily unavailable")
     repo.settle_success(identity.uid, request_id, response, metrics)
     return model_result.response
+
+
+@app.post("/v1/stations/{station_id}/audio/process", response_model=ProcessingResponse)
+def process_station_audio(
+    station_id: str,
+    audio: UploadFile = File(),
+    target_language: str = Form(),
+    session_id: str = Form(),
+    sequence: int = Form(),
+    request_id: str = Form(),
+    signed_station_id: str = Header(alias="X-Station-ID"),
+    request_timestamp: str = Header(alias="X-Timestamp"),
+    signature: str = Header(alias="X-Signature"),
+    repo: Repository = Depends(get_repository),
+):
+    settings = get_settings()
+    if signed_station_id != station_id:
+        raise api_error(403, "STATION_REVOKED", "Station identity does not match")
+    if target_language not in {"vi", "en", "zh", "ja", "ko"}:
+        raise api_error(422, "INVALID_REQUEST", "Unsupported target language")
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", session_id) or sequence < 0:
+        raise api_error(422, "INVALID_REQUEST", "Invalid session or sequence")
+    try:
+        uuid.UUID(request_id)
+    except ValueError as exc:
+        raise api_error(422, "INVALID_REQUEST", "request_id must be a UUID") from exc
+
+    data = audio.file.read(settings.max_audio_bytes + 1)
+    info = validate_wav(data, settings.max_audio_bytes, settings.max_audio_seconds)
+    digest = body_hash(data)
+    verify_timestamp(request_timestamp, settings.signature_clock_skew_seconds)
+    station = repo.get_station_registry(station_id)
+    if not station or not station.get("active", True):
+        raise api_error(403, "STATION_REVOKED", "Station is not active")
+    owner_uid = station.get("owner_uid")
+    if not owner_uid:
+        raise api_error(403, "STATION_NOT_PAIRED", "Station has not been paired")
+    verify_device_signature(
+        station["public_key"],
+        signature,
+        canonical_request(
+            request_id,
+            request_timestamp,
+            digest,
+            target_language,
+            session_id,
+            sequence,
+        ),
+    )
+    account = repo.get_account(owner_uid)
+    if not account or not account.subscription_active or not account.plan_id:
+        raise api_error(403, "SUBSCRIPTION_INACTIVE", "Station owner's subscription is not active")
+    plan = repo.get_plan(account.plan_id)
+    request_hash = idempotency_hash(digest, target_language, session_id, sequence)
+    reservation = repo.reserve(owner_uid, plan, request_id, request_hash, info.seconds)
+    if reservation.state == "completed":
+        # Projection writes are idempotent. Repeating this heals a transient
+        # Firestore publication failure without charging or invoking Gemini again.
+        repo.publish_station_result(owner_uid, station_id, reservation.cached_response or {})
+        return ProcessingResponse.model_validate(reservation.cached_response)
+
+    started = time.perf_counter()
+    try:
+        model_result = get_processor().process(
+            data, target_language, session_id, sequence, request_id
+        )
+    except Exception:
+        repo.settle_failure(
+            owner_uid,
+            request_id,
+            "PROVIDER_ERROR",
+            {
+                "audio_seconds": info.seconds,
+                "latency_ms": round((time.perf_counter() - started) * 1000, 1),
+                "station_id": station_id,
+            },
+        )
+        raise api_error(
+            503,
+            "SERVICE_USAGE_LIMIT_REACHED",
+            "Translation service is temporarily unavailable",
+        )
+
+    response = {
+        **model_result.response.model_dump(mode="json"),
+        "request_id": request_id,
+        "station_id": station_id,
+    }
+    metrics = dict(model_result.metrics)
+    metrics.update(
+        {
+            "audio_seconds": info.seconds,
+            "request_id": request_id,
+            "station_id": station_id,
+        }
+    )
+    try:
+        get_archive().archive(owner_uid, session_id, request_id, data, response)
+        repo.publish_station_result(owner_uid, station_id, response)
+    except Exception:
+        metrics["archive_or_projection_failed"] = True
+        repo.settle_success(owner_uid, request_id, response, metrics)
+        raise api_error(
+            503,
+            "SERVICE_USAGE_LIMIT_REACHED",
+            "Result was processed but cloud synchronization is temporarily unavailable",
+        )
+    repo.settle_success(owner_uid, request_id, response, metrics)
+    return ProcessingResponse.model_validate(response)

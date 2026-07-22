@@ -18,6 +18,7 @@ class Plan(BaseModel):
     requests_per_minute: int = Field(gt=0, le=600)
     max_concurrency: int = Field(default=2, ge=1, le=10)
     max_devices: int = Field(default=2, ge=1, le=10)
+    max_stations: int = Field(default=2, ge=1, le=20)
 
     @model_validator(mode="before")
     @classmethod
@@ -156,6 +157,8 @@ class FirebaseSessionResponse(BaseModel):
 
 
 class ProcessingResponse(BaseModel):
+    request_id: str = ""
+    station_id: str = ""
     session_id: str
     sequence: int
     audio_file: str
@@ -176,3 +179,77 @@ class Reservation(BaseModel):
     request_id: str
     state: Literal["reserved", "completed", "in_progress"]
     cached_response: dict | None = None
+
+
+SUPPORTED_LANGUAGES = {"vi", "en", "zh", "ja", "ko"}
+
+
+class StationPairingRequest(BaseModel):
+    station_id: str = Field(pattern=r"^[a-f0-9]{32}$")
+    name: str = Field(min_length=1, max_length=100)
+    platform: str = Field(min_length=1, max_length=80)
+    public_key: str = Field(min_length=40, max_length=100)
+
+
+class StationPairingResponse(BaseModel):
+    pairing_id: str
+    pairing_code: str
+    qr_payload: str
+    expires_at: datetime
+
+
+class StationClaimRequest(BaseModel):
+    pairing_code: str = Field(pattern=r"^[A-Z0-9]{8}$")
+
+
+class StationProvisionRequest(StationPairingRequest):
+    activation_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    activation_version: Literal[1] = 1
+
+
+class StationProvisionResponse(BaseModel):
+    station_id: str
+    setup_id: str
+    state: Literal["provisioned", "claimed"]
+
+
+class StationActivationClaimRequest(BaseModel):
+    setup_id: str = Field(pattern=r"^[A-HJ-NP-Z2-9]{10}$")
+    activation_code: str = Field(pattern=r"^[A-HJ-NP-Z2-9]{16}$")
+
+
+class StationDesiredState(BaseModel):
+    running: bool = False
+    target_language: Literal["vi", "en", "zh", "ja", "ko"] = "en"
+    retry_generation: int = Field(default=0, ge=0)
+    generation: int = Field(default=0, ge=0)
+
+
+class StationDesiredStatePatch(BaseModel):
+    running: bool | None = None
+    target_language: Literal["vi", "en", "zh", "ja", "ko"] | None = None
+    retry: bool = False
+
+
+class StationHeartbeat(BaseModel):
+    capture_state: Literal["idle", "listening", "recording", "error"]
+    session_id: str = Field(default="", max_length=100)
+    sequence: int = Field(default=0, ge=0)
+    app_version: str = Field(default="", max_length=40)
+    observed_generation: int = Field(default=0, ge=0)
+    target_language: Literal["vi", "en", "zh", "ja", "ko"] = "en"
+    error: str | None = Field(default=None, max_length=500)
+
+
+class Station(BaseModel):
+    station_id: str
+    name: str
+    platform: str
+    active: bool = True
+    online: bool = False
+    capture_state: str = "idle"
+    desired_state: StationDesiredState = Field(default_factory=StationDesiredState)
+    observed_generation: int = 0
+    session_id: str = ""
+    sequence: int = 0
+    last_seen_at: datetime | None = None

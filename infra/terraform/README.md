@@ -3,7 +3,8 @@
 This Terraform stack creates Firebase/Identity Platform email and Google authentication,
 Firestore, a 14-day Cloud Storage bucket, separate Cloud Run API/admin services,
 IAP for the admin service and separate runtime/deployer identities. Firestore
-Security Rules deny every Firebase client read/write; only server identities use IAM.
+Security Rules allow users to read only their own mobile station projection and
+deny every client write; server identities use IAM.
 
 Runtime values such as billing IDs, images, user emails and credentials belong
 in an untracked `terraform.tfvars`; copy `terraform.tfvars.example` to create it.
@@ -54,8 +55,10 @@ the Web client. In the console, add the Desktop client ID to the provider's
 external client IDs, because that list is not exposed by the Terraform resource.
 
 After apply, copy the public `firebase_web_api_key`, `api_url` and
-`google_desktop_oauth_client_id` outputs into both desktop build profiles. Never
-copy `google_idp_web_client_secret` into client config or Git.
+`google_desktop_oauth_client_id` outputs into both desktop build profiles. Put the
+public Android Firebase app values and API URL in the mobile flavor's ignored
+dart-define JSON file. Never copy `google_idp_web_client_secret` into client config
+or Git.
 
 Set both global audio circuit-breaker variables to non-zero production values.
 Budget notifications are alerts, not hard spending caps.

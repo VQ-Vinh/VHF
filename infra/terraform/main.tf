@@ -108,6 +108,46 @@ resource "google_firestore_field" "rate_limit_ttl" {
   ttl_config {}
 }
 
+resource "google_firestore_field" "station_result_ttl" {
+  project    = var.project_id
+  database   = google_firestore_database.production.name
+  collection = "results"
+  field      = "expires_at"
+  ttl_config {}
+}
+
+resource "google_firestore_field" "station_pairing_ttl" {
+  project    = var.project_id
+  database   = google_firestore_database.production.name
+  collection = "station_pairings"
+  field      = "expires_at"
+  ttl_config {}
+}
+
+resource "google_firestore_field" "station_nonce_ttl" {
+  project    = var.project_id
+  database   = google_firestore_database.production.name
+  collection = "station_request_nonces"
+  field      = "expires_at"
+  ttl_config {}
+}
+
+resource "google_firestore_field" "station_pairing_attempt_ttl" {
+  project    = var.project_id
+  database   = google_firestore_database.production.name
+  collection = "station_pairing_attempts"
+  field      = "expires_at"
+  ttl_config {}
+}
+
+resource "google_firestore_field" "station_activation_attempt_ttl" {
+  project    = var.project_id
+  database   = google_firestore_database.production.name
+  collection = "station_activation_attempts"
+  field      = "expires_at"
+  ttl_config {}
+}
+
 resource "google_firestore_index" "users_status_email" {
   project     = var.project_id
   database    = google_firestore_database.production.name

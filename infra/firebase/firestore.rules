@@ -2,7 +2,18 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Desktop/Pi users can only access SaaS data through prana-api.
+    // Mobile can observe only its own station projection. Every mutation,
+    // pairing document, registry entry and credential stays behind prana-api.
+    match /users/{userId}/stations/{stationId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false;
+
+      match /{document=**} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow write: if false;
+      }
+    }
+
     // Firebase Admin/Google Cloud server SDKs use IAM and bypass these rules.
     match /{document=**} {
       allow read, write: if false;
