@@ -1,0 +1,10 @@
+{
+  "FLAVOR": "production",
+  "API_URL": "https://api.example.com",
+  "FIREBASE_API_KEY": "replace-me",
+  "FIREBASE_APP_ID": "replace-me",
+  "FIREBASE_MESSAGING_SENDER_ID": "replace-me",
+  "FIREBASE_PROJECT_ID": "replace-me",
+  "FIREBASE_STORAGE_BUCKET": "replace-me",
+  "FIREBASE_GOOGLE_WEB_CLIENT_ID": "replace-me.apps.googleusercontent.com"
+}

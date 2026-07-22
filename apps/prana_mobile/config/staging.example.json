@@ -1,0 +1,10 @@
+{
+  "FLAVOR": "staging",
+  "API_URL": "http://10.0.2.2:8080",
+  "FIREBASE_API_KEY": "replace-me",
+  "FIREBASE_APP_ID": "replace-me",
+  "FIREBASE_MESSAGING_SENDER_ID": "replace-me",
+  "FIREBASE_PROJECT_ID": "replace-me",
+  "FIREBASE_STORAGE_BUCKET": "replace-me",
+  "FIREBASE_GOOGLE_WEB_CLIENT_ID": "replace-me.apps.googleusercontent.com"
+}

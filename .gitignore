@@ -32,7 +32,11 @@ err.txt
 out.txt
 
 # IDE
-.vscode/
+/.vscode/*
+!/.vscode/launch.json
+!/.vscode/tasks.json
+!apps/prana_mobile/.vscode/
+!apps/prana_mobile/.vscode/launch.json
 .idea/
 *.swp
 
@@ -49,6 +53,18 @@ release/
 !scripts/packaging/linux-arm64/PRANA_ELEX.spec
 *.egg-info/
 *.egg-info
+apps/prana_mobile/.dart_tool/
+apps/prana_mobile/.flutter-plugins*
+apps/prana_mobile/devtools_options.yaml
+apps/prana_mobile/android/.gradle/
+apps/prana_mobile/android/local.properties
+apps/prana_mobile/android/key.properties
+apps/prana_mobile/android/app/google-services.json
+*.jks
+*.keystore
+apps/prana_mobile/android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+apps/prana_mobile/config/*.json
+!apps/prana_mobile/config/*.example.json
 
 # Old structure (removed)
 src/vhf_processor/

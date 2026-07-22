@@ -1,0 +1,36 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "PRANA Mobile - Staging",
+      "request": "launch",
+      "type": "dart",
+      "cwd": "${workspaceFolder}/apps/prana_mobile",
+      "program": "lib/main.dart",
+      "args": [
+        "--flavor",
+        "staging",
+        "--dart-define-from-file=config/staging.json"
+      ]
+    },
+    {
+      "name": "PRANA Mobile - Production",
+      "request": "launch",
+      "type": "dart",
+      "cwd": "${workspaceFolder}/apps/prana_mobile",
+      "program": "lib/main.dart",
+      "args": [
+        "--flavor",
+        "production",
+        "--dart-define-from-file=config/production.json"
+      ]
+    },
+    {
+      "name": "PRANA Mobile - Widget Tests",
+      "request": "launch",
+      "type": "dart",
+      "cwd": "${workspaceFolder}/apps/prana_mobile",
+      "program": "test"
+    }
+  ]
+}
