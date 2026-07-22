@@ -8,4 +8,14 @@ def desktop():
     main()
 
 
-__all__ = ["cli", "desktop"]
+def station():
+    from prana_elex.app.station import main
+    main()
+
+
+def station_provision():
+    from prana_elex.app.station_provision import main
+    main()
+
+
+__all__ = ["cli", "desktop", "station", "station_provision"]

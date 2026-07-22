@@ -151,7 +151,7 @@ class PipelineOrchestrator:
             event_bus.emit("pipeline_started")
         except BackendApiError as e:
             logger.error("Start failed", exc_info=e)
-            if e.code in {"AUTH_REQUIRED", "EMAIL_NOT_VERIFIED", "SUBSCRIPTION_INACTIVE", "DEVICE_REVOKED", "DEVICE_LIMIT_REACHED"}:
+            if e.code in {"AUTH_REQUIRED", "EMAIL_NOT_VERIFIED", "SUBSCRIPTION_INACTIVE", "DEVICE_REVOKED", "DEVICE_LIMIT_REACHED", "STATION_REVOKED", "STATION_NOT_PAIRED"}:
                 event_bus.emit("access_denied", e.code, str(e))
             with self._state_lock:
                 self._state = PipelineState.ERROR
@@ -185,12 +185,14 @@ class PipelineOrchestrator:
                 self._recorder.stop()
                 self._recorder = None
 
-            for _ in range(self._num_workers):
-                self._job_queue.put(None)
             if self._executor is not None:
                 self._executor.shutdown(wait=True)
+                self._executor = None
 
             self._worker_futures.clear()
+            # Workers exit after observing _stop_event. Pending jobs and any
+            # shutdown sentinels must never leak into the next start/restart.
+            self._job_queue = queue.Queue(maxsize=32)
             self._backend.close()
             logger.info(
                 "Pipeline stopped",
@@ -220,6 +222,9 @@ class PipelineOrchestrator:
 
     def _do_restart(self) -> None:
         self._do_stop()
+        # _do_stop sets this flag so workers can exit. A restart must clear it
+        # before creating the replacement worker pool.
+        self._stop_event.clear()
         self._do_start()
 
     # ── Cleanup ─────────────────────────────────────────────────────

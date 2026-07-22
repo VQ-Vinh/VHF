@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import queue
+import threading
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -101,6 +102,43 @@ class PipelineStructureTests(unittest.TestCase):
         self.assertEqual(SegmentJob.__module__, "prana_elex.pipeline.segment_processor")
         self.assertTrue(callable(getattr(SegmentProcessor, "process")))
         self.assertTrue(callable(getattr(SegmentProcessor, "retry_last_failed")))
+
+    def test_restart_clears_worker_stop_event_before_start(self) -> None:
+        orchestrator = PipelineOrchestrator.__new__(PipelineOrchestrator)
+        orchestrator._stop_event = threading.Event()
+        calls = []
+
+        def stop():
+            calls.append("stop")
+            orchestrator._stop_event.set()
+
+        def start():
+            calls.append("start")
+            self.assertFalse(orchestrator._stop_event.is_set())
+
+        orchestrator._do_stop = stop
+        orchestrator._do_start = start
+        orchestrator._do_restart()
+        self.assertEqual(calls, ["stop", "start"])
+
+    def test_stop_replaces_queue_before_a_later_restart(self) -> None:
+        orchestrator = PipelineOrchestrator.__new__(PipelineOrchestrator)
+        orchestrator._stop_event = threading.Event()
+        orchestrator._state_lock = threading.RLock()
+        orchestrator._cleanup_timer = None
+        orchestrator._recorder = None
+        orchestrator._executor = None
+        orchestrator._worker_futures = []
+        orchestrator._job_queue = queue.Queue(maxsize=32)
+        stale_queue = orchestrator._job_queue
+        stale_queue.put(object())
+        orchestrator._backend = SimpleNamespace(close=lambda: None)
+        orchestrator._session = SimpleNamespace(session_id="old-session", sequence=3)
+
+        orchestrator._do_stop()
+
+        self.assertIsNot(orchestrator._job_queue, stale_queue)
+        self.assertTrue(orchestrator._job_queue.empty())
 
 
 if __name__ == "__main__":

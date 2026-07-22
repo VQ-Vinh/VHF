@@ -21,10 +21,13 @@ dependencies = [
     "pyside6>=6.7.0",
     "qasync>=0.27.0",
     "qtawesome==1.4.2",
+    "qrcode[pil]>=8.0",
 ]
 
 [project.scripts]
 prana-elex = "prana_elex:cli"
+prana-station = "prana_elex:station"
+prana-station-provision = "prana_elex:station_provision"
 
 [tool.setuptools.packages.find]
 where = ["src"]
