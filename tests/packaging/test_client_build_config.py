@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.packaging.common.validate_client_config import validate
+from tools.packaging.validate_client_config import validate
 
 
 class ClientBuildConfigTests(unittest.TestCase):

@@ -5,7 +5,7 @@
       "name": "PRANA Mobile - Staging",
       "request": "launch",
       "type": "dart",
-      "cwd": "${workspaceFolder}/apps/prana_mobile",
+      "cwd": "${workspaceFolder}/apps/android",
       "program": "lib/main.dart",
       "args": [
         "--flavor",
@@ -17,7 +17,7 @@
       "name": "PRANA Mobile - Production",
       "request": "launch",
       "type": "dart",
-      "cwd": "${workspaceFolder}/apps/prana_mobile",
+      "cwd": "${workspaceFolder}/apps/android",
       "program": "lib/main.dart",
       "args": [
         "--flavor",
@@ -29,7 +29,7 @@
       "name": "PRANA Mobile - Widget Tests",
       "request": "launch",
       "type": "dart",
-      "cwd": "${workspaceFolder}/apps/prana_mobile",
+      "cwd": "${workspaceFolder}/apps/android",
       "program": "test"
     }
   ]

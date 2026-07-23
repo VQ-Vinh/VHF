@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-INSTALLER = ROOT / "scripts" / "packaging" / "windows" / "installer"
+INSTALLER = ROOT / "apps" / "windows" / "packaging" / "installer"
 
 
 class WindowsInstallerDefinitionTests(unittest.TestCase):
@@ -54,6 +54,36 @@ class WindowsInstallerDefinitionTests(unittest.TestCase):
     def test_pyinstaller_uses_the_same_icon(self) -> None:
         spec = (INSTALLER.parent / "PRANA_ELEX.spec").read_text(encoding="utf-8")
         self.assertIn("installer/assets/prana-elex.ico", spec)
+        self.assertIn("parents[2]", spec)
+
+    def test_build_outputs_are_platform_scoped(self) -> None:
+        script = (ROOT / "apps" / "windows" / "packaging" / "build.bat").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("build\\buildwin\\work", script)
+        self.assertIn("build\\buildwin\\dist", script)
+        self.assertIn("installers\\windows", script)
+        self.assertNotIn("release\\", script)
+
+    def test_build_installs_local_packages_without_isolation(self) -> None:
+        script = (ROOT / "apps" / "windows" / "packaging" / "build.bat").read_text(
+            encoding="utf-8"
+        )
+        self.assertEqual(script.count("--no-build-isolation -e"), 2)
+
+    def test_windows_cli_gui_entrypoint_stays_in_windows_app(self) -> None:
+        cli = (ROOT / "apps" / "windows" / "src" / "prana_windows" / "cli.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("from prana_windows.desktop import main as desktop_main", cli)
+        self.assertNotIn("from prana_core.app.desktop", cli)
+
+    def test_dev_desktop_entrypoint_bypasses_cli_prompts(self) -> None:
+        desktop = (ROOT / "apps" / "windows" / "src" / "prana_windows" / "desktop.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("run_app()", desktop)
+        self.assertNotIn("select_capture_mode", desktop)
 
 
 if __name__ == "__main__":

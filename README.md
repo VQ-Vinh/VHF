@@ -28,20 +28,21 @@ nó không cấp quyền Google Cloud và không thay thế Firebase ID token.
 ## Cấu trúc chính
 
 ```text
-src/prana_elex/                 Desktop/Pi client
+apps/windows/                   Windows Desktop + Station, WASAPI, Qt, installer
+apps/linux/                     Raspberry Pi headless Station, PulseAudio, Debian
+apps/android/                   Flutter Android application
+packages/prana_core/            Shared pipeline, VAD, backend and station protocol
 services/prana_api/             FastAPI public business API
 services/prana_admin/           IAP-protected operator web app
-infra/terraform/                Production Google Cloud infrastructure
-scripts/packaging/windows/      Windows build + Inno Setup
-scripts/packaging/linux-arm64/  Pi 4B build + Debian package
-config/profiles/                Public build configuration per platform
-tests/client/                   Desktop/Pi client and Qt tests
-tests/api/                      PRANA API tests
-tests/admin/                    PRANA Admin tests
-tests/packaging/                Build and release validation tests
+tools/packaging/                Shared build validators and metadata
+infra/                          Firebase rules and Google Cloud infrastructure
+tests/core|windows|linux/       Python tests grouped by ownership
+tests/api|admin|packaging/      Service and release validation tests
 ```
 
 Chi tiết ranh giới và chiều phụ thuộc: [`docs/architecture.md`](docs/architecture.md).
+
+Sơ đồ luồng tổng quát: [`docs/architecture-overview.md`](docs/architecture-overview.md).
 
 ## Luồng tài khoản
 
@@ -83,12 +84,11 @@ Trên Pi:
 
 ```bash
 ./scripts/setup/setup.sh
-./scripts/dev/run-dev.sh
-./scripts/dev/run-cli.sh -t en batch recording.wav
+./apps/linux/run.sh
 ```
 
-Trước khi đăng nhập, cấu hình hai giá trị public trong `config/default.toml` khi
-chạy source; cấu hình cả hai file trong `config/profiles/` trước khi build release:
+Trước khi chạy, cấu hình file của từng app: `apps/windows/config/default.toml`
+hoặc `apps/linux/config/default.toml`:
 
 ```toml
 [backend]
@@ -238,24 +238,34 @@ buildwin.bat
 Artifact:
 
 ```text
-dist/windows/PRANA_ELEX/PRANA_ELEX.exe
-release/windows/PRANA_ELEX_Setup_1.1.0_x64.exe
+build/buildwin/dist/PRANA_ELEX/PRANA_ELEX.exe
+installers/windows/PRANA_ELEX_Setup_1.1.0_x64.exe
 ```
 
 Windows installer hỗ trợ English và Tiếng Việt, dùng chung icon nhận diện với
 ứng dụng và yêu cầu chọn Data folder trước khi cài. Dữ liệu trong thư mục này
 được giữ nguyên khi gỡ ứng dụng.
 
-Raspberry Pi 4B, Raspberry Pi OS Desktop Bookworm 64-bit (chạy trực tiếp trên Pi):
+Raspberry Pi 4B, Raspberry Pi OS Bookworm ARM64 headless (chạy trực tiếp trên Pi):
 
 ```bash
 ./buildlinux
-sudo apt install ./release/linux-arm64/prana-elex_1.1.0_arm64.deb
+sudo apt install ./installers/linux/prana-elex_1.1.0_arm64.deb
 ```
 
 Linux không dùng `.exe`; artifact phân phối là
-`release/linux-arm64/prana-elex_1.1.0_arm64.deb`. `build.bat` chỉ là alias tạm
+`installers/linux/prana-elex_1.1.0_arm64.deb`. `build.bat` chỉ là alias tạm
 cho `buildwin.bat`.
+
+Android APK (chạy trên Windows):
+
+```cmd
+buildapp.bat
+buildapp.bat -Flavor staging -BuildMode release
+```
+
+APK cuối được copy vào `installers/android/<flavor>/`. `build_mobile_apk.bat` là alias tương
+thích tạm thời của `buildapp.bat`.
 
 ## Dữ liệu và gỡ cài đặt
 
@@ -266,9 +276,10 @@ cho `buildwin.bat`.
 - Sign out chỉ xóa phiên local và trở về Login; không đóng app, không revoke thiết
   bị và không xóa dữ liệu. Layout cũ trong `accounts/<firebase_uid>` được chuyển
   về Data folder đã chọn khi tài khoản đó đăng nhập.
-- Settings Pi: `~/.config/prana-elex/settings.json`.
-- Token/device identity: OS credential store; fallback Pi
-  `~/.config/prana-elex/auth.json` mode `0600`.
+- Station Pi chạy bằng systemd dưới user `prana-elex`; dữ liệu nằm trong
+  `/var/lib/prana-elex`.
+- Station identity dùng Secret Service hoặc fallback
+  `/var/lib/prana-elex/.config/prana-elex/auth.json` mode `0600`.
 - Cloud: `customers/{uid}/{yyyy}/{mm}/{dd}/{session_id}/{request_id}.wav|json`.
 
 Cloud lifecycle xóa object sau 14 ngày. Ứng dụng không tự xóa WAV local theo
@@ -277,9 +288,9 @@ retention cloud. `apt remove` giữ settings, token và dữ liệu người dù
 ## Kiểm thử
 
 ```powershell
-$env:PYTHONPATH="src;."
-.venv\backend\Scripts\python.exe -m unittest discover -s tests -t . -v
-.venv\backend\Scripts\python.exe -m compileall -q src services tests
+$env:PYTHONPATH="packages/prana_core/src;apps/windows/src;apps/linux/src;."
+.venv\dev\Scripts\python.exe -m pytest tests/core tests/windows tests/linux tests/packaging
+.venv\backend\Scripts\python.exe -m pytest tests/api tests/admin
 ```
 
 Test Qt chạy bằng development environment:

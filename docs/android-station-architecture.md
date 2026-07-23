@@ -65,8 +65,8 @@ projection with a 14-day TTL and contain no audio URL.
 ## Operations
 
 - Provision and generate a Pi label:
-  `prana-station-provision --config config/profiles/raspberry-pi.toml --output ~/prana-station-label`
-- Run a station: `prana-station --config config/default.toml`
+  `prana-station-provision --config apps/linux/config/default.toml --output ~/prana-station-label`
+- Run a station: `prana-station --config apps/linux/config/default.toml`
 - Bootstrap plan defaults after deployment so `max_stations` is present.
 - Deploy Firestore Rules and Terraform TTL fields for `results`, pairings and
   station request nonces.

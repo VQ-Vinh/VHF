@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.packaging.common.validate_release import validate
+from tools.packaging.validate_release import validate
 
 
 class ReleaseValidatorTests(unittest.TestCase):
@@ -12,9 +12,9 @@ class ReleaseValidatorTests(unittest.TestCase):
         bundle = root / "PRANA_ELEX"
         for relative in (
             "PRANA_ELEX.exe",
-            "_internal/config/windows-device.toml",
-            "_internal/prana_elex/ui/resources/styles.qss",
-            "_internal/prana_elex/ui/resources/google-g.svg",
+            "_internal/config/default.toml",
+            "_internal/prana_windows/ui/resources/styles.qss",
+            "_internal/prana_windows/ui/resources/google-g.svg",
         ):
             path = bundle / relative
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -40,7 +40,7 @@ class ReleaseValidatorTests(unittest.TestCase):
     def test_placeholder_backend_config_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             bundle = self._windows_bundle(Path(temporary))
-            config = bundle / "_internal/config/windows-device.toml"
+            config = bundle / "_internal/config/default.toml"
             config.write_text(
                 '[backend]\napi_url = "https://REPLACE_WITH_PRANA_API_URL"\nfirebase_api_key = ""\ngoogle_oauth_client_id = ""\n',
                 encoding="utf-8",
