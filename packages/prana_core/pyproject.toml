@@ -1,0 +1,32 @@
+[project]
+name = "prana-elex-core"
+dynamic = ["version"]
+description = "Platform-neutral audio pipeline and station protocol for PRANA ELEX"
+requires-python = ">=3.11"
+dependencies = [
+    "soundfile>=0.12.1",
+    "numpy>=1.26.0",
+    "torch>=2.4.0; sys_platform == 'win32'",
+    "torch>=2.4,<2.9; sys_platform != 'win32'",
+    "silero-vad>=4.0",
+    "webrtcvad>=2.0.10",
+    "httpx>=0.28.0",
+    "cryptography>=44.0.0",
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.2.0",
+    "qrcode[pil]>=8.0",
+]
+
+[tool.setuptools.dynamic]
+version = {attr = "prana_core.__version__"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["prana_core*"]
+
+[tool.setuptools.package-data]
+prana_core = ["VERSION"]
+
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"

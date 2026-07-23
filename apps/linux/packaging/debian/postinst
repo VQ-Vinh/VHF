@@ -1,0 +1,16 @@
+#!/bin/sh
+set -e
+
+if ! getent group prana-elex >/dev/null; then
+    addgroup --system prana-elex
+fi
+if ! getent passwd prana-elex >/dev/null; then
+    adduser --system --ingroup prana-elex --home /var/lib/prana-elex --no-create-home prana-elex
+fi
+install -d -o prana-elex -g prana-elex -m 0750 /var/lib/prana-elex
+usermod -a -G audio prana-elex || true
+systemctl daemon-reload || true
+systemctl enable prana-station.service || true
+systemctl restart prana-station.service || true
+
+exit 0

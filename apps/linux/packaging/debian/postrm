@@ -1,0 +1,7 @@
+#!/bin/sh
+set -e
+
+systemctl daemon-reload || true
+
+# Station identity, activation data and recordings remain in /var/lib/prana-elex.
+exit 0

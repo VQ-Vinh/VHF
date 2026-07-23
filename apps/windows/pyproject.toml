@@ -1,0 +1,29 @@
+[project]
+name = "prana-elex-windows"
+dynamic = ["version"]
+description = "PRANA ELEX Windows desktop and station application"
+requires-python = ">=3.11"
+dependencies = [
+    "prana-elex-core==1.1.0",
+    "pyaudiowpatch>=0.2.12",
+    "keyring>=25.6.0",
+    "pyside6>=6.7.0",
+    "qasync>=0.27.0",
+    "qtawesome==1.4.2",
+]
+
+[project.scripts]
+prana-elex = "prana_windows.cli:main"
+prana-station = "prana_windows.station:main"
+prana-station-provision = "prana_windows.station:provision"
+
+[tool.setuptools.dynamic]
+version = {attr = "prana_windows.__version__"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["prana_windows*"]
+
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"

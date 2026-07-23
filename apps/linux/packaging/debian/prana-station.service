@@ -1,0 +1,20 @@
+[Unit]
+Description=PRANA ELEX headless audio station
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=prana-elex
+Group=prana-elex
+SupplementaryGroups=audio
+WorkingDirectory=/var/lib/prana-elex
+Environment=XDG_CONFIG_HOME=/var/lib/prana-elex/.config
+ExecStart=/usr/bin/prana-station
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

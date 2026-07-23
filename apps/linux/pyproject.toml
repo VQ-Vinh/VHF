@@ -1,0 +1,25 @@
+[project]
+name = "prana-elex-linux"
+dynamic = ["version"]
+description = "PRANA ELEX headless Raspberry Pi station"
+requires-python = ">=3.11"
+dependencies = [
+    "prana-elex-core==1.1.0",
+    "pyaudio>=0.2.14",
+    "keyring>=25.6.0",
+]
+
+[project.scripts]
+prana-station = "prana_linux.station:main"
+prana-station-provision = "prana_linux.station:provision"
+
+[tool.setuptools.dynamic]
+version = {attr = "prana_linux.__version__"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["prana_linux*"]
+
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"
