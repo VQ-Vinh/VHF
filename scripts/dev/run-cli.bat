@@ -10,6 +10,6 @@ if not exist "%ROOT%\.venv\dev\Scripts\python.exe" (
     exit /b 1
 )
 
-set "PYTHONPATH=%ROOT%\src"
-"%ROOT%\.venv\dev\Scripts\python.exe" -u -m prana_elex.app.cli %*
+set "PYTHONPATH=%ROOT%\packages\prana_core\src;%ROOT%\apps\windows\src"
+"%ROOT%\.venv\dev\Scripts\python.exe" -u -m prana_windows.cli %*
 exit /b %errorlevel%

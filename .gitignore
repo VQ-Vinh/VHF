@@ -35,8 +35,8 @@ out.txt
 /.vscode/*
 !/.vscode/launch.json
 !/.vscode/tasks.json
-!apps/prana_mobile/.vscode/
-!apps/prana_mobile/.vscode/launch.json
+!apps/android/.vscode/
+!apps/android/.vscode/launch.json
 .idea/
 *.swp
 
@@ -45,26 +45,29 @@ Thumbs.db
 .DS_Store
 
 # Build
-dist/
 build/
-release/
+dist/
+installers/*
+!installers/README.md
 *.spec
-!scripts/packaging/windows/PRANA_ELEX.spec
-!scripts/packaging/linux-arm64/PRANA_ELEX.spec
+!apps/windows/packaging/PRANA_ELEX.spec
+!apps/linux/packaging/PRANA_ELEX.spec
 *.egg-info/
 *.egg-info
-apps/prana_mobile/.dart_tool/
-apps/prana_mobile/.flutter-plugins*
-apps/prana_mobile/devtools_options.yaml
-apps/prana_mobile/android/.gradle/
-apps/prana_mobile/android/local.properties
-apps/prana_mobile/android/key.properties
-apps/prana_mobile/android/app/google-services.json
+apps/android/.dart_tool/
+apps/android/.flutter-plugins*
+apps/android/devtools_options.yaml
+apps/android/android/.gradle/
+apps/android/android/.kotlin/
+apps/android/android/build/
+apps/android/android/local.properties
+apps/android/android/key.properties
+apps/android/android/app/google-services.json
 *.jks
 *.keystore
-apps/prana_mobile/android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
-apps/prana_mobile/config/*.json
-!apps/prana_mobile/config/*.example.json
+apps/android/android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+apps/android/config/*.json
+!apps/android/config/*.example.json
 
 # Old structure (removed)
 src/vhf_processor/

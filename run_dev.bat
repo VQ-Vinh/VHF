@@ -1,3 +1,3 @@
 @echo off
-call "%~dp0scripts\dev\run-dev.bat" %*
+call "%~dp0apps\windows\run.bat" %*
 exit /b %errorlevel%

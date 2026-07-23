@@ -2,4 +2,4 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec "$ROOT/scripts/packaging/linux-arm64/build.sh" "$@"
+exec "$ROOT/apps/linux/build.sh" "$@"

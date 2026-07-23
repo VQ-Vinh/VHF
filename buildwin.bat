@@ -1,3 +1,3 @@
 @echo off
-call "%~dp0scripts\packaging\windows\build.bat" %*
+call "%~dp0apps\windows\build.bat" %*
 exit /b %errorlevel%

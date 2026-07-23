@@ -24,7 +24,8 @@ if [ ! -x "$ROOT/.venv/dev/bin/python" ]; then
 fi
 
 "$ROOT/.venv/dev/bin/python" -m pip install --upgrade pip
-"$ROOT/.venv/dev/bin/python" -m pip install -e "$ROOT"
+"$ROOT/.venv/dev/bin/python" -m pip install --no-build-isolation -e "$ROOT/packages/prana_core"
+"$ROOT/.venv/dev/bin/python" -m pip install --no-build-isolation -e "$ROOT/apps/linux"
 mkdir -p "$ROOT/VHF_Storage/audio" "$ROOT/VHF_Storage/results"
 
-echo "[OK] Setup complete. Run: ./scripts/dev/run-cli.sh"
+echo "[OK] Linux station setup complete. Run: ./apps/linux/run.sh"

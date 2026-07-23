@@ -27,12 +27,14 @@ if exist "%ROOT%\.venv\dev\Scripts\python.exe" (
 
 echo [*] Installing dependencies...
 "%ROOT%\.venv\dev\Scripts\python.exe" -m pip install --upgrade pip
-"%ROOT%\.venv\dev\Scripts\python.exe" -m pip install -e "%ROOT%"
+"%ROOT%\.venv\dev\Scripts\python.exe" -m pip install --no-build-isolation -e "%ROOT%\packages\prana_core"
+if errorlevel 1 exit /b 1
+"%ROOT%\.venv\dev\Scripts\python.exe" -m pip install --no-build-isolation -e "%ROOT%\apps\windows"
 if errorlevel 1 exit /b 1
 
 if not exist "%ROOT%\VHF_Storage\audio" mkdir "%ROOT%\VHF_Storage\audio"
 if not exist "%ROOT%\VHF_Storage\results" mkdir "%ROOT%\VHF_Storage\results"
 
 echo.
-echo [OK] Setup complete. Run: run_dev.bat
+echo [OK] Windows setup complete. Run: run_dev.bat
 pause
