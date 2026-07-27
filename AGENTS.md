@@ -4,10 +4,11 @@
 
 The repository contains a Python 3.11+ desktop/Pi client and two FastAPI services:
 
-- `src/prana_elex/` — client code (audio capture, VAD, storage, backend/auth, and Qt UI).
+- `packages/prana_core/src/prana_core/` — platform-neutral pipeline, VAD, storage, backend and station protocol.
+- `apps/windows/`, `apps/linux/`, and `apps/android/` — platform composition roots and build assets.
 - `services/prana_api/` and `services/prana_admin/` — public API and IAP-protected admin service.
-- `tests/` — suites grouped by `client/`, `api/`, `admin/`, and `packaging/`, plus shared fixtures.
-- `config/` — default and platform-specific TOML configuration; `scripts/` — setup, development, and packaging helpers.
+- `tests/` — suites grouped by `core/`, `windows/`, `linux/`, `api/`, `admin/`, and `packaging/`.
+- Platform TOML files live beside their app; shared release validators live in `tools/packaging/`.
 - `infra/terraform/` — Google Cloud infrastructure; `docs/` — architecture and operational notes.
 
 Keep new modules under the existing package boundaries and place tests in the matching subsystem directory.
@@ -22,7 +23,7 @@ Run all tests from the repository root:
 python -m pytest
 ```
 
-Build release artifacts with `buildwin.bat` on Windows or `./buildlinux` on Raspberry Pi. Packaging validation tests exercise the generated layouts; backend development can be started with `uvicorn services.prana_api.main:app --reload --port 8080` after installing that service's requirements.
+Build release artifacts with `buildwin.bat`, `./buildlinux`, or `buildapp.bat`. Packaging validation tests exercise the generated layouts; backend development can be started with `uvicorn services.prana_api.main:app --reload --port 8080` after installing that service's requirements.
 
 ## Coding Style & Naming Conventions
 
@@ -38,4 +39,4 @@ Use the established Conventional Commit style visible in history, such as `feat(
 
 ## Security & Configuration
 
-Treat `config/` values as public client configuration only. Keep Google credentials and service-account material out of the client and repository; use ADC or impersonation for backend development and environment variables for local secrets.
+Treat platform app config values as public client configuration only. Keep Google credentials and service-account material out of the client and repository; use ADC or impersonation for backend development and environment variables for local secrets.
