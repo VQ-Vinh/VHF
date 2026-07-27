@@ -30,6 +30,13 @@ logger = get_logger(__name__)
 SpeechBuffer = list[np.ndarray]
 
 
+def effective_worker_count(configured: int, profile: dict) -> int:
+    entitlement_limit = int(
+        (profile.get("entitlements") or {}).get("max_concurrency", 2)
+    )
+    return max(1, min(configured, entitlement_limit))
+
+
 class PipelineState(Enum):
     IDLE = auto()
     STARTING = auto()
@@ -133,6 +140,10 @@ class PipelineOrchestrator:
             profile = self._backend.me()
             if profile.get("status") != "active":
                 raise RuntimeError("SUBSCRIPTION_INACTIVE: Your account is waiting for activation or has expired")
+            self._num_workers = effective_worker_count(
+                self._config.general.num_workers,
+                profile,
+            )
             self._backend.ensure_device()
             self._segment_processor.backend_error = None
 
@@ -155,6 +166,7 @@ class PipelineOrchestrator:
             event_bus.emit("pipeline_started")
         except BackendApiError as e:
             logger.error("Start failed", exc_info=e)
+            self._cleanup_failed_start()
             if e.code in {"AUTH_REQUIRED", "EMAIL_NOT_VERIFIED", "SUBSCRIPTION_INACTIVE", "DEVICE_REVOKED", "DEVICE_LIMIT_REACHED", "STATION_REVOKED", "STATION_NOT_PAIRED"}:
                 event_bus.emit("access_denied", e.code, str(e))
             with self._state_lock:
@@ -163,10 +175,30 @@ class PipelineOrchestrator:
             event_bus.emit("error_occurred", str(e))
         except Exception as e:
             logger.error("Start failed", exc_info=e)
+            self._cleanup_failed_start()
             with self._state_lock:
                 self._state = PipelineState.ERROR
             event_bus.emit("state_changed", PipelineState.ERROR, str(e))
             event_bus.emit("error_occurred", str(e))
+
+    def _cleanup_failed_start(self) -> None:
+        """Release partially-created resources before exposing ERROR state."""
+        self._stop_event.set()
+        if self._recorder is not None:
+            try:
+                self._recorder.stop()
+            except Exception as exc:
+                logger.warning("Failed-start recorder cleanup failed: %s", exc)
+            self._recorder = None
+        if self._executor is not None:
+            self._executor.shutdown(wait=True)
+            self._executor = None
+        self._worker_futures.clear()
+        self._job_queue = queue.Queue(maxsize=32)
+        try:
+            self._backend.close()
+        except Exception as exc:
+            logger.warning("Failed-start backend cleanup failed: %s", exc)
 
     # ── Stop ────────────────────────────────────────────────────────
     def stop(self) -> None:
@@ -391,6 +423,7 @@ class PipelineOrchestrator:
     def get_status(self) -> dict:
         with self._state_lock:
             running = self._state in (PipelineState.RUNNING, PipelineState.STARTING)
+        retry_status = self._segment_processor.retry_status
         return {
             "running": running,
             "session_id": self._session.session_id,
@@ -403,6 +436,7 @@ class PipelineOrchestrator:
             "backend_ready": self._backend.ready,
             "backend_error": self._segment_processor.backend_error,
             "backend_last_request_ok": self._segment_processor.last_backend_ok,
+            **retry_status,
         }
 
     def get_account(self) -> dict:

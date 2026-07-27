@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import threading
 from typing import Callable
 
 import numpy as np
@@ -14,10 +13,10 @@ logger = get_logger(__name__)
 
 
 class WASAPIBackend(AudioBackend):
-    _pa = None
-    _pa_lock = threading.Lock()
+    _loopback_identity_by_index: dict[int, tuple[str, int, int]] = {}
 
     def __init__(self):
+        self._pa = None
         self._stream = None
         self._running = False
         self._sample_rate = 0
@@ -30,57 +29,21 @@ class WASAPIBackend(AudioBackend):
     def sample_rate(self) -> int:
         return self._sample_rate
 
-    @classmethod
-    def _get_pa(cls):
-        if cls._pa is None:
-            with cls._pa_lock:
-                if cls._pa is None:
-                    import pyaudiowpatch as paw
-                    cls._pa = paw.PyAudio()
-        return cls._pa
+    @staticmethod
+    def _new_pa():
+        import pyaudiowpatch as paw
+
+        return paw.PyAudio()
 
     def open_stream(self, config: AudioConfig, callback: Callable[[np.ndarray], None]) -> None:
         import pyaudiowpatch as paw
 
-        pa = self._get_pa()
-        mode = config.capture_mode
-        device_info = None
-
-        if mode == "loopback":
-            device_info = self._find_loopback_device(pa, config.device_index)
-            if device_info is None:
-                raise AudioDeviceNotFoundError(
-                    "No WASAPI loopback device found. "
-                    "Try capture_mode = 'device' or select a loopback device."
-                )
-
-        if device_info is None:
-            device_info = self._resolve_device(config, pa)
-
-        dev_index = device_info["index"]
-        dev_name = device_info["name"]
-        dev_sr = int(device_info["defaultSampleRate"])
-
-        sr = dev_sr
-        channels = min(config.channels, device_info["maxInputChannels"])
-        if channels < 1:
-            channels = device_info["maxInputChannels"]
-
-        frames_per_buffer = config.frame_size
-
-        if config.dtype != "int16":
-            logger.warning(f"Only int16 capture supported, got '{config.dtype}'. Falling back to int16.")
-
-        logger.info(
-            "Starting audio capture",
-            extra={
-                "device": dev_name,
-                "sample_rate": sr,
-                "channels": channels,
-                "frame_size": frames_per_buffer,
-                "capture_mode": mode,
-            },
-        )
+        # PortAudio/WASAPI instances are thread-affine on some Windows audio
+        # drivers. They can also conflict when a discovery instance remains
+        # alive while capture starts, so capability scans always terminate
+        # their own instance before the pipeline creates this one.
+        pa = paw.PyAudio()
+        self._pa = pa
 
         def pa_callback(in_data, frame_count, time_info, status):
             try:
@@ -96,6 +59,50 @@ class WASAPIBackend(AudioBackend):
             return (None, paw.paContinue)
 
         try:
+            mode = config.capture_mode
+            device_info = None
+            if mode == "loopback":
+                expected = type(self)._loopback_identity_by_index.get(
+                    config.device_index
+                )
+                device_info = self._find_loopback_device(
+                    pa,
+                    config.device_index,
+                    expected_identity=expected,
+                )
+                if device_info is None:
+                    raise AudioDeviceNotFoundError(
+                        "No WASAPI loopback device found. "
+                        "Try capture_mode = 'device' or select a loopback device."
+                    )
+
+            if device_info is None:
+                device_info = self._resolve_device(config, pa)
+
+            dev_index = device_info["index"]
+            dev_name = device_info["name"]
+            sr = int(device_info["defaultSampleRate"])
+            channels = min(config.channels, device_info["maxInputChannels"])
+            if channels < 1:
+                channels = device_info["maxInputChannels"]
+            frames_per_buffer = config.frame_size
+
+            if config.dtype != "int16":
+                logger.warning(
+                    "Only int16 capture supported, got '%s'. Falling back to int16.",
+                    config.dtype,
+                )
+
+            logger.info(
+                "Starting audio capture",
+                extra={
+                    "device": dev_name,
+                    "sample_rate": sr,
+                    "channels": channels,
+                    "frame_size": frames_per_buffer,
+                    "capture_mode": mode,
+                },
+            )
             self._stream = pa.open(
                 format=paw.paInt16,
                 channels=channels,
@@ -105,10 +112,15 @@ class WASAPIBackend(AudioBackend):
                 frames_per_buffer=frames_per_buffer,
                 stream_callback=pa_callback,
             )
-            self._stream.start_stream()
             self._running = True
             self._sample_rate = sr
+        except AudioDeviceNotFoundError:
+            pa.terminate()
+            self._pa = None
+            raise
         except Exception as e:
+            pa.terminate()
+            self._pa = None
             raise AudioStreamError(f"Failed to open audio stream: {e}") from e
 
     def close_stream(self) -> None:
@@ -121,6 +133,12 @@ class WASAPIBackend(AudioBackend):
             except Exception as e:
                 logger.warning("Error closing audio stream", exc_info=e)
             self._stream = None
+        if self._pa is not None:
+            try:
+                self._pa.terminate()
+            except Exception as e:
+                logger.warning("Error terminating audio backend", exc_info=e)
+            self._pa = None
         logger.info("Audio capture stopped")
 
     @property
@@ -134,7 +152,20 @@ class WASAPIBackend(AudioBackend):
             and "loopback" in str(info.get("name", "")).lower()
         )
 
-    def _find_loopback_device(self, pa, device_index: int = -1) -> dict | None:
+    @staticmethod
+    def _device_identity(info: dict) -> tuple[str, int, int]:
+        return (
+            str(info.get("name", "")),
+            int(info.get("maxInputChannels", 0) or 0),
+            int(info.get("defaultSampleRate", 0) or 0),
+        )
+
+    def _find_loopback_device(
+        self,
+        pa,
+        device_index: int = -1,
+        expected_identity: tuple[str, int, int] | None = None,
+    ) -> dict | None:
         if device_index >= 0:
             try:
                 info = pa.get_device_info_by_index(device_index)
@@ -143,17 +174,42 @@ class WASAPIBackend(AudioBackend):
                     f"Loopback device index {device_index} not found: {e}"
                 ) from e
 
+            if self._is_loopback_device(info) and (
+                expected_identity is None
+                or self._device_identity(info) == expected_identity
+            ):
+                logger.info(
+                    "Using selected loopback device",
+                    extra={"device": info["name"], "device_index": device_index},
+                )
+                return info
+
+            if expected_identity is not None:
+                for i in range(pa.get_device_count()):
+                    candidate = pa.get_device_info_by_index(i)
+                    if (
+                        self._is_loopback_device(candidate)
+                        and self._device_identity(candidate) == expected_identity
+                    ):
+                        logger.info(
+                            "Resolved shifted loopback device index",
+                            extra={
+                                "device": candidate["name"],
+                                "old_device_index": device_index,
+                                "device_index": candidate["index"],
+                            },
+                        )
+                        return candidate
+
             if not self._is_loopback_device(info):
                 raise AudioDeviceNotFoundError(
                     f"Device [{device_index}] {info.get('name', 'Unknown')} "
                     "is not a WASAPI loopback input"
                 )
-
-            logger.info(
-                "Using selected loopback device",
-                extra={"device": info["name"], "device_index": device_index},
+            raise AudioDeviceNotFoundError(
+                f"Device [{device_index}] {info.get('name', 'Unknown')} "
+                "no longer matches the selected WASAPI loopback device"
             )
-            return info
 
         count = pa.get_device_count()
         for i in range(count):
@@ -196,11 +252,9 @@ class WASAPIBackend(AudioBackend):
 
         raise AudioDeviceNotFoundError("No input device found")
 
-    @staticmethod
-    def list_devices() -> list[dict]:
-        import pyaudiowpatch as paw
-
-        pa = paw.PyAudio()
+    @classmethod
+    def list_devices(cls) -> list[dict]:
+        pa = cls._new_pa()
         try:
             count = pa.get_device_count()
             devices = []
@@ -221,21 +275,26 @@ class WASAPIBackend(AudioBackend):
         finally:
             pa.terminate()
 
-    @staticmethod
-    def list_loopback_devices() -> list[dict]:
-        import pyaudiowpatch as paw
-
-        pa = paw.PyAudio()
+    @classmethod
+    def list_loopback_devices(cls) -> list[dict]:
+        pa = cls._new_pa()
         try:
             devices = []
+            identities = {}
             for i in range(pa.get_device_count()):
                 info = pa.get_device_info_by_index(i)
-                if "loopback" in info["name"].lower():
+                if cls._is_loopback_device(info):
+                    identities[i] = cls._device_identity(info)
+                    host_api = pa.get_host_api_info_by_index(info["hostApi"])
                     devices.append({
                         "index": i,
                         "name": info["name"],
+                        "inputs": info["maxInputChannels"],
+                        "outputs": info["maxOutputChannels"],
                         "sr": int(info["defaultSampleRate"]),
+                        "host_api": host_api["name"],
                     })
+            cls._loopback_identity_by_index = identities
             return devices
         finally:
             pa.terminate()

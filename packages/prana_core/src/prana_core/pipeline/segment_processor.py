@@ -32,6 +32,14 @@ ACCESS_ERROR_CODES = {
     "STATION_NOT_PAIRED",
 }
 QUOTA_ERROR_CODES = {"DAILY_QUOTA_EXCEEDED", "MONTHLY_QUOTA_EXCEEDED"}
+TRANSIENT_ERROR_CODES = {
+    "NETWORK_ERROR",
+    "REQUEST_IN_PROGRESS",
+    "RATE_LIMITED",
+    "SERVICE_BUSY",
+    "INTERNAL_ERROR",
+}
+RETRY_DELAYS_SECONDS = (2.0, 4.0, 8.0)
 
 
 @dataclass
@@ -53,6 +61,91 @@ class SegmentProcessor:
         self.backend_error: str | None = None
         self.last_backend_ok: bool | None = None
         self._failed_audio: dict[tuple[str, int], Path] = {}
+        self._status_lock = threading.Lock()
+        self._retrying: dict[tuple[str, int], dict] = {}
+
+    @property
+    def retry_status(self) -> dict:
+        with self._status_lock:
+            if not self._retrying:
+                return {
+                    "retrying": False,
+                    "retry_code": None,
+                    "retry_attempt": 0,
+                }
+            status = next(reversed(self._retrying.values()))
+            return {"retrying": True, **status}
+
+    @staticmethod
+    def _is_transient_error(error: BackendApiError) -> bool:
+        return (
+            error.code in TRANSIENT_ERROR_CODES
+            or error.status >= 500
+        )
+
+    @staticmethod
+    def _retry_delay(error: BackendApiError, retry_index: int) -> float:
+        fallback = RETRY_DELAYS_SECONDS[retry_index]
+        try:
+            retry_after = float(error.detail.get("retry_after", 0))
+        except (TypeError, ValueError):
+            retry_after = 0
+        return min(30.0, max(fallback, retry_after))
+
+    def _process_with_retry(
+        self,
+        audio_path: Path,
+        session_id: str,
+        sequence: int,
+        *,
+        audio_bytes: bytes | None = None,
+    ) -> ProcessingResult:
+        key = (session_id, sequence)
+        for retry_index in range(len(RETRY_DELAYS_SECONDS) + 1):
+            try:
+                result = self._backend.process_audio(
+                    audio_path,
+                    session_id,
+                    sequence,
+                    self._config.translation.target_language,
+                    audio_bytes=audio_bytes,
+                )
+                with self._status_lock:
+                    self._retrying.pop(key, None)
+                    self.backend_error = None
+                    self.last_backend_ok = True
+                return result
+            except BackendApiError as exc:
+                if (
+                    retry_index >= len(RETRY_DELAYS_SECONDS)
+                    or not self._is_transient_error(exc)
+                ):
+                    with self._status_lock:
+                        self._retrying.pop(key, None)
+                        self.backend_error = f"{exc.code}: {exc}"
+                        self.last_backend_ok = False
+                    raise
+                attempt = retry_index + 1
+                delay = self._retry_delay(exc, retry_index)
+                with self._status_lock:
+                    self._retrying.pop(key, None)
+                    self._retrying[key] = {
+                        "retry_code": exc.code,
+                        "retry_attempt": attempt,
+                    }
+                logger.warning(
+                    "Transient backend error; retrying segment",
+                    extra={
+                        "session": session_id,
+                        "sequence": sequence,
+                        "error": exc.code,
+                        "retry_attempt": attempt,
+                        "retry_delay_seconds": delay,
+                    },
+                )
+                time.sleep(delay)
+
+        raise AssertionError("unreachable")
 
     def process(self, job: SegmentJob) -> ProcessingResult | None:
         tracker = LatencyTracker()
@@ -82,19 +175,14 @@ class SegmentProcessor:
 
         tracker.mark("backend_start")
         try:
-            result = self._backend.process_audio(
+            result = self._process_with_retry(
                 audio_path,
                 sid,
                 seq,
-                self._config.translation.target_language,
                 audio_bytes=buffer.getvalue(),
             )
-            self.last_backend_ok = True
-            self.backend_error = None
             self._failed_audio.pop((sid, seq), None)
         except BackendApiError as exc:
-            self.last_backend_ok = False
-            self.backend_error = f"{exc.code}: {exc}"
             self._emit_access_error(exc)
             self._emit_quota_error(exc)
             result = ProcessingResult(
@@ -201,20 +289,15 @@ class SegmentProcessor:
 
     def _retry_failed(self, audio_path: Path, session_id: str, sequence: int) -> None:
         try:
-            result = self._backend.process_audio(
+            result = self._process_with_retry(
                 audio_path,
                 session_id,
                 sequence,
-                self._config.translation.target_language,
             )
             self._storage.save_result(result)
             self._failed_audio.pop((session_id, sequence), None)
-            self.last_backend_ok = True
-            self.backend_error = None
             self._publish_result(result)
         except BackendApiError as exc:
-            self.last_backend_ok = False
-            self.backend_error = f"{exc.code}: {exc}"
             self._emit_access_error(exc)
             self._emit_quota_error(exc)
             event_bus.emit("error_occurred", self.backend_error)
@@ -271,7 +354,14 @@ class SegmentProcessor:
             else:
                 lines.append(f"  LATENCY: {result.latency_ms:.0f}ms")
         lines.append(f"{separator}\n")
-        sys.stdout.write("\n".join(lines))
+        output = "\n".join(lines)
+        try:
+            sys.stdout.write(output)
+        except UnicodeEncodeError:
+            encoding = getattr(sys.stdout, "encoding", None) or "ascii"
+            sys.stdout.write(
+                output.encode(encoding, errors="replace").decode(encoding)
+            )
         sys.stdout.flush()
 
 

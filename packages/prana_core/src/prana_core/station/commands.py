@@ -7,7 +7,7 @@ from typing import Callable
 
 from prana_core.audio.base import AudioBackend
 from prana_core.backend.credential_store import CredentialStore
-from prana_core.common.logger import setup_logger
+from prana_core.common.logger import configure_utf8_stdio, setup_logger
 from prana_core.config.schema import load_config
 from prana_core.station.client import StationApiClient
 from prana_core.station.identity import StationIdentity
@@ -41,6 +41,7 @@ def run_station(
     store: CredentialStore,
     audio_backend_factory: Callable[[], AudioBackend],
 ) -> None:
+    configure_utf8_stdio()
     config, client = create_station_client(config_path, data_dir, store)
     setup_logger(level=config.general.log_level, console_level="INFO")
     print(f"PRANA ELEX Station {client.identity.id}")

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import io
 import queue
+import sys
 import threading
 import unittest
 from types import SimpleNamespace
@@ -14,7 +16,12 @@ try:
         split_audio_buffer,
         trim_trailing_silence,
     )
-    from prana_core.pipeline.orchestrator import PipelineOrchestrator
+    from prana_core.pipeline.orchestrator import (
+        PipelineOrchestrator,
+        effective_worker_count,
+    )
+    from prana_core.backend.client import BackendApiError
+    from prana_core.pipeline.models import ProcessingResult
     from prana_core.pipeline.segment_processor import SegmentJob, SegmentProcessor
     from prana_core.vad.base import VADState
 
@@ -139,6 +146,118 @@ class PipelineStructureTests(unittest.TestCase):
 
         self.assertIsNot(orchestrator._job_queue, stale_queue)
         self.assertTrue(orchestrator._job_queue.empty())
+
+    def test_worker_count_honors_plan_concurrency(self) -> None:
+        self.assertEqual(
+            effective_worker_count(
+                4,
+                {"entitlements": {"max_concurrency": 2}},
+            ),
+            2,
+        )
+        self.assertEqual(effective_worker_count(4, {}), 2)
+
+    def test_transient_backend_failure_retries_with_backoff(self) -> None:
+        class Backend:
+            calls = 0
+
+            def process_audio(self, *_args, **_kwargs):
+                self.calls += 1
+                if self.calls < 3:
+                    raise BackendApiError(
+                        "SERVICE_BUSY",
+                        "busy",
+                        status=503,
+                        detail={"retry_after": 3},
+                    )
+                return ProcessingResult(
+                    session_id="session",
+                    sequence=1,
+                    audio_file="segment.wav",
+                )
+
+        processor = SegmentProcessor.__new__(SegmentProcessor)
+        processor._backend = Backend()
+        processor._config = SimpleNamespace(
+            translation=SimpleNamespace(target_language="vi")
+        )
+        processor.backend_error = "old error"
+        processor.last_backend_ok = False
+        processor._status_lock = threading.Lock()
+        processor._retrying = {}
+
+        with patch(
+            "prana_core.pipeline.segment_processor.time.sleep"
+        ) as sleep:
+            result = processor._process_with_retry(
+                SimpleNamespace(),
+                "session",
+                1,
+                audio_bytes=b"wav",
+            )
+
+        self.assertEqual(result.sequence, 1)
+        self.assertEqual(processor._backend.calls, 3)
+        self.assertEqual(
+            [call.args[0] for call in sleep.call_args_list],
+            [3.0, 4.0],
+        )
+        self.assertFalse(processor.retry_status["retrying"])
+        self.assertIsNone(processor.backend_error)
+
+    def test_non_transient_backend_failure_is_not_retried(self) -> None:
+        class Backend:
+            calls = 0
+
+            def process_audio(self, *_args, **_kwargs):
+                self.calls += 1
+                raise BackendApiError(
+                    "SUBSCRIPTION_INACTIVE",
+                    "inactive",
+                    status=403,
+                )
+
+        processor = SegmentProcessor.__new__(SegmentProcessor)
+        processor._backend = Backend()
+        processor._config = SimpleNamespace(
+            translation=SimpleNamespace(target_language="vi")
+        )
+        processor.backend_error = None
+        processor.last_backend_ok = None
+        processor._status_lock = threading.Lock()
+        processor._retrying = {}
+
+        with patch(
+            "prana_core.pipeline.segment_processor.time.sleep"
+        ) as sleep:
+            with self.assertRaises(BackendApiError):
+                processor._process_with_retry(
+                    SimpleNamespace(),
+                    "session",
+                    1,
+                )
+
+        sleep.assert_not_called()
+        self.assertEqual(processor._backend.calls, 1)
+
+    def test_print_result_never_fails_on_vietnamese_console_text(self) -> None:
+        result = ProcessingResult(
+            session_id="session",
+            sequence=1,
+            audio_file="segment.wav",
+            transcript_restored="Xin chào",
+            translation="Máy chủ đang bận",
+        )
+        raw = io.BytesIO()
+        console = io.TextIOWrapper(raw, encoding="cp1252", errors="strict")
+
+        with patch.object(sys, "stdout", console):
+            SegmentProcessor.print_result(result)
+
+        console.flush()
+        output = raw.getvalue().decode("cp1252")
+        console.detach()
+        self.assertIn("TRN:", output)
 
 
 if __name__ == "__main__":

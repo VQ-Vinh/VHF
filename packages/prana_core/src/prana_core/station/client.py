@@ -33,6 +33,10 @@ class StationApiClient:
     ):
         self.api_url = api_url.rstrip("/")
         self.timeout = timeout_seconds
+        # Signed station endpoints perform multiple Firestore operations
+        # (registry lookup, replay protection and projection update). Staging
+        # can legitimately exceed the old fixed 20-second timeout.
+        self.control_timeout = min(60.0, max(30.0, timeout_seconds))
         self.identity = identity
 
     @property
@@ -113,7 +117,7 @@ class StationApiClient:
             response = httpx.get(
                 f"{self.api_url}{path}",
                 headers=self._signed_headers("GET", path),
-                timeout=20,
+                timeout=self.control_timeout,
             )
         except httpx.RequestError as exc:
             raise BackendApiError("NETWORK_ERROR", "Cannot reach PRANA API") from exc
@@ -127,14 +131,42 @@ class StationApiClient:
                 f"{self.api_url}{path}",
                 json=payload,
                 headers=self._signed_headers("POST", path, payload),
-                timeout=20,
+                timeout=self.control_timeout,
             )
         except httpx.RequestError as exc:
             raise BackendApiError("NETWORK_ERROR", "Cannot reach PRANA API") from exc
         self._raise(response)
 
+    def publish_capabilities(self, payload: dict) -> None:
+        path = f"/v1/stations/{self.identity.id}/capabilities"
+        try:
+            response = httpx.post(
+                f"{self.api_url}{path}",
+                json=payload,
+                headers=self._signed_headers("POST", path, payload),
+                timeout=self.control_timeout,
+            )
+        except httpx.RequestError as exc:
+            raise BackendApiError(
+                "NETWORK_ERROR", "Cannot publish station capabilities"
+            ) from exc
+        self._raise(response)
+
     def me(self) -> dict:
-        return {"status": "active", "station_id": self.identity.id}
+        path = f"/v1/stations/{self.identity.id}/profile"
+        try:
+            response = httpx.get(
+                f"{self.api_url}{path}",
+                headers=self._signed_headers("GET", path),
+                timeout=self.control_timeout,
+            )
+        except httpx.RequestError as exc:
+            raise BackendApiError(
+                "NETWORK_ERROR",
+                "Cannot reach PRANA API",
+            ) from exc
+        self._raise(response)
+        return response.json()
 
     def ensure_device(self) -> StationIdentity:
         return self.identity

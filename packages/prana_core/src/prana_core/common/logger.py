@@ -5,6 +5,17 @@ import sys
 from pathlib import Path
 
 
+def configure_utf8_stdio() -> None:
+    """Prefer UTF-8 for redirected Station output without assuming a TTY."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (OSError, ValueError):
+                pass
+
+
 def setup_logger(
     name: str = "prana_core",
     level: str = "INFO",
