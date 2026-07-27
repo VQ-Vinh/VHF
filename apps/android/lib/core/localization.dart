@@ -100,14 +100,19 @@ abstract final class AppText {
       'device_scan_unchanged': 'Đã quét xong, danh sách không thay đổi.',
       'device_scan_timeout':
           'Station chưa phản hồi kết quả quét. Hãy kiểm tra kết nối.',
-      'auto_start_capture': 'Tự bắt đầu thu',
-      'auto_start_capture_help': 'Tự bật capture sau khi Station khởi động.',
+      'audio_source': 'Nguồn thu',
+      'station_information': 'Thông tin Station',
       'storage_path': 'Thư mục lưu trên Station',
       'active_capture': 'Cấu hình đang hoạt động',
       'last_device_scan': 'Lần quét thiết bị gần nhất',
       'capabilities_unavailable':
           'Station chưa gửi danh sách thiết bị âm thanh.',
       'save': 'Lưu thay đổi',
+      'saving_changes': 'Đang lưu…',
+      'applying_changes': 'Đang áp dụng…',
+      'settings_sync_delayed':
+          'Đã lưu thay đổi nhưng dữ liệu realtime chưa đồng bộ. '
+          'Ứng dụng sẽ tiếp tục chờ để tránh gửi lệnh trùng.',
       'history_search': 'Tìm nội dung hoặc bản dịch',
       'clear_view': 'Xóa khỏi màn hình',
       'forgot_password': 'Quên mật khẩu',
@@ -131,8 +136,7 @@ abstract final class AppText {
       'error_api_unreachable':
           'Không thể truy cập PRANA API. Kiểm tra mạng và địa chỉ máy chủ.',
       'error_request_failed': 'Không thể thực hiện yêu cầu. Hãy thử lại.',
-      'processing_retrying':
-          'Máy chủ đang bận, đang thử lại ({attempt}/3)…',
+      'processing_retrying': 'Máy chủ đang bận, đang thử lại ({attempt}/3)…',
     },
     'en': {
       'start': 'Start',
@@ -206,15 +210,19 @@ abstract final class AppText {
       'device_scan_unchanged': 'Scan complete. No device changes found.',
       'device_scan_timeout':
           'The Station did not return scan results. Check its connection.',
-      'auto_start_capture': 'Start capture automatically',
-      'auto_start_capture_help':
-          'Start capture when the Station process boots.',
+      'audio_source': 'Audio source',
+      'station_information': 'Station information',
       'storage_path': 'Station storage path',
       'active_capture': 'Active capture configuration',
       'last_device_scan': 'Last device scan',
       'capabilities_unavailable':
           'The Station has not reported audio capabilities.',
       'save': 'Save changes',
+      'saving_changes': 'Saving…',
+      'applying_changes': 'Applying…',
+      'settings_sync_delayed':
+          'Changes were saved, but realtime data has not synchronized yet. '
+          'The app will keep waiting to avoid a duplicate command.',
       'history_search': 'Search transcripts or translations',
       'clear_view': 'Clear from view',
       'forgot_password': 'Forgot password',
@@ -238,8 +246,7 @@ abstract final class AppText {
       'error_api_unreachable':
           'PRANA API is unreachable. Check the network and server address.',
       'error_request_failed': 'The request could not be completed. Try again.',
-      'processing_retrying':
-          'The server is busy, retrying ({attempt}/3)…',
+      'processing_retrying': 'The server is busy, retrying ({attempt}/3)…',
     },
   };
 

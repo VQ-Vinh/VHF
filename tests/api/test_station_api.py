@@ -371,7 +371,6 @@ class StationApiTests(unittest.TestCase):
             json={
                 "capture_mode": "loopback",
                 "audio_device_id": "c" * 32,
-                "auto_start_capture": True,
                 "refresh_capabilities": True,
             },
         )
@@ -399,16 +398,23 @@ class StationApiTests(unittest.TestCase):
         self.assertEqual(reconciled["capture_mode"], "device")
         self.assertGreater(reconciled["generation"], changed.json()["generation"])
 
-    def test_auto_start_is_applied_once_per_boot_id(self):
+    def test_removed_auto_start_and_legacy_boot_id_have_no_effect(self):
         self.create_and_claim()
         desired_path = f"/v1/stations/{self.station_id}/desired-state"
+        registry = self.repo.station_registry[self.station_id]
+        projection = self.repo.station_projections[
+            self.identity.uid
+        ][self.station_id]
+        registry["boot_id"] = "stale-boot"
+        projection["boot_id"] = "stale-boot"
+        registry["desired_state"]["auto_start_capture"] = True
+        projection["desired_state"]["auto_start_capture"] = True
+
         changed = self.client.patch(
             desired_path,
             json={"auto_start_capture": True},
         )
-        self.assertEqual(changed.status_code, 200, changed.text)
-        self.assertFalse(changed.json()["running"])
-        self.assertEqual(changed.json()["generation"], 1)
+        self.assertEqual(changed.status_code, 422, changed.text)
 
         heartbeat_path = f"/v1/stations/{self.station_id}/heartbeat"
         heartbeat = {
@@ -432,30 +438,28 @@ class StationApiTests(unittest.TestCase):
             headers=self.signed_headers("POST", heartbeat_path, heartbeat),
         )
         self.assertEqual(first.status_code, 204, first.text)
-        projection = self.repo.station_projections[
-            self.identity.uid
-        ][self.station_id]
         self.assertTrue(projection["retrying"])
         self.assertEqual(projection["retry_code"], "SERVICE_BUSY")
         self.assertEqual(projection["retry_attempt"], 2)
-        first_desired = self.client.get(
-            desired_path,
-            headers=self.signed_headers("GET", desired_path, {}),
-        ).json()
-        self.assertTrue(first_desired["running"])
-        self.assertEqual(first_desired["generation"], 2)
+        self.assertNotIn("boot_id", projection)
 
-        second = self.client.post(
-            heartbeat_path,
-            json=heartbeat,
-            headers=self.signed_headers("POST", heartbeat_path, heartbeat),
+        cleanup = self.client.patch(
+            desired_path,
+            json={"target_language": "vi"},
         )
-        self.assertEqual(second.status_code, 204, second.text)
-        second_desired = self.client.get(
+        self.assertEqual(cleanup.status_code, 200, cleanup.text)
+        self.assertNotIn("boot_id", registry)
+        self.assertNotIn("boot_id", projection)
+        self.assertNotIn("auto_start_capture", registry["desired_state"])
+        self.assertNotIn("auto_start_capture", projection["desired_state"])
+
+        desired = self.client.get(
             desired_path,
             headers=self.signed_headers("GET", desired_path, {}),
         ).json()
-        self.assertEqual(second_desired["generation"], 2)
+        self.assertFalse(desired["running"])
+        self.assertEqual(desired["generation"], 1)
+        self.assertNotIn("auto_start_capture", desired)
 
     def test_result_listing_enforces_plan_history_and_live_limits(self):
         self.create_and_claim()

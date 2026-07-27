@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import time
-import uuid
 from typing import Callable
 from prana_core import __version__
 from prana_core.backend.client import BackendApiError
@@ -35,7 +34,6 @@ class StationRuntime:
         self.retry_generation = 0
         self._pairing_expires_at = 0.0
         self._provisioning_notice_shown = False
-        self._boot_id = uuid.uuid4().hex
         self._device_indices: dict[str, int] = {}
         self._device_modes: dict[str, str] = {}
         self._capability_hash = ""
@@ -209,7 +207,6 @@ class StationRuntime:
             "app_version": _app_version(),
             "observed_generation": self.observed_generation,
             "target_language": self.config.translation.target_language,
-            "boot_id": self._boot_id,
             "active_capture_mode": self.config.audio.capture_mode,
             "active_audio_device_id": next(
                 (

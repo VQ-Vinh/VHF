@@ -394,7 +394,10 @@ class MemoryRepository:
             data["generation"] = desired.generation + 1
             value = StationDesiredState.model_validate(data)
             registry["desired_state"] = value.model_dump()
-            self.station_projections[uid][station_id]["desired_state"] = value.model_dump()
+            registry.pop("boot_id", None)
+            projection = self.station_projections[uid][station_id]
+            projection["desired_state"] = value.model_dump()
+            projection.pop("boot_id", None)
             return value
 
     def heartbeat_station(self, station_id: str, heartbeat: StationHeartbeat) -> None:
@@ -410,7 +413,6 @@ class MemoryRepository:
                 "sequence": heartbeat.sequence,
                 "observed_generation": heartbeat.observed_generation,
                 "target_language": heartbeat.target_language,
-                "boot_id": heartbeat.boot_id,
                 "active_capture_mode": heartbeat.active_capture_mode,
                 "active_audio_device_id": heartbeat.active_audio_device_id,
                 "last_error": heartbeat.error,
@@ -419,21 +421,10 @@ class MemoryRepository:
                 "retry_attempt": heartbeat.retry_attempt,
                 "last_seen_at": now,
             }
-            if heartbeat.boot_id and heartbeat.boot_id != registry.get("boot_id"):
-                desired = StationDesiredState.model_validate(
-                    registry.get("desired_state") or {}
-                )
-                boot_running = desired.auto_start_capture
-                if desired.running != boot_running:
-                    desired = desired.model_copy(
-                        update={
-                            "running": boot_running,
-                            "generation": desired.generation + 1,
-                        }
-                    )
-                values["desired_state"] = desired.model_dump()
             registry.update(values)
-            self.station_projections[registry["owner_uid"]][station_id].update(values)
+            projection = self.station_projections[registry["owner_uid"]][station_id]
+            projection.update(values)
+            projection.pop("boot_id", None)
 
     def update_station_capabilities(
         self, station_id: str, capabilities: StationCapabilities

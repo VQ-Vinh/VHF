@@ -77,7 +77,6 @@ class PranaApi {
     String? targetLanguage,
     String? captureMode,
     String? audioDeviceId,
-    bool? autoStartCapture,
     bool refreshCapabilities = false,
     bool retry = false,
   }) async {
@@ -89,7 +88,6 @@ class PranaApi {
           if (targetLanguage != null) 'target_language': targetLanguage,
           if (captureMode != null) 'capture_mode': captureMode,
           if (audioDeviceId != null) 'audio_device_id': audioDeviceId,
-          if (autoStartCapture != null) 'auto_start_capture': autoStartCapture,
           if (refreshCapabilities) 'refresh_capabilities': true,
           if (retry) 'retry': true,
         },

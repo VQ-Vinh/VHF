@@ -238,7 +238,6 @@ class StationDesiredState(BaseModel):
     target_language: Literal["vi", "en", "zh", "ja", "ko"] = "en"
     capture_mode: Literal["device", "loopback"] = "device"
     audio_device_id: str = Field(default="", max_length=64)
-    auto_start_capture: bool = False
     capability_refresh_generation: int = Field(default=0, ge=0)
     retry_generation: int = Field(default=0, ge=0)
     generation: int = Field(default=0, ge=0)
@@ -249,7 +248,6 @@ class StationDesiredStatePatch(BaseModel):
     target_language: Literal["vi", "en", "zh", "ja", "ko"] | None = None
     capture_mode: Literal["device", "loopback"] | None = None
     audio_device_id: str | None = Field(default=None, max_length=64)
-    auto_start_capture: bool | None = None
     refresh_capabilities: bool = False
     retry: bool = False
 
@@ -278,6 +276,8 @@ class StationHeartbeat(BaseModel):
     app_version: str = Field(default="", max_length=40)
     observed_generation: int = Field(default=0, ge=0)
     target_language: Literal["vi", "en", "zh", "ja", "ko"] = "en"
+    # Kept only to verify signatures from older Station builds. It has no
+    # persistence or capture behavior and new builds no longer send it.
     boot_id: str = Field(default="", max_length=64)
     active_capture_mode: Literal["device", "loopback"] = "device"
     active_audio_device_id: str = Field(default="", max_length=64)

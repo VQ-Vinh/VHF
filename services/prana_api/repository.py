@@ -667,8 +667,13 @@ class FirestoreRepository:
                 data["capability_refresh_generation"] = desired.capability_refresh_generation + 1
             data["generation"] = desired.generation + 1
             desired = StationDesiredState.model_validate(data)
-            tx.update(registry_ref, {"desired_state": desired.model_dump(), "updated_at": firestore.SERVER_TIMESTAMP})
-            tx.set(projection_ref, {"desired_state": desired.model_dump(), "updated_at": firestore.SERVER_TIMESTAMP}, merge=True)
+            update = {
+                "desired_state": desired.model_dump(),
+                "boot_id": firestore.DELETE_FIELD,
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            }
+            tx.update(registry_ref, update)
+            tx.set(projection_ref, update, merge=True)
             return desired
 
         return run(self.db.transaction())
@@ -696,7 +701,6 @@ class FirestoreRepository:
             "app_version": heartbeat.app_version,
             "observed_generation": heartbeat.observed_generation,
             "target_language": heartbeat.target_language,
-            "boot_id": heartbeat.boot_id,
             "active_capture_mode": heartbeat.active_capture_mode,
             "active_audio_device_id": heartbeat.active_audio_device_id,
             "last_error": heartbeat.error,
@@ -707,46 +711,8 @@ class FirestoreRepository:
             "updated_at": firestore.SERVER_TIMESTAMP,
         }
 
-        # Desired state shares the registry document with station identity.
-        # Touch it only once per process boot; writing it on every heartbeat
-        # causes perpetual contention with desired-state transactions.
-        if heartbeat.boot_id and heartbeat.boot_id != registry.get("boot_id"):
-            @firestore.transactional
-            def apply_boot_policy(tx):
-                current_snap = registry_ref.get(transaction=tx)
-                if not current_snap.exists:
-                    raise api_error(
-                        403,
-                        "STATION_NOT_PAIRED",
-                        "Station has not been paired",
-                    )
-                current = current_snap.to_dict()
-                if heartbeat.boot_id == current.get("boot_id"):
-                    return None
-                desired = StationDesiredState.model_validate(
-                    current.get("desired_state") or {}
-                )
-                boot_running = desired.auto_start_capture
-                if desired.running != boot_running:
-                    desired = desired.model_copy(
-                        update={
-                            "running": boot_running,
-                            "generation": desired.generation + 1,
-                        }
-                    )
-                update = {
-                    "boot_id": heartbeat.boot_id,
-                    "desired_state": desired.model_dump(),
-                    "updated_at": firestore.SERVER_TIMESTAMP,
-                }
-                tx.set(registry_ref, update, merge=True)
-                tx.set(projection_ref, update, merge=True)
-                return True
-
-            apply_boot_policy(self.db.transaction())
-
-        # The high-frequency heartbeat belongs only in the user projection.
-        # Registry writes are intentionally avoided after boot.
+        # High-frequency heartbeat data belongs only in the user projection.
+        # Registry writes would contend with desired-state transactions.
         projection_ref.set(visible, merge=True)
 
     def update_station_capabilities(

@@ -7,7 +7,6 @@ class DesiredState {
     required this.retryGeneration,
     this.captureMode = 'device',
     this.audioDeviceId = '',
-    this.autoStartCapture = false,
     this.capabilityRefreshGeneration = 0,
     required this.generation,
   });
@@ -17,7 +16,6 @@ class DesiredState {
   final int retryGeneration;
   final String captureMode;
   final String audioDeviceId;
-  final bool autoStartCapture;
   final int capabilityRefreshGeneration;
   final int generation;
 
@@ -27,7 +25,6 @@ class DesiredState {
     retryGeneration: map['retry_generation'] as int? ?? 0,
     captureMode: map['capture_mode'] as String? ?? 'device',
     audioDeviceId: map['audio_device_id'] as String? ?? '',
-    autoStartCapture: map['auto_start_capture'] as bool? ?? false,
     capabilityRefreshGeneration:
         map['capability_refresh_generation'] as int? ?? 0,
     generation: map['generation'] as int? ?? 0,
