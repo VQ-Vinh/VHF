@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -94,7 +95,12 @@ class AdminUiTests(unittest.TestCase):
         english = _render(Request(scope), "dashboard.html", "operator@example.com", "Dashboard", "dashboard",
                           metrics={"total": 1, "active": 1, "pending": 0, "audio_minutes": 2.5},
                           attention=[], activity=[])
-        self.assertIn("Operations overview", english.body.decode())
+        english_html = english.body.decode()
+        self.assertIn("Operations overview", english_html)
+        self.assertIn(
+            'href="/static/admin.css?v=brand-blue-1"',
+            english_html,
+        )
 
         vietnamese_scope = dict(scope)
         vietnamese_scope["headers"] = [(b"cookie", b"prana_admin_locale=vi")]
@@ -102,6 +108,85 @@ class AdminUiTests(unittest.TestCase):
                              "dashboard", metrics={"total": 1, "active": 1, "pending": 0, "audio_minutes": 2.5},
                              attention=[], activity=[])
         self.assertIn("Tổng quan vận hành", vietnamese.body.decode())
+
+    def test_admin_theme_matches_android_brand_palette(self) -> None:
+        css = (
+            Path(__file__).resolve().parents[2]
+            / "services"
+            / "prana_admin"
+            / "static"
+            / "admin.css"
+        ).read_text(encoding="utf-8").lower()
+
+        expected_tokens = {
+            "--navy-900": "#0d2b4f",
+            "--canvas": "#f2f7fc",
+            "--surface": "#ffffff",
+            "--text": "#0d2b4f",
+            "--text-muted": "#607983",
+            "--border": "#d4e2e5",
+            "--border-strong": "#b9cdd2",
+            "--accent": "#123f7e",
+            "--accent-bright": "#4e8fd5",
+            "--accent-soft": "#eaf2fb",
+            "--danger": "#b12f40",
+        }
+        for token, value in expected_tokens.items():
+            self.assertIn(f"{token}: {value};", css)
+
+        for legacy_teal in ("#087f8c", "#005e68", "#35a5af"):
+            self.assertNotIn(legacy_teal, css)
+        self.assertIn(
+            "outline: 3px solid rgb(18 63 126 / 55%);",
+            css,
+        )
+
+    def test_admin_brand_and_status_colors_meet_contrast_targets(self) -> None:
+        def luminance(color: str) -> float:
+            channels = [
+                int(color[index : index + 2], 16) / 255
+                for index in (1, 3, 5)
+            ]
+            linear = [
+                value / 12.92
+                if value <= 0.04045
+                else ((value + 0.055) / 1.055) ** 2.4
+                for value in channels
+            ]
+            return (
+                0.2126 * linear[0]
+                + 0.7152 * linear[1]
+                + 0.0722 * linear[2]
+            )
+
+        def contrast(foreground: str, background: str) -> float:
+            lighter, darker = sorted(
+                (luminance(foreground), luminance(background)),
+                reverse=True,
+            )
+            return (lighter + 0.05) / (darker + 0.05)
+
+        pairs = (
+            ("#ffffff", "#123f7e"),
+            ("#0d2b4f", "#ffffff"),
+            ("#607983", "#ffffff"),
+            ("#d5e2f0", "#0d2b4f"),
+            ("#b9cde5", "#0d2b4f"),
+            ("#16704a", "#e3f4eb"),
+            ("#8a5708", "#fff2d4"),
+            ("#b12f40", "#fbeaec"),
+        )
+        for foreground, background in pairs:
+            self.assertGreaterEqual(
+                contrast(foreground, background),
+                4.5,
+                f"{foreground} on {background}",
+            )
+        self.assertGreaterEqual(
+            contrast("#7d95b8", "#ffffff"),
+            3,
+            "focus indicator on white",
+        )
 
     def test_operational_pages_render_structured_data(self) -> None:
         scope = {"type": "http", "method": "GET", "path": "/users", "query_string": b"", "headers": [],
