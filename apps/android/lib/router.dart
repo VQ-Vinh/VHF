@@ -7,6 +7,7 @@ import 'features/history/history_screen.dart';
 import 'features/live/live_screen.dart';
 import 'features/pairing/pairing_screen.dart';
 import 'features/stations/station_list_screen.dart';
+import 'features/settings/station_settings_screen.dart';
 import 'providers.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -44,6 +45,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/stations/:id/history',
         builder:
             (_, state) => HistoryScreen(stationId: state.pathParameters['id']!),
+      ),
+      GoRoute(
+        path: '/stations/:id/settings',
+        builder:
+            (_, state) =>
+                StationSettingsScreen(stationId: state.pathParameters['id']!),
       ),
       GoRoute(path: '/account', builder: (_, _) => const AccountScreen()),
     ],

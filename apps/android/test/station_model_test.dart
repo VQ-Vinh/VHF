@@ -15,6 +15,17 @@ void main() {
     expect(state.generation, 7);
   });
 
+  test('station capabilities decode the capability hash', () {
+    final capabilities = StationCapabilities.fromMap({
+      'capability_hash': 'new-hash',
+      'capture_modes': ['device'],
+      'audio_devices': <Map<String, dynamic>>[],
+      'storage_path': r'C:\PRANA',
+    });
+
+    expect(capabilities.capabilityHash, 'new-hash');
+  });
+
   test('station becomes offline after heartbeat threshold', () {
     final heartbeat = DateTime.utc(2026, 7, 22, 12);
     final station = StationModel(
@@ -42,5 +53,27 @@ void main() {
       station.isOnlineAt(heartbeat.add(const Duration(seconds: 16))),
       isFalse,
     );
+  });
+
+  test('translation results sort by time with stable tie breakers', () {
+    TranslationResult result(String id, int sequence, DateTime timestamp) =>
+        TranslationResult(
+          requestId: id,
+          sequence: sequence,
+          transcript: id,
+          translation: id,
+          language: 'en',
+          confidence: 1,
+          timestamp: timestamp,
+        );
+
+    final sameTime = DateTime.utc(2026, 7, 23, 10);
+    final values = [
+      result('new', 3, sameTime.add(const Duration(seconds: 2))),
+      result('second', 2, sameTime),
+      result('first', 1, sameTime),
+    ]..sort(compareTranslationChronologically);
+
+    expect(values.map((item) => item.requestId), ['first', 'second', 'new']);
   });
 }

@@ -4,6 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../../core/localization.dart';
+import '../../core/theme.dart';
+import '../../core/widgets.dart';
 import '../../providers.dart';
 
 enum PairingMode { label, temporary }
@@ -12,10 +15,8 @@ typedef PairingLink = ({PairingMode mode, String identifier, String code});
 
 class ActivationCodeInputFormatter extends TextInputFormatter {
   static const rawLength = 16;
-
   String _normalized(String value) =>
       value.replaceAll(RegExp(r'[^A-Za-z0-9]'), '').toUpperCase();
-
   @override
   TextEditingValue formatEditUpdate(
     TextEditingValue oldValue,
@@ -25,8 +26,9 @@ class ActivationCodeInputFormatter extends TextInputFormatter {
     final limited = raw.substring(0, raw.length.clamp(0, rawLength));
     final groups = <String>[];
     for (var start = 0; start < limited.length; start += 4) {
-      final end = (start + 4).clamp(0, limited.length);
-      groups.add(limited.substring(start, end));
+      groups.add(
+        limited.substring(start, (start + 4).clamp(0, limited.length)),
+      );
     }
     final formatted = groups.join(' ');
     return TextEditingValue(
@@ -58,7 +60,6 @@ PairingLink? parsePairingLink(Uri uri) {
 class PairingScreen extends ConsumerStatefulWidget {
   const PairingScreen({super.key, required this.initialUri});
   final Uri initialUri;
-
   @override
   ConsumerState<PairingScreen> createState() => _PairingScreenState();
 }
@@ -72,7 +73,6 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
   bool scanning = false;
   bool loading = false;
   String? error;
-
   @override
   void initState() {
     super.initState();
@@ -81,7 +81,6 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
 
   String _normalized(String value) =>
       value.replaceAll(RegExp(r'[^A-Za-z0-9]'), '').toUpperCase();
-
   bool _readUri(Uri uri) {
     final link = parsePairingLink(uri);
     if (link == null) return false;
@@ -99,7 +98,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
   Future<void> _handleBarcode(String raw) async {
     final uri = Uri.tryParse(raw);
     if (uri == null || !_readUri(uri)) {
-      setState(() => error = 'QR này không phải mã ghép PRANA ELEX.');
+      setState(() => error = AppText.of(context, 'invalid_pairing_qr'));
       return;
     }
     setState(() => scanning = false);
@@ -111,15 +110,13 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
     final normalizedActivation = _normalized(activationCode.text);
     if (mode == PairingMode.label &&
         (normalizedSetupId.length != 10 || normalizedActivation.length != 16)) {
-      setState(
-        () => error = 'Nhập Setup ID 10 ký tự và Activation Code 16 ký tự.',
-      );
+      setState(() => error = AppText.of(context, 'invalid_activation'));
       return;
     }
     if (mode == PairingMode.temporary &&
         (pairingId.text.trim().isEmpty ||
             _normalized(pairingCode.text).length != 8)) {
-      setState(() => error = 'Nhập Pairing ID và mã tạm thời 8 ký tự.');
+      setState(() => error = AppText.of(context, 'invalid_temporary_pairing'));
       return;
     }
     setState(() {
@@ -154,113 +151,143 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Ghép trạm')),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            Text(
-              'Kết nối PRANA Station',
-              style: Theme.of(context).textTheme.headlineSmall,
+  Widget build(BuildContext context) => Scaffold(
+    appBar: PranaPageHeader(
+      title: AppText.of(context, 'pair_station'),
+      subtitle: 'STATION PAIRING',
+    ),
+    body: SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          const PranaLogo.mark(size: 72),
+          const SizedBox(height: 16),
+          Text(
+            AppText.of(context, 'connect_station'),
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: PranaTheme.navy,
             ),
-            const SizedBox(height: 8),
-            Text(
-              mode == PairingMode.label
-                  ? 'Quét tem QR cố định được dán trên Raspberry Pi.'
-                  : 'Dùng mã tạm thời do Laptop hoặc station cũ tạo ra.',
-            ),
-            const SizedBox(height: 20),
-            SegmentedButton<PairingMode>(
-              segments: const [
-                ButtonSegment(
-                  value: PairingMode.label,
-                  icon: Icon(Icons.qr_code_2),
-                  label: Text('Tem thiết bị'),
-                ),
-                ButtonSegment(
-                  value: PairingMode.temporary,
-                  icon: Icon(Icons.timer_outlined),
-                  label: Text('Mã tạm thời'),
-                ),
-              ],
-              selected: {mode},
-              onSelectionChanged:
-                  loading
-                      ? null
-                      : (selection) => setState(() {
-                        mode = selection.first;
-                        error = null;
-                      }),
-            ),
-            const SizedBox(height: 20),
-            if (scanning)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(14),
-                child: SizedBox(
-                  height: 280,
-                  child: MobileScanner(
-                    onDetect: (capture) {
-                      final raw = capture.barcodes.firstOrNull?.rawValue;
-                      if (raw != null && !loading) _handleBarcode(raw);
-                    },
-                  ),
-                ),
-              )
-            else
-              FilledButton.icon(
-                onPressed:
-                    loading ? null : () => setState(() => scanning = true),
-                icon: const Icon(Icons.qr_code_scanner),
-                label: const Text('Mở camera quét QR'),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            mode == PairingMode.label
+                ? AppText.of(context, 'label_help')
+                : AppText.of(context, 'temporary_help'),
+            style: const TextStyle(color: PranaTheme.muted),
+          ),
+          const SizedBox(height: 18),
+          SegmentedButton<PairingMode>(
+            segments: [
+              ButtonSegment(
+                value: PairingMode.label,
+                icon: const Icon(Icons.qr_code_2),
+                label: Text(AppText.of(context, 'device_label')),
               ),
-            const SizedBox(height: 24),
-            if (mode == PairingMode.label) ...[
-              TextField(
-                controller: setupId,
-                textCapitalization: TextCapitalization.characters,
-                maxLength: 10,
-                decoration: const InputDecoration(labelText: 'Setup ID'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: activationCode,
-                textCapitalization: TextCapitalization.characters,
-                inputFormatters: [ActivationCodeInputFormatter()],
-                decoration: const InputDecoration(
-                  labelText: 'Activation Code',
-                  helperText: '16 ký tự, tự động chia thành 4 nhóm',
-                ),
-              ),
-            ] else ...[
-              TextField(
-                controller: pairingId,
-                decoration: const InputDecoration(labelText: 'Pairing ID'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: pairingCode,
-                textCapitalization: TextCapitalization.characters,
-                maxLength: 8,
-                decoration: const InputDecoration(labelText: 'Mã tạm thời'),
+              ButtonSegment(
+                value: PairingMode.temporary,
+                icon: const Icon(Icons.timer_outlined),
+                label: Text(AppText.of(context, 'temporary_code')),
               ),
             ],
-            if (error != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Text(
-                  error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+            selected: {mode},
+            onSelectionChanged:
+                loading
+                    ? null
+                    : (selection) => setState(() {
+                      mode = selection.first;
+                      error = null;
+                    }),
+          ),
+          const SizedBox(height: 18),
+          if (scanning)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: SizedBox(
+                height: 280,
+                child: MobileScanner(
+                  onDetect: (capture) {
+                    final raw = capture.barcodes.firstOrNull?.rawValue;
+                    if (raw != null && !loading) _handleBarcode(raw);
+                  },
                 ),
               ),
-            FilledButton(
-              onPressed: loading ? null : claim,
-              child: Text(loading ? 'Đang ghép...' : 'Ghép trạm'),
+            )
+          else
+            FilledButton.icon(
+              onPressed: loading ? null : () => setState(() => scanning = true),
+              icon: const Icon(Icons.qr_code_scanner),
+              label: Text(AppText.of(context, 'scan_qr')),
             ),
-          ],
-        ),
+          const SizedBox(height: 18),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children:
+                    mode == PairingMode.label
+                        ? [
+                          TextField(
+                            controller: setupId,
+                            textCapitalization: TextCapitalization.characters,
+                            maxLength: 10,
+                            decoration: const InputDecoration(
+                              labelText: 'Setup ID',
+                              prefixIcon: Icon(Icons.tag),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          TextField(
+                            controller: activationCode,
+                            textCapitalization: TextCapitalization.characters,
+                            inputFormatters: [ActivationCodeInputFormatter()],
+                            decoration: InputDecoration(
+                              labelText: 'Activation Code',
+                              helperText: AppText.of(
+                                context,
+                                'activation_help',
+                              ),
+                              prefixIcon: const Icon(Icons.key_outlined),
+                            ),
+                          ),
+                        ]
+                        : [
+                          TextField(
+                            controller: pairingId,
+                            decoration: const InputDecoration(
+                              labelText: 'Pairing ID',
+                              prefixIcon: Icon(Icons.tag),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          TextField(
+                            controller: pairingCode,
+                            textCapitalization: TextCapitalization.characters,
+                            maxLength: 8,
+                            decoration: InputDecoration(
+                              labelText: AppText.of(context, 'temporary_code'),
+                              prefixIcon: const Icon(Icons.timer_outlined),
+                            ),
+                          ),
+                        ],
+              ),
+            ),
+          ),
+          if (error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Text(
+                error!,
+                style: const TextStyle(color: Color(0xFFB12F40)),
+              ),
+            ),
+          const SizedBox(height: 12),
+          FilledButton(
+            onPressed: loading ? null : claim,
+            child: Text(loading ? '...' : AppText.of(context, 'pair_station')),
+          ),
+        ],
       ),
-    );
-  }
+    ),
+  );
 }

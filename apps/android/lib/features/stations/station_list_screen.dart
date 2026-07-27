@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/localization.dart';
+import '../../core/theme.dart';
+import '../../core/widgets.dart';
 import '../../models/station.dart';
 import '../../providers.dart';
 
@@ -13,11 +16,12 @@ class StationListScreen extends ConsumerWidget {
     final stations = ref.watch(stationsProvider);
     final now = ref.watch(stationClockProvider).value ?? DateTime.now();
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Trạm của tôi'),
+      appBar: PranaPageHeader(
+        title: AppText.of(context, 'stations'),
+        subtitle: 'PRANA ELEX CONTROL',
         actions: [
           IconButton(
-            tooltip: 'Tài khoản',
+            tooltip: AppText.of(context, 'account'),
             onPressed: () => context.push('/account'),
             icon: const Icon(Icons.person_outline),
           ),
@@ -26,34 +30,35 @@ class StationListScreen extends ConsumerWidget {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => context.push('/pair'),
         icon: const Icon(Icons.qr_code_scanner),
-        label: const Text('Ghép trạm'),
+        label: Text(AppText.of(context, 'pair_station')),
       ),
       body: stations.when(
         loading: () => const _StationSkeleton(),
         error:
-            (error, _) => _Message(
+            (error, _) => EmptyState(
               icon: Icons.cloud_off,
-              text: 'Không tải được trạm\n$error',
+              title: AppText.of(context, 'load_station_error'),
+              subtitle: '$error',
             ),
         data:
             (items) =>
                 items.isEmpty
-                    ? const _Message(
+                    ? EmptyState(
                       icon: Icons.add_link,
-                      text:
-                          'Chưa có trạm. Quét tem QR trên thiết bị hoặc dùng mã tạm thời.',
+                      title: AppText.of(context, 'no_station'),
+                      subtitle: AppText.of(context, 'no_station_body'),
                     )
                     : LayoutBuilder(
                       builder: (context, constraints) {
-                        final columns = constraints.maxWidth >= 700 ? 2 : 1;
+                        final columns = constraints.maxWidth >= 720 ? 2 : 1;
                         return GridView.builder(
-                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+                          padding: const EdgeInsets.fromLTRB(16, 18, 16, 104),
                           gridDelegate:
                               SliverGridDelegateWithFixedCrossAxisCount(
                                 crossAxisCount: columns,
-                                childAspectRatio: columns == 1 ? 2.2 : 1.8,
-                                crossAxisSpacing: 12,
-                                mainAxisSpacing: 12,
+                                childAspectRatio: columns == 1 ? 2.35 : 1.75,
+                                crossAxisSpacing: 14,
+                                mainAxisSpacing: 14,
                               ),
                           itemCount: items.length,
                           itemBuilder:
@@ -97,7 +102,7 @@ class _StationCard extends StatelessWidget {
     final online = station.isOnlineAt(now);
     return Card(
       child: InkWell(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.all(18),
@@ -106,35 +111,68 @@ class _StationCard extends StatelessWidget {
             children: [
               Row(
                 children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: PranaTheme.brandBlueSoft,
+                      borderRadius: BorderRadius.circular(11),
+                    ),
+                    child: const Icon(Icons.radio, color: PranaTheme.brandBlue),
+                  ),
+                  const SizedBox(width: 12),
                   Expanded(
-                    child: Text(
-                      station.name,
-                      style: Theme.of(context).textTheme.titleLarge,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          station.name,
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          station.platform,
+                          style: const TextStyle(color: Color(0xFF607983)),
+                        ),
+                      ],
                     ),
                   ),
-                  Icon(
-                    online ? Icons.cloud_done : Icons.cloud_off,
-                    color:
-                        online
-                            ? Theme.of(context).colorScheme.primary
-                            : Theme.of(context).colorScheme.outline,
+                  StatusPill(
+                    label: online ? 'Online' : 'Offline',
+                    online: online,
                   ),
                 ],
               ),
-              const SizedBox(height: 4),
-              Text(
-                station.platform,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
               const Spacer(),
-              Text(
-                online ? station.captureState.toUpperCase() : 'OFFLINE',
-                style: Theme.of(context).textTheme.labelLarge,
+              Row(
+                children: [
+                  Icon(
+                    online ? Icons.graphic_eq : Icons.cloud_off,
+                    size: 18,
+                    color:
+                        online ? PranaTheme.brandBlue : const Color(0xFF607983),
+                  ),
+                  const SizedBox(width: 7),
+                  Text(
+                    online ? station.captureState.toUpperCase() : 'OFFLINE',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF355762),
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    'RX ${station.sequence}',
+                    style: const TextStyle(color: Color(0xFF607983)),
+                  ),
+                ],
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
               Text(
-                'Phiên ${station.sessionId.isEmpty ? "chưa bắt đầu" : station.sessionId}  |  RX ${station.sequence}',
+                '${AppText.of(context, 'session')} ${station.sessionId.isEmpty ? AppText.of(context, 'not_started') : station.sessionId}',
+                style: const TextStyle(color: Color(0xFF607983)),
               ),
             ],
           ),
@@ -144,32 +182,12 @@ class _StationCard extends StatelessWidget {
   }
 }
 
-class _Message extends StatelessWidget {
-  const _Message({required this.icon, required this.text});
-  final IconData icon;
-  final String text;
-  @override
-  Widget build(BuildContext context) => Center(
-    child: Padding(
-      padding: const EdgeInsets.all(32),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 48),
-          const SizedBox(height: 16),
-          Text(text, textAlign: TextAlign.center),
-        ],
-      ),
-    ),
-  );
-}
-
 class _StationSkeleton extends StatelessWidget {
   const _StationSkeleton();
   @override
   Widget build(BuildContext context) => ListView.builder(
     padding: const EdgeInsets.all(16),
     itemCount: 3,
-    itemBuilder: (_, _) => const Card(child: SizedBox(height: 128)),
+    itemBuilder: (_, _) => const Card(child: SizedBox(height: 142)),
   );
 }

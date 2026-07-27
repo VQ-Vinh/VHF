@@ -1,10 +1,13 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'models/station.dart';
+import 'models/plan_entitlements.dart';
 import 'services/prana_api.dart';
+import 'core/localization.dart';
 
 final authProvider = Provider<FirebaseAuth>((ref) => FirebaseAuth.instance);
 final firestoreProvider = Provider<FirebaseFirestore>(
@@ -19,6 +22,10 @@ final secureStorageProvider = Provider<FlutterSecureStorage>(
   ),
 );
 
+final appLocaleProvider = ChangeNotifierProvider<AppLocaleController>(
+  (ref) => AppLocaleController(ref.watch(secureStorageProvider)),
+);
+
 final authStateProvider = StreamProvider<User?>((ref) {
   return ref.watch(authProvider).authStateChanges();
 });
@@ -28,6 +35,14 @@ final stationClockProvider = StreamProvider<DateTime>((ref) {
     const Duration(seconds: 1),
     (_) => DateTime.now(),
   );
+});
+
+final apiHealthProvider = StreamProvider<bool>((ref) async* {
+  final api = ref.watch(apiProvider);
+  while (true) {
+    yield await api.health();
+    await Future<void>.delayed(const Duration(seconds: 5));
+  }
 });
 
 final stationsProvider = StreamProvider<List<StationModel>>((ref) {
@@ -69,32 +84,35 @@ final liveResultsProvider = StreamProvider.family<
 >((ref, key) {
   final user = ref.watch(authStateProvider).value;
   if (user == null || key.sessionId.isEmpty) return Stream.value(const []);
-  return ref
-      .watch(firestoreProvider)
-      .collection('users')
-      .doc(user.uid)
-      .collection('stations')
-      .doc(key.stationId)
-      .collection('sessions')
-      .doc(key.sessionId)
-      .collection('results')
-      .orderBy('sequence', descending: true)
-      .limit(100)
-      .snapshots()
-      .map(
-        (snapshot) =>
-            snapshot.docs
-                .map(TranslationResult.fromDocument)
-                .fold(<String, TranslationResult>{}, (items, result) {
-                  items[result.requestId] = result;
-                  return items;
-                })
-                .values
-                .toList(),
-      );
+  final api = ref.watch(apiProvider);
+  final limit = ref.watch(planEntitlementsProvider).liveLogLimit;
+  return _pollStationResults(
+    api,
+    key.stationId,
+    key.sessionId,
+    limit: limit <= 0 ? 1000 : limit,
+  );
 });
 
+Stream<List<TranslationResult>> _pollStationResults(
+  PranaApi api,
+  String stationId,
+  String sessionId, {
+  required int limit,
+}) async* {
+  while (true) {
+    yield await api.stationResults(stationId, sessionId, limit: limit);
+    await Future<void>.delayed(const Duration(seconds: 2));
+  }
+}
+
 final accountProvider = FutureProvider<Map<String, dynamic>>((ref) {
-  ref.watch(authStateProvider);
+  final user = ref.watch(authStateProvider).value;
+  if (user == null) return const <String, dynamic>{};
   return ref.watch(apiProvider).account();
+});
+
+final planEntitlementsProvider = Provider<PlanEntitlements>((ref) {
+  final account = ref.watch(accountProvider).value ?? const {};
+  return PlanEntitlements.fromAccount(account);
 });

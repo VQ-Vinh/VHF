@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
+import 'core/localization.dart';
 import 'core/theme.dart';
+import 'providers.dart';
 import 'router.dart';
 
 class PranaMobileApp extends ConsumerWidget {
@@ -9,11 +12,21 @@ class PranaMobileApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final locale = ref.watch(appLocaleProvider).locale;
     return MaterialApp.router(
       title: 'PRANA ELEX',
       debugShowCheckedModeBanner: false,
-      themeMode: ThemeMode.dark,
+      themeMode: ThemeMode.light,
+      theme: PranaTheme.light(),
       darkTheme: PranaTheme.dark(),
+      locale: locale,
+      supportedLocales: AppText.supportedLocales,
+      localeResolutionCallback: AppText.resolve,
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       routerConfig: ref.watch(routerProvider),
     );
   }
