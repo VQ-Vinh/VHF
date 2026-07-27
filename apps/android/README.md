@@ -41,6 +41,13 @@ Lệnh này tự động:
 3. Đợi Android boot hoàn tất.
 4. Chạy ứng dụng Flutter Staging trên emulator.
 
+Emulator `Prana_API_36` mặc định chạy ở `1080x2160` (18:9). Muốn thử
+một tỷ lệ khác:
+
+```powershell
+.\run_mobile.bat -EmulatorResolution 1080x1920
+```
+
 Trong terminal đang chạy Flutter, nhấn `r` để Hot Reload, `R` để Hot Restart và
 `q` để dừng ứng dụng. Emulator vẫn được giữ lại sau khi dừng app.
 

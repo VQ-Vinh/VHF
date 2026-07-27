@@ -82,6 +82,8 @@ enable_station.bat
 
 API và Station chạy nền; log phát triển được ghi vào
 `VHF_Storage/logs/dev/`.
+Emulator mặc định dùng tỷ lệ 18:9; có thể đổi bằng
+`enable_station.bat -EmulatorResolution 1080x1920`.
 
 CLI trên Windows:
 

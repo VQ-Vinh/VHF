@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$AvdName = "Prana_API_36",
+    [ValidatePattern("^\d{3,5}x\d{3,5}$")]
+    [string]$EmulatorResolution = "1080x2160",
     [ValidateSet("staging", "production")]
     [string]$Flavor = "staging"
 )
@@ -157,5 +159,8 @@ if ($stationRunning) {
 
 Write-Host "[PRANA] Mo Android Emulator va Flutter $Flavor..." -ForegroundColor Cyan
 Write-Host "[PRANA] API/Station tiep tuc chay nen khi Flutter dung." -ForegroundColor DarkGray
-& (Join-Path $root "run_mobile.bat") -AvdName $AvdName -Flavor $Flavor
+& (Join-Path $root "run_mobile.bat") `
+    -AvdName $AvdName `
+    -EmulatorResolution $EmulatorResolution `
+    -Flavor $Flavor
 exit $LASTEXITCODE

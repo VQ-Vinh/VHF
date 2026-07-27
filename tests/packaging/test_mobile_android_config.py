@@ -49,6 +49,24 @@ def test_mobile_apk_build_wrapper_uses_flavor_config() -> None:
     assert "FIREBASE_API_KEY" not in script
 
 
+def test_mobile_runner_pins_the_named_avd_to_balanced_resolution() -> None:
+    runner = Path("apps/android/scripts/run.ps1").read_text(encoding="utf-8")
+    enable_station = Path("scripts/dev/enable-station.ps1").read_text(
+        encoding="utf-8"
+    )
+
+    for script in (runner, enable_station):
+        assert '[string]$EmulatorResolution = "1080x2160"' in script
+    assert "-EmulatorResolution $EmulatorResolution" in enable_station
+
+    assert "getprop ro.boot.qemu.avd_name" in runner
+    assert "emu avd name" in runner
+    assert "(Get-EmulatorAvdName -DeviceId $candidateId) -eq $AvdName" in runner
+    assert "Get-EmulatorResolution -DeviceId $deviceId" in runner
+    assert "emu kill" in runner
+    assert '"-skin", $EmulatorResolution' in runner
+
+
 def test_installer_layout_is_separate_from_build_cache() -> None:
     readme = Path("installers/README.md").read_text(encoding="utf-8")
     assert "artifact" in readme

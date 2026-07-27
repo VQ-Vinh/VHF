@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$AvdName = "Prana_API_36",
+    [ValidatePattern("^\d{3,5}x\d{3,5}$")]
+    [string]$EmulatorResolution = "1080x2160",
     [ValidateSet("staging", "production")]
     [string]$Flavor = "staging",
     [int]$BootTimeoutSeconds = 240
@@ -43,11 +45,46 @@ if (Test-Path -LiteralPath $androidStudioJdk) {
 }
 $env:ANDROID_SDK_ROOT = $androidSdk
 
+function Get-EmulatorAvdName {
+    param([string]$DeviceId)
+    $name = (& $adb -s $DeviceId shell getprop ro.boot.qemu.avd_name 2>$null).Trim()
+    if (-not $name) {
+        $name = & $adb -s $DeviceId emu avd name 2>$null |
+            Where-Object { $_ -and $_ -notmatch "^OK$" } |
+            Select-Object -First 1
+    }
+    if ($name) {
+        return $name.Trim()
+    }
+    return $null
+}
+
 function Get-OnlineEmulatorId {
-    $line = & $adb devices |
-        Where-Object { $_ -match "^(emulator-\d+)\s+device$" } |
-        Select-Object -First 1
-    if ($line -and $line -match "^(emulator-\d+)") {
+    $lines = & $adb devices |
+        Where-Object { $_ -match "^(emulator-\d+)\s+device$" }
+    foreach ($line in $lines) {
+        if ($line -match "^(emulator-\d+)") {
+            $candidateId = $Matches[1]
+            if ((Get-EmulatorAvdName -DeviceId $candidateId) -eq $AvdName) {
+                return $candidateId
+            }
+        }
+    }
+    return $null
+}
+
+function Get-EmulatorResolution {
+    param([string]$DeviceId)
+    $sizeLines = & $adb -s $DeviceId shell wm size 2>$null
+    $effectiveSize = $sizeLines |
+        Where-Object { $_ -match "^Override size:\s*(\d+x\d+)$" } |
+        Select-Object -Last 1
+    if (-not $effectiveSize) {
+        $effectiveSize = $sizeLines |
+            Where-Object { $_ -match "^Physical size:\s*(\d+x\d+)$" } |
+            Select-Object -Last 1
+    }
+    if ($effectiveSize -and $effectiveSize -match "(\d+x\d+)") {
         return $Matches[1]
     }
     return $null
@@ -56,6 +93,25 @@ function Get-OnlineEmulatorId {
 Write-Host "[PRANA] Kiểm tra Android Emulator..." -ForegroundColor Cyan
 & $adb start-server | Out-Null
 $deviceId = Get-OnlineEmulatorId
+
+if ($deviceId) {
+    $currentResolution = Get-EmulatorResolution -DeviceId $deviceId
+    if ($currentResolution -ne $EmulatorResolution) {
+        Write-Host (
+            "[PRANA] Restarting $AvdName to resize " +
+            "$currentResolution -> $EmulatorResolution..."
+        ) -ForegroundColor Yellow
+        & $adb -s $deviceId emu kill | Out-Null
+        $deadline = (Get-Date).AddSeconds(20)
+        do {
+            Start-Sleep -Milliseconds 500
+        } while (
+            (Get-OnlineEmulatorId) -and
+            (Get-Date) -lt $deadline
+        )
+        $deviceId = $null
+    }
+}
 
 if (-not $deviceId) {
     $offlineEmulator = & $adb devices | Where-Object { $_ -match "^emulator-\d+\s+offline$" }
@@ -73,7 +129,9 @@ if (-not $deviceId) {
     }
 
     Write-Host "[PRANA] Mở $AvdName bằng cold boot..." -ForegroundColor Cyan
-    Start-Process -FilePath $emulator -ArgumentList "@$AvdName", "-no-snapshot-load"
+    Start-Process `
+        -FilePath $emulator `
+        -ArgumentList "@$AvdName", "-no-snapshot-load", "-skin", $EmulatorResolution
 
     $deadline = (Get-Date).AddSeconds($BootTimeoutSeconds)
     do {
