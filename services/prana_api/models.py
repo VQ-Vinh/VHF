@@ -19,6 +19,10 @@ class Plan(BaseModel):
     max_concurrency: int = Field(default=2, ge=1, le=10)
     max_devices: int = Field(default=2, ge=1, le=10)
     max_stations: int = Field(default=2, ge=1, le=20)
+    # Zero means unlimited. Existing Firestore plan documents are normalized
+    # by plan ID so the Free policy takes effect before an admin saves it.
+    live_log_limit: int = Field(default=0, ge=0, le=1_000)
+    history_unlock_delay_days: int = Field(default=0, ge=0, le=30)
 
     @model_validator(mode="before")
     @classmethod
@@ -29,6 +33,10 @@ class Plan(BaseModel):
             data.setdefault("quota_period", "monthly")
         if not data.get("monthly_audio_seconds") and data.get("audio_seconds_limit"):
             data["monthly_audio_seconds"] = data["audio_seconds_limit"]
+        if "live_log_limit" not in data:
+            data["live_log_limit"] = 10 if data.get("id") == "free" else 0
+        if "history_unlock_delay_days" not in data:
+            data["history_unlock_delay_days"] = 1 if data.get("id") == "free" else 0
         return data
 
 
@@ -106,6 +114,12 @@ class Usage(BaseModel):
         )
 
 
+class PlanEntitlements(BaseModel):
+    live_log_limit: int = Field(default=10, ge=0, le=1_000)
+    history_unlock_delay_days: int = Field(default=1, ge=0, le=30)
+    max_concurrency: int = Field(default=2, ge=1, le=10)
+
+
 class MeResponse(BaseModel):
     uid: str
     email: str
@@ -114,6 +128,7 @@ class MeResponse(BaseModel):
     plan_id: str | None
     subscription_expires_at: datetime | None
     usage: Usage | None = None
+    entitlements: PlanEntitlements = Field(default_factory=PlanEntitlements)
 
 
 class GoogleAuthorizationRequest(BaseModel):
@@ -221,6 +236,10 @@ class StationActivationClaimRequest(BaseModel):
 class StationDesiredState(BaseModel):
     running: bool = False
     target_language: Literal["vi", "en", "zh", "ja", "ko"] = "en"
+    capture_mode: Literal["device", "loopback"] = "device"
+    audio_device_id: str = Field(default="", max_length=64)
+    auto_start_capture: bool = False
+    capability_refresh_generation: int = Field(default=0, ge=0)
     retry_generation: int = Field(default=0, ge=0)
     generation: int = Field(default=0, ge=0)
 
@@ -228,7 +247,28 @@ class StationDesiredState(BaseModel):
 class StationDesiredStatePatch(BaseModel):
     running: bool | None = None
     target_language: Literal["vi", "en", "zh", "ja", "ko"] | None = None
+    capture_mode: Literal["device", "loopback"] | None = None
+    audio_device_id: str | None = Field(default=None, max_length=64)
+    auto_start_capture: bool | None = None
+    refresh_capabilities: bool = False
     retry: bool = False
+
+
+class StationAudioDevice(BaseModel):
+    id: str = Field(min_length=8, max_length=64)
+    name: str = Field(min_length=1, max_length=200)
+    mode: Literal["device", "loopback"]
+    input_channels: int = Field(default=0, ge=0, le=64)
+    output_channels: int = Field(default=0, ge=0, le=64)
+    sample_rate: int = Field(default=0, ge=0, le=384_000)
+    host_api: str = Field(default="", max_length=100)
+
+
+class StationCapabilities(BaseModel):
+    capability_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    capture_modes: list[Literal["device", "loopback"]] = Field(min_length=1, max_length=2)
+    audio_devices: list[StationAudioDevice] = Field(default_factory=list, max_length=100)
+    storage_path: str = Field(default="", max_length=500)
 
 
 class StationHeartbeat(BaseModel):
@@ -238,7 +278,13 @@ class StationHeartbeat(BaseModel):
     app_version: str = Field(default="", max_length=40)
     observed_generation: int = Field(default=0, ge=0)
     target_language: Literal["vi", "en", "zh", "ja", "ko"] = "en"
+    boot_id: str = Field(default="", max_length=64)
+    active_capture_mode: Literal["device", "loopback"] = "device"
+    active_audio_device_id: str = Field(default="", max_length=64)
     error: str | None = Field(default=None, max_length=500)
+    retrying: bool = False
+    retry_code: str | None = Field(default=None, max_length=80)
+    retry_attempt: int = Field(default=0, ge=0, le=3)
 
 
 class Station(BaseModel):
@@ -253,3 +299,10 @@ class Station(BaseModel):
     session_id: str = ""
     sequence: int = 0
     last_seen_at: datetime | None = None
+    capabilities: StationCapabilities | None = None
+    active_capture_mode: Literal["device", "loopback"] = "device"
+    active_audio_device_id: str = ""
+    last_error: str | None = None
+    retrying: bool = False
+    retry_code: str | None = None
+    retry_attempt: int = 0

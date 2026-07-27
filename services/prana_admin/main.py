@@ -150,6 +150,11 @@ def _plan_rows(db) -> list[dict]:
         item.setdefault("availability", "available")
         item.setdefault("sort_order", 0)
         item.setdefault("max_stations", 2)
+        item.setdefault("live_log_limit", 10 if snap.id == "free" else 0)
+        item.setdefault(
+            "history_unlock_delay_days",
+            1 if snap.id == "free" else 0,
+        )
         plans.append(item)
     return sorted(plans, key=lambda item: (int(item["sort_order"]), item["id"]))
 
@@ -416,12 +421,18 @@ def update_plan(
     max_concurrency: int = Form(...),
     max_devices: int = Form(...),
     max_stations: int = Form(2),
+    live_log_limit: int | None = Form(None),
+    history_unlock_delay_days: int | None = Form(None),
     sort_order: int = Form(...),
     operator: str = Header(default=None, alias="X-Goog-Authenticated-User-Email"),
 ):
     email = _operator(operator)
     if plan_id not in EDITABLE_PLAN_IDS:
         raise HTTPException(404, "Plan is not editable")
+    if live_log_limit is None:
+        live_log_limit = 10 if plan_id == "free" else 0
+    if history_unlock_delay_days is None:
+        history_unlock_delay_days = 1 if plan_id == "free" else 0
     display_name = name.strip()
     if not display_name or len(display_name) > 40:
         raise HTTPException(422, "Plan name must contain 1 to 40 characters")
@@ -431,6 +442,12 @@ def update_plan(
         "max_concurrency": (max_concurrency, 1, 10),
         "max_devices": (max_devices, 1, 10),
         "max_stations": (max_stations, 1, 20),
+        "live_log_limit": (live_log_limit, 0, 1_000),
+        "history_unlock_delay_days": (
+            history_unlock_delay_days,
+            0,
+            30,
+        ),
         "sort_order": (sort_order, 0, 1_000),
     }
     for field, (value, minimum, maximum) in limits.items():
@@ -454,6 +471,8 @@ def update_plan(
         "max_concurrency": max_concurrency,
         "max_devices": max_devices,
         "max_stations": max_stations,
+        "live_log_limit": live_log_limit,
+        "history_unlock_delay_days": history_unlock_delay_days,
         "sort_order": sort_order,
         "updated_at": firestore.SERVER_TIMESTAMP,
         "updated_by": email,

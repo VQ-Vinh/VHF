@@ -30,6 +30,22 @@ class SubscriptionPlanTests(unittest.TestCase):
             [plan.availability for plan in PLAN_CATALOG],
             ["available", "coming_soon", "coming_soon"],
         )
+        self.assertEqual(
+            [plan.live_log_limit for plan in PLAN_CATALOG],
+            [10, 0, 0],
+        )
+        self.assertEqual(
+            [plan.history_unlock_delay_days for plan in PLAN_CATALOG],
+            [1, 0, 0],
+        )
+        legacy_free = Plan(
+            id="free",
+            name="Free",
+            audio_seconds_limit=600,
+            requests_per_minute=30,
+        )
+        self.assertEqual(legacy_free.live_log_limit, 10)
+        self.assertEqual(legacy_free.history_unlock_delay_days, 1)
         now = datetime(2026, 7, 20, 23, 59, 59, tzinfo=timezone.utc)
         self.assertEqual(usage_period(PLAN_BY_ID["free"], now), "2026-07-20")
         self.assertEqual(
@@ -147,6 +163,16 @@ class SubscriptionPlanApiTests(unittest.TestCase):
         self.assertEqual(catalog.status_code, 200)
         self.assertEqual(catalog.headers["cache-control"], "no-store")
         self.assertEqual([item["id"] for item in catalog.json()], ["free", "plus", "pro"])
+        profile = self.client.get("/v1/me")
+        self.assertEqual(profile.status_code, 200)
+        self.assertEqual(
+            profile.json()["entitlements"],
+            {
+                "live_log_limit": 10,
+                "history_unlock_delay_days": 1,
+                "max_concurrency": 2,
+            },
+        )
         unavailable = self.client.post(
             "/v1/subscription/select", json={"plan_id": "pro"}
         )

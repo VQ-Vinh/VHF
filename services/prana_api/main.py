@@ -10,6 +10,7 @@ from functools import lru_cache
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, Response, UploadFile
 from fastapi.responses import JSONResponse
+from google.api_core.exceptions import Aborted
 from google.cloud import firestore
 
 from services.prana_api.audio import validate_wav
@@ -38,6 +39,7 @@ from services.prana_api.models import (
     ProcessingResponse,
     Station,
     StationActivationClaimRequest,
+    StationCapabilities,
     StationClaimRequest,
     StationDesiredState,
     StationDesiredStatePatch,
@@ -59,6 +61,21 @@ from services.prana_api.security import (
 )
 
 app = FastAPI(title="PRANA ELEX API", version="1.2.0", docs_url=None, redoc_url=None)
+
+
+@app.exception_handler(Aborted)
+async def firestore_contention(_request, _exc):
+    return JSONResponse(
+        status_code=503,
+        headers={"Retry-After": "2"},
+        content={
+            "detail": {
+                "code": "SERVICE_BUSY",
+                "message": "The service is busy; retry this request",
+                "retry_after": 2,
+            }
+        },
+    )
 
 
 @app.exception_handler(Exception)
@@ -213,9 +230,22 @@ def link_google_session(
 def me(identity: Identity = Depends(require_identity), repo: Repository = Depends(get_repository)):
     account = repo.sync_identity(identity.uid, identity.email, identity.email_verified)
     usage = None
+    plan = None
     if account.plan_id:
-        usage = repo.get_usage(identity.uid, repo.get_plan(account.plan_id))
-    return MeResponse(**account.model_dump(), usage=usage)
+        plan = repo.get_plan(account.plan_id)
+        usage = repo.get_usage(identity.uid, plan)
+    entitlements = {
+        "live_log_limit": plan.live_log_limit if plan else 10,
+        "history_unlock_delay_days": (
+            plan.history_unlock_delay_days if plan else 1
+        ),
+        "max_concurrency": plan.max_concurrency if plan else 2,
+    }
+    return MeResponse(
+        **account.model_dump(),
+        usage=usage,
+        entitlements=entitlements,
+    )
 
 
 @app.get("/v1/plans", response_model=list[Plan])
@@ -240,6 +270,11 @@ def select_subscription(
     return MeResponse(
         **account.model_dump(),
         usage=repo.get_usage(account.uid, plan),
+        entitlements={
+            "live_log_limit": plan.live_log_limit,
+            "history_unlock_delay_days": plan.history_unlock_delay_days,
+            "max_concurrency": plan.max_concurrency,
+        },
     )
 
 
@@ -426,6 +461,28 @@ def list_stations(
     return repo.list_stations(identity.uid)
 
 
+@app.get(
+    "/v1/stations/{station_id}/sessions/{session_id}/results",
+    response_model=list[ProcessingResponse],
+)
+def list_station_results(
+    station_id: str,
+    session_id: str,
+    limit: int = 1000,
+    identity: Identity = Depends(require_identity),
+    repo: Repository = Depends(get_repository),
+):
+    account, plan = active_account(identity, repo)
+    safe_limit = max(1, min(limit, 1000))
+    return repo.list_station_results(
+        account.uid,
+        station_id,
+        session_id,
+        plan,
+        safe_limit,
+    )
+
+
 @app.delete("/v1/stations/{station_id}", status_code=204)
 def revoke_station(
     station_id: str,
@@ -445,9 +502,13 @@ def update_station_desired_state(
     repo: Repository = Depends(get_repository),
 ):
     active_account(identity, repo)
-    updates = request.model_dump(exclude={"retry"}, exclude_none=True)
+    updates = request.model_dump(
+        exclude={"retry", "refresh_capabilities"}, exclude_none=True
+    )
     if request.retry:
         updates["retry_generation_increment"] = True
+    if request.refresh_capabilities:
+        updates["capability_refresh_increment"] = True
     if not updates:
         raise api_error(422, "INVALID_REQUEST", "No desired state change was supplied")
     return repo.update_station_desired_state(identity.uid, station_id, updates)
@@ -477,6 +538,43 @@ def get_station_desired_state(
     return StationDesiredState.model_validate(station.get("desired_state") or {})
 
 
+@app.get("/v1/stations/{station_id}/profile")
+def get_station_profile(
+    station_id: str,
+    signed_station_id: str = Header(alias="X-Station-ID"),
+    request_id: str = Header(alias="X-Request-ID"),
+    request_timestamp: str = Header(alias="X-Timestamp"),
+    signature: str = Header(alias="X-Signature"),
+    repo: Repository = Depends(get_repository),
+):
+    if signed_station_id != station_id:
+        raise api_error(403, "STATION_REVOKED", "Station identity does not match")
+    path = f"/v1/stations/{station_id}/profile"
+    station = _authenticate_station_request(
+        station_id=station_id,
+        method="GET",
+        path=path,
+        request_id=request_id,
+        request_timestamp=request_timestamp,
+        signature=signature,
+        payload={},
+        repo=repo,
+    )
+    account = repo.get_account(station["owner_uid"])
+    if not account or not account.subscription_active or not account.plan_id:
+        raise api_error(
+            403,
+            "SUBSCRIPTION_INACTIVE",
+            "Station owner's subscription is not active",
+        )
+    plan = repo.get_plan(account.plan_id)
+    return {
+        "status": "active",
+        "station_id": station_id,
+        "entitlements": {"max_concurrency": plan.max_concurrency},
+    }
+
+
 @app.post("/v1/stations/{station_id}/heartbeat", status_code=204)
 def station_heartbeat(
     station_id: str,
@@ -496,10 +594,37 @@ def station_heartbeat(
         request_id=request_id,
         request_timestamp=request_timestamp,
         signature=signature,
-        payload=request.model_dump(),
+        payload=request.model_dump(exclude_unset=True),
         repo=repo,
     )
     repo.heartbeat_station(station_id, request)
+    return Response(status_code=204)
+
+
+@app.post("/v1/stations/{station_id}/capabilities", status_code=204)
+def station_capabilities(
+    station_id: str,
+    request: StationCapabilities,
+    signed_station_id: str = Header(alias="X-Station-ID"),
+    request_id: str = Header(alias="X-Request-ID"),
+    request_timestamp: str = Header(alias="X-Timestamp"),
+    signature: str = Header(alias="X-Signature"),
+    repo: Repository = Depends(get_repository),
+):
+    if signed_station_id != station_id:
+        raise api_error(403, "STATION_REVOKED", "Station identity does not match")
+    path = f"/v1/stations/{station_id}/capabilities"
+    _authenticate_station_request(
+        station_id=station_id,
+        method="POST",
+        path=path,
+        request_id=request_id,
+        request_timestamp=request_timestamp,
+        signature=signature,
+        payload=request.model_dump(),
+        repo=repo,
+    )
+    repo.update_station_capabilities(station_id, request)
     return Response(status_code=204)
 
 
@@ -624,7 +749,19 @@ def process_station_audio(
     if reservation.state == "completed":
         # Projection writes are idempotent. Repeating this heals a transient
         # Firestore publication failure without charging or invoking Gemini again.
-        repo.publish_station_result(owner_uid, station_id, reservation.cached_response or {})
+        try:
+            repo.publish_station_result(
+                owner_uid,
+                station_id,
+                reservation.cached_response or {},
+            )
+        except Exception:
+            raise api_error(
+                503,
+                "SERVICE_BUSY",
+                "Result synchronization is temporarily unavailable",
+                retry_after=2,
+            )
         return ProcessingResponse.model_validate(reservation.cached_response)
 
     started = time.perf_counter()
@@ -664,14 +801,24 @@ def process_station_audio(
     )
     try:
         get_archive().archive(owner_uid, session_id, request_id, data, response)
-        repo.publish_station_result(owner_uid, station_id, response)
     except Exception:
-        metrics["archive_or_projection_failed"] = True
+        metrics["archive_failed"] = True
         repo.settle_success(owner_uid, request_id, response, metrics)
         raise api_error(
             503,
-            "SERVICE_USAGE_LIMIT_REACHED",
-            "Result was processed but cloud synchronization is temporarily unavailable",
+            "SERVICE_BUSY",
+            "Result was processed but archival is temporarily unavailable",
+            retry_after=2,
         )
+
     repo.settle_success(owner_uid, request_id, response, metrics)
+    try:
+        repo.publish_station_result(owner_uid, station_id, response)
+    except Exception:
+        raise api_error(
+            503,
+            "SERVICE_BUSY",
+            "Result was processed but synchronization is temporarily unavailable",
+            retry_after=2,
+        )
     return ProcessingResponse.model_validate(response)

@@ -319,6 +319,183 @@ class StationApiTests(unittest.TestCase):
         response = self.client.delete(f"/v1/stations/{self.station_id}")
         self.assertEqual(response.status_code, 404)
 
+    def test_capabilities_gate_remote_audio_settings(self):
+        self.create_and_claim()
+        desired_path = f"/v1/stations/{self.station_id}/desired-state"
+        unavailable = self.client.patch(
+            desired_path,
+            json={"capture_mode": "loopback", "audio_device_id": "a" * 32},
+        )
+        self.assertEqual(unavailable.status_code, 409)
+
+        path = f"/v1/stations/{self.station_id}/capabilities"
+        payload = {
+            "capability_hash": "a" * 64,
+            "capture_modes": ["device", "loopback"],
+            "audio_devices": [
+                {
+                    "id": "b" * 32,
+                    "name": "USB SoundCard",
+                    "mode": "device",
+                    "input_channels": 1,
+                    "output_channels": 2,
+                    "sample_rate": 48000,
+                    "host_api": "WASAPI",
+                },
+                {
+                    "id": "c" * 32,
+                    "name": "Speakers (loopback)",
+                    "mode": "loopback",
+                    "input_channels": 2,
+                    "output_channels": 0,
+                    "sample_rate": 48000,
+                    "host_api": "WASAPI",
+                },
+            ],
+            "storage_path": "D:/PRANA",
+        }
+        response = self.client.post(
+            path,
+            json=payload,
+            headers=self.signed_headers("POST", path, payload),
+        )
+        self.assertEqual(response.status_code, 204, response.text)
+
+        invalid = self.client.patch(
+            desired_path,
+            json={"capture_mode": "loopback", "audio_device_id": "b" * 32},
+        )
+        self.assertEqual(invalid.status_code, 422)
+        changed = self.client.patch(
+            desired_path,
+            json={
+                "capture_mode": "loopback",
+                "audio_device_id": "c" * 32,
+                "auto_start_capture": True,
+                "refresh_capabilities": True,
+            },
+        )
+        self.assertEqual(changed.status_code, 200, changed.text)
+        self.assertEqual(changed.json()["capture_mode"], "loopback")
+        self.assertEqual(changed.json()["capability_refresh_generation"], 1)
+
+        replacement = {
+            **payload,
+            "capability_hash": "d" * 64,
+            "audio_devices": [payload["audio_devices"][0]],
+            "capture_modes": ["device"],
+        }
+        refreshed = self.client.post(
+            path,
+            json=replacement,
+            headers=self.signed_headers("POST", path, replacement),
+        )
+        self.assertEqual(refreshed.status_code, 204, refreshed.text)
+        reconciled = self.client.get(
+            desired_path,
+            headers=self.signed_headers("GET", desired_path, {}),
+        ).json()
+        self.assertEqual(reconciled["audio_device_id"], "")
+        self.assertEqual(reconciled["capture_mode"], "device")
+        self.assertGreater(reconciled["generation"], changed.json()["generation"])
+
+    def test_auto_start_is_applied_once_per_boot_id(self):
+        self.create_and_claim()
+        desired_path = f"/v1/stations/{self.station_id}/desired-state"
+        changed = self.client.patch(
+            desired_path,
+            json={"auto_start_capture": True},
+        )
+        self.assertEqual(changed.status_code, 200, changed.text)
+        self.assertFalse(changed.json()["running"])
+        self.assertEqual(changed.json()["generation"], 1)
+
+        heartbeat_path = f"/v1/stations/{self.station_id}/heartbeat"
+        heartbeat = {
+            "capture_state": "idle",
+            "session_id": "",
+            "sequence": 0,
+            "app_version": "1.2.0",
+            "observed_generation": 0,
+            "target_language": "vi",
+            "boot_id": "boot-1",
+            "active_capture_mode": "device",
+            "active_audio_device_id": "",
+            "error": None,
+            "retrying": True,
+            "retry_code": "SERVICE_BUSY",
+            "retry_attempt": 2,
+        }
+        first = self.client.post(
+            heartbeat_path,
+            json=heartbeat,
+            headers=self.signed_headers("POST", heartbeat_path, heartbeat),
+        )
+        self.assertEqual(first.status_code, 204, first.text)
+        projection = self.repo.station_projections[
+            self.identity.uid
+        ][self.station_id]
+        self.assertTrue(projection["retrying"])
+        self.assertEqual(projection["retry_code"], "SERVICE_BUSY")
+        self.assertEqual(projection["retry_attempt"], 2)
+        first_desired = self.client.get(
+            desired_path,
+            headers=self.signed_headers("GET", desired_path, {}),
+        ).json()
+        self.assertTrue(first_desired["running"])
+        self.assertEqual(first_desired["generation"], 2)
+
+        second = self.client.post(
+            heartbeat_path,
+            json=heartbeat,
+            headers=self.signed_headers("POST", heartbeat_path, heartbeat),
+        )
+        self.assertEqual(second.status_code, 204, second.text)
+        second_desired = self.client.get(
+            desired_path,
+            headers=self.signed_headers("GET", desired_path, {}),
+        ).json()
+        self.assertEqual(second_desired["generation"], 2)
+
+    def test_result_listing_enforces_plan_history_and_live_limits(self):
+        self.create_and_claim()
+        now = datetime.now(timezone.utc)
+        for sequence, timestamp in enumerate(
+            [
+                now - timedelta(days=2),
+                now - timedelta(hours=3),
+                now - timedelta(hours=2),
+                now - timedelta(hours=1),
+            ],
+            start=1,
+        ):
+            response = ProcessingResponse(
+                request_id=f"request-{sequence}",
+                station_id=self.station_id,
+                session_id="session-1",
+                sequence=sequence,
+                audio_file=f"{sequence}.wav",
+                timestamp=timestamp,
+            ).model_dump(mode="json")
+            self.repo.publish_station_result(
+                self.identity.uid,
+                self.station_id,
+                response,
+            )
+        self.repo.plans["free"] = self.repo.plans["free"].model_copy(
+            update={"live_log_limit": 2, "history_unlock_delay_days": 1}
+        )
+
+        response = self.client.get(
+            f"/v1/stations/{self.station_id}/sessions/session-1/results"
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(
+            [item["sequence"] for item in response.json()],
+            [1, 3, 4],
+        )
+
     def test_station_audio_uses_owner_quota_and_publishes_projection(self):
         self.create_and_claim()
         Processor.calls = 0
@@ -370,6 +547,22 @@ class StationApiTests(unittest.TestCase):
         self.assertIn(key, self.repo.station_results)
         usage = self.repo.get_usage(self.identity.uid, self.repo.plans["free"])
         self.assertEqual(usage.used_audio_seconds, 1)
+
+    def test_signed_station_profile_exposes_plan_concurrency(self):
+        self.create_and_claim()
+        path = f"/v1/stations/{self.station_id}/profile"
+
+        response = self.client.get(
+            path,
+            headers=self.signed_headers("GET", path, {}),
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["status"], "active")
+        self.assertEqual(
+            response.json()["entitlements"]["max_concurrency"],
+            2,
+        )
 
 
 if __name__ == "__main__":

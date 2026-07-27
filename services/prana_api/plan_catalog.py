@@ -16,6 +16,8 @@ PLAN_CATALOG = (
         max_concurrency=2,
         max_devices=2,
         max_stations=2,
+        live_log_limit=10,
+        history_unlock_delay_days=1,
     ),
     Plan(
         id="plus",
@@ -29,6 +31,8 @@ PLAN_CATALOG = (
         max_concurrency=2,
         max_devices=2,
         max_stations=2,
+        live_log_limit=0,
+        history_unlock_delay_days=0,
     ),
     Plan(
         id="pro",
@@ -42,6 +46,8 @@ PLAN_CATALOG = (
         max_concurrency=2,
         max_devices=2,
         max_stations=2,
+        live_log_limit=0,
+        history_unlock_delay_days=0,
     ),
 )
 

@@ -8,9 +8,14 @@ service cloud.firestore {
       allow read: if request.auth != null && request.auth.uid == userId;
       allow write: if false;
 
-      match /{document=**} {
+      match /sessions/{sessionId} {
         allow read: if request.auth != null && request.auth.uid == userId;
         allow write: if false;
+
+        // Results are filtered by subscription entitlements in prana-api.
+        match /results/{resultId} {
+          allow read, write: if false;
+        }
       }
     }
 

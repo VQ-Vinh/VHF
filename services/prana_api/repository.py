@@ -13,6 +13,7 @@ from services.prana_api.models import (
     Plan,
     Reservation,
     Station,
+    StationCapabilities,
     StationDesiredState,
     StationHeartbeat,
     StationPairingRequest,
@@ -108,6 +109,15 @@ class Repository(Protocol):
     def revoke_station(self, uid: str, station_id: str) -> None: ...
     def update_station_desired_state(self, uid: str, station_id: str, updates: dict) -> StationDesiredState: ...
     def heartbeat_station(self, station_id: str, heartbeat: StationHeartbeat) -> None: ...
+    def update_station_capabilities(self, station_id: str, capabilities: StationCapabilities) -> None: ...
+    def list_station_results(
+        self,
+        uid: str,
+        station_id: str,
+        session_id: str,
+        plan: Plan,
+        limit: int,
+    ) -> list[dict]: ...
     def consume_station_request(self, station_id: str, request_id: str, expires_at: datetime) -> None: ...
     def publish_station_result(self, uid: str, station_id: str, response: dict) -> None: ...
     def reserve(
@@ -628,11 +638,33 @@ class FirestoreRepository:
             if not registry.get("active", True):
                 raise api_error(403, "STATION_REVOKED", "Station access has been revoked")
             desired = StationDesiredState.model_validate(registry.get("desired_state") or {})
+            capabilities = registry.get("capabilities")
+            requested_mode = updates.get("capture_mode")
+            requested_device = updates.get("audio_device_id")
+            if requested_mode is not None or requested_device is not None:
+                if not capabilities:
+                    raise api_error(409, "CAPABILITIES_UNAVAILABLE", "Station has not reported audio capabilities")
+                modes = set(capabilities.get("capture_modes") or [])
+                devices = {
+                    item.get("id"): item
+                    for item in capabilities.get("audio_devices") or []
+                }
+                mode = requested_mode or desired.capture_mode
+                device_id = requested_device if requested_device is not None else desired.audio_device_id
+                if mode not in modes:
+                    raise api_error(422, "CAPTURE_MODE_UNAVAILABLE", "Capture mode is not supported by this station")
+                if device_id and (
+                    device_id not in devices or devices[device_id].get("mode") != mode
+                ):
+                    raise api_error(422, "AUDIO_DEVICE_UNAVAILABLE", "Audio device is not available for this mode")
             data = desired.model_dump()
             retry = bool(updates.pop("retry_generation_increment", False))
+            refresh = bool(updates.pop("capability_refresh_increment", False))
             data.update({key: value for key, value in updates.items() if value is not None})
             if retry:
                 data["retry_generation"] = desired.retry_generation + 1
+            if refresh:
+                data["capability_refresh_generation"] = desired.capability_refresh_generation + 1
             data["generation"] = desired.generation + 1
             desired = StationDesiredState.model_validate(data)
             tx.update(registry_ref, {"desired_state": desired.model_dump(), "updated_at": firestore.SERVER_TIMESTAMP})
@@ -642,12 +674,20 @@ class FirestoreRepository:
         return run(self.db.transaction())
 
     def heartbeat_station(self, station_id: str, heartbeat: StationHeartbeat) -> None:
-        registry = self.get_station_registry(station_id)
-        if not registry or not registry.get("owner_uid"):
-            raise api_error(403, "STATION_NOT_PAIRED", "Station has not been paired")
-        uid = registry["owner_uid"]
         registry_ref = self.db.collection("station_registry").document(station_id)
-        projection_ref = self._user_ref(uid).collection("stations").document(station_id)
+        snap = registry_ref.get()
+        if not snap.exists or not snap.to_dict().get("owner_uid"):
+            raise api_error(
+                403,
+                "STATION_NOT_PAIRED",
+                "Station has not been paired",
+            )
+        registry = snap.to_dict()
+        projection_ref = (
+            self._user_ref(registry["owner_uid"])
+            .collection("stations")
+            .document(station_id)
+        )
         visible = {
             "online": True,
             "capture_state": heartbeat.capture_state,
@@ -656,14 +696,151 @@ class FirestoreRepository:
             "app_version": heartbeat.app_version,
             "observed_generation": heartbeat.observed_generation,
             "target_language": heartbeat.target_language,
+            "boot_id": heartbeat.boot_id,
+            "active_capture_mode": heartbeat.active_capture_mode,
+            "active_audio_device_id": heartbeat.active_audio_device_id,
             "last_error": heartbeat.error,
+            "retrying": heartbeat.retrying,
+            "retry_code": heartbeat.retry_code,
+            "retry_attempt": heartbeat.retry_attempt,
             "last_seen_at": firestore.SERVER_TIMESTAMP,
             "updated_at": firestore.SERVER_TIMESTAMP,
         }
-        batch = self.db.batch()
-        batch.set(registry_ref, visible, merge=True)
-        batch.set(projection_ref, visible, merge=True)
-        batch.commit()
+
+        # Desired state shares the registry document with station identity.
+        # Touch it only once per process boot; writing it on every heartbeat
+        # causes perpetual contention with desired-state transactions.
+        if heartbeat.boot_id and heartbeat.boot_id != registry.get("boot_id"):
+            @firestore.transactional
+            def apply_boot_policy(tx):
+                current_snap = registry_ref.get(transaction=tx)
+                if not current_snap.exists:
+                    raise api_error(
+                        403,
+                        "STATION_NOT_PAIRED",
+                        "Station has not been paired",
+                    )
+                current = current_snap.to_dict()
+                if heartbeat.boot_id == current.get("boot_id"):
+                    return None
+                desired = StationDesiredState.model_validate(
+                    current.get("desired_state") or {}
+                )
+                boot_running = desired.auto_start_capture
+                if desired.running != boot_running:
+                    desired = desired.model_copy(
+                        update={
+                            "running": boot_running,
+                            "generation": desired.generation + 1,
+                        }
+                    )
+                update = {
+                    "boot_id": heartbeat.boot_id,
+                    "desired_state": desired.model_dump(),
+                    "updated_at": firestore.SERVER_TIMESTAMP,
+                }
+                tx.set(registry_ref, update, merge=True)
+                tx.set(projection_ref, update, merge=True)
+                return True
+
+            apply_boot_policy(self.db.transaction())
+
+        # The high-frequency heartbeat belongs only in the user projection.
+        # Registry writes are intentionally avoided after boot.
+        projection_ref.set(visible, merge=True)
+
+    def update_station_capabilities(
+        self, station_id: str, capabilities: StationCapabilities
+    ) -> None:
+        registry_ref = self.db.collection("station_registry").document(station_id)
+
+        @firestore.transactional
+        def run(tx):
+            snap = registry_ref.get(transaction=tx)
+            current = snap.to_dict() if snap.exists else {}
+            if not current.get("owner_uid"):
+                raise api_error(
+                    403,
+                    "STATION_NOT_PAIRED",
+                    "Station has not been paired",
+                )
+            uid = current["owner_uid"]
+            projection_ref = (
+                self._user_ref(uid).collection("stations").document(station_id)
+            )
+            value = capabilities.model_dump()
+            value["updated_at"] = firestore.SERVER_TIMESTAMP
+            update = {
+                "capabilities": value,
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            }
+            desired = StationDesiredState.model_validate(
+                current.get("desired_state") or {}
+            )
+            available = {
+                item.id: item.mode for item in capabilities.audio_devices
+            }
+            capture_mode = desired.capture_mode
+            if capture_mode not in capabilities.capture_modes:
+                capture_mode = "device"
+            if capture_mode != desired.capture_mode or (
+                desired.audio_device_id
+                and available.get(desired.audio_device_id) != capture_mode
+            ):
+                desired = desired.model_copy(
+                    update={
+                        "capture_mode": capture_mode,
+                        "audio_device_id": "",
+                        "generation": desired.generation + 1,
+                    }
+                )
+                update["desired_state"] = desired.model_dump()
+            tx.set(registry_ref, update, merge=True)
+            tx.set(projection_ref, update, merge=True)
+
+        run(self.db.transaction())
+
+    def list_station_results(
+        self,
+        uid: str,
+        station_id: str,
+        session_id: str,
+        plan: Plan,
+        limit: int,
+    ) -> list[dict]:
+        station_ref = self._user_ref(uid).collection("stations").document(station_id)
+        station = station_ref.get()
+        if not station.exists or not station.to_dict().get("active", True):
+            raise api_error(404, "STATION_NOT_FOUND", "Station was not found")
+
+        query = station_ref.collection("sessions").document(session_id).collection("results")
+        now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(days=plan.history_unlock_delay_days)
+        recent_limit = (
+            limit
+            if plan.live_log_limit == 0
+            else min(limit, plan.live_log_limit)
+        )
+        recent = (
+            list(
+                query.where("timestamp", ">", cutoff)
+                .order_by("timestamp", direction=firestore.Query.DESCENDING)
+                .limit(recent_limit)
+                .stream()
+            )
+            if recent_limit
+            else []
+        )
+        remaining = max(0, limit - len(recent))
+        unlocked = list(
+            query.where("timestamp", "<=", cutoff)
+            .order_by("timestamp", direction=firestore.Query.DESCENDING)
+            .limit(remaining)
+            .stream()
+        )
+        values = [snap.to_dict() for snap in (*unlocked, *recent)]
+        values.sort(key=lambda item: item.get("timestamp") or now)
+        return values
 
     def consume_station_request(
         self, station_id: str, request_id: str, expires_at: datetime
@@ -731,7 +908,12 @@ class FirestoreRepository:
         reserved = max(0, int(usage.get("reserved_audio_seconds", 0)) - stale_in_current_period)
         active = max(0, int(usage.get("active_requests", 0)) - (1 if stale_in_current_period else 0))
         if active >= plan.max_concurrency:
-            raise api_error(429, "RATE_LIMITED", "Too many concurrent requests")
+            raise api_error(
+                429,
+                "RATE_LIMITED",
+                "Too many concurrent requests",
+                retry_after=2,
+            )
         if used + reserved + seconds > plan.audio_seconds_limit:
             raise api_error(
                 429,
@@ -745,7 +927,12 @@ class FirestoreRepository:
         rate_snap = rate_ref.get(transaction=tx)
         rate_count = int((rate_snap.to_dict() if rate_snap.exists else {}).get("count", 0))
         if rate_count >= plan.requests_per_minute:
-            raise api_error(429, "RATE_LIMITED", "Requests-per-minute limit exceeded")
+            raise api_error(
+                429,
+                "RATE_LIMITED",
+                "Requests-per-minute limit exceeded",
+                retry_after=max(1, 60 - now.second),
+            )
 
         current_global_limits = {
             f"daily-{now:%Y%m%d}": self.global_daily_audio_seconds,
@@ -825,7 +1012,7 @@ class FirestoreRepository:
         def run(tx):
             return self._reserve_transaction(tx, uid, plan, request_id, request_hash, seconds)
 
-        return run(self.db.transaction())
+        return run(self.db.transaction(max_attempts=10))
 
     def _settle_transaction(
         self, tx, uid: str, request_id: str, response: dict | None, error_code: str | None, metrics: dict
@@ -839,33 +1026,37 @@ class FirestoreRepository:
         seconds = int(request.get("reserved_audio_seconds", 0))
         period = request.get("usage_period") or current_period()
         usage_ref = user_ref.collection("usage").document(period)
-        usage_snap = usage_ref.get(transaction=tx)
-        usage = usage_snap.to_dict() if usage_snap.exists else {}
         success = response is not None
-        global_values = []
-        for key in request.get("global_usage_keys", []):
-            global_ref = self.db.collection("system_usage").document(key)
-            snap = global_ref.get(transaction=tx)
-            global_values.append((global_ref, snap.to_dict() if snap.exists else {}))
+        usage_updates = {
+            "reserved_audio_seconds": firestore.Increment(-seconds),
+            "active_requests": firestore.Increment(-1),
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        }
+        if success:
+            usage_updates.update(
+                {
+                    "used_audio_seconds": firestore.Increment(seconds),
+                    "request_count": firestore.Increment(1),
+                }
+            )
         tx.set(
             usage_ref,
-            {
-                "reserved_audio_seconds": max(0, int(usage.get("reserved_audio_seconds", 0)) - seconds),
-                "active_requests": max(0, int(usage.get("active_requests", 0)) - 1),
-                "used_audio_seconds": int(usage.get("used_audio_seconds", 0)) + (seconds if success else 0),
-                "request_count": int(usage.get("request_count", 0)) + (1 if success else 0),
-                "updated_at": firestore.SERVER_TIMESTAMP,
-            },
+            usage_updates,
             merge=True,
         )
-        for global_ref, value in global_values:
+        for key in request.get("global_usage_keys", []):
+            global_ref = self.db.collection("system_usage").document(key)
+            global_updates = {
+                "reserved_audio_seconds": firestore.Increment(-seconds),
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            }
+            if success:
+                global_updates["used_audio_seconds"] = firestore.Increment(
+                    seconds
+                )
             tx.set(
                 global_ref,
-                {
-                    "reserved_audio_seconds": max(0, int(value.get("reserved_audio_seconds", 0)) - seconds),
-                    "used_audio_seconds": int(value.get("used_audio_seconds", 0)) + (seconds if success else 0),
-                    "updated_at": firestore.SERVER_TIMESTAMP,
-                },
+                global_updates,
                 merge=True,
             )
         update = {
@@ -884,11 +1075,11 @@ class FirestoreRepository:
         def run(tx):
             return self._settle_transaction(tx, uid, request_id, response, None, metrics)
 
-        run(self.db.transaction())
+        run(self.db.transaction(max_attempts=10))
 
     def settle_failure(self, uid: str, request_id: str, error_code: str, metrics: dict) -> None:
         @firestore.transactional
         def run(tx):
             return self._settle_transaction(tx, uid, request_id, None, error_code, metrics)
 
-        run(self.db.transaction())
+        run(self.db.transaction(max_attempts=10))

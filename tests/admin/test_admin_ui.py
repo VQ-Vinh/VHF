@@ -134,6 +134,8 @@ class AdminUiTests(unittest.TestCase):
         self.assertIn("Changes apply immediately", plan_html)
         self.assertIn('action="/plans/free"', plan_html)
         self.assertIn('name="daily_minutes"', plan_html)
+        self.assertIn('name="live_log_limit"', plan_html)
+        self.assertIn('name="history_unlock_delay_days"', plan_html)
 
     def test_plan_limits_can_be_updated_with_audit(self) -> None:
         db = _PlanDb()
@@ -146,6 +148,7 @@ class AdminUiTests(unittest.TestCase):
                     "name": "Free Daily", "daily_minutes": 15,
                     "requests_per_minute": 45, "max_concurrency": 3,
                     "max_devices": 2, "sort_order": 10,
+                    "live_log_limit": 10, "history_unlock_delay_days": 1,
                 },
                 follow_redirects=False,
             )
@@ -153,6 +156,8 @@ class AdminUiTests(unittest.TestCase):
         self.assertEqual(db.plan_ref.data["audio_seconds_limit"], 900)
         self.assertEqual(db.plan_ref.data["monthly_audio_seconds"], 900)
         self.assertEqual(db.plan_ref.data["quota_period"], "daily")
+        self.assertEqual(db.plan_ref.data["live_log_limit"], 10)
+        self.assertEqual(db.plan_ref.data["history_unlock_delay_days"], 1)
         self.assertEqual(db.audit[0]["action"], "plan.update")
 
         with patch("services.prana_admin.main._db", return_value=db):

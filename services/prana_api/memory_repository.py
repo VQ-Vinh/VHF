@@ -4,7 +4,7 @@ import threading
 import time
 import hmac
 import hashlib
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from services.prana_api.errors import api_error
 from services.prana_api.models import (
@@ -12,6 +12,7 @@ from services.prana_api.models import (
     Plan,
     Reservation,
     Station,
+    StationCapabilities,
     StationDesiredState,
     StationHeartbeat,
     StationPairingRequest,
@@ -20,6 +21,15 @@ from services.prana_api.models import (
     UserAccount,
 )
 from services.prana_api.repository import identity_updates, usage_period, usage_reset_at
+
+
+def _result_timestamp(value: dict) -> datetime:
+    timestamp = value.get("timestamp")
+    if isinstance(timestamp, datetime):
+        return timestamp
+    if isinstance(timestamp, str):
+        return datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    return datetime.min.replace(tzinfo=timezone.utc)
 
 
 class MemoryRepository:
@@ -357,9 +367,29 @@ class MemoryRepository:
             if not registry.get("active", True):
                 raise api_error(403, "STATION_REVOKED", "Station access has been revoked")
             desired = StationDesiredState.model_validate(registry.get("desired_state") or {})
+            capabilities = registry.get("capabilities")
+            requested_mode = updates.get("capture_mode")
+            requested_device = updates.get("audio_device_id")
+            if requested_mode is not None or requested_device is not None:
+                if not capabilities:
+                    raise api_error(409, "CAPABILITIES_UNAVAILABLE", "Station has not reported audio capabilities")
+                mode = requested_mode or desired.capture_mode
+                devices = {
+                    item.get("id"): item
+                    for item in capabilities.get("audio_devices") or []
+                }
+                device_id = requested_device if requested_device is not None else desired.audio_device_id
+                if mode not in set(capabilities.get("capture_modes") or []):
+                    raise api_error(422, "CAPTURE_MODE_UNAVAILABLE", "Capture mode is not supported by this station")
+                if device_id and (
+                    device_id not in devices or devices[device_id].get("mode") != mode
+                ):
+                    raise api_error(422, "AUDIO_DEVICE_UNAVAILABLE", "Audio device is not available for this mode")
             data = desired.model_dump()
             if updates.pop("retry_generation_increment", False):
                 data["retry_generation"] = desired.retry_generation + 1
+            if updates.pop("capability_refresh_increment", False):
+                data["capability_refresh_generation"] = desired.capability_refresh_generation + 1
             data.update({key: value for key, value in updates.items() if value is not None})
             data["generation"] = desired.generation + 1
             value = StationDesiredState.model_validate(data)
@@ -380,11 +410,97 @@ class MemoryRepository:
                 "sequence": heartbeat.sequence,
                 "observed_generation": heartbeat.observed_generation,
                 "target_language": heartbeat.target_language,
+                "boot_id": heartbeat.boot_id,
+                "active_capture_mode": heartbeat.active_capture_mode,
+                "active_audio_device_id": heartbeat.active_audio_device_id,
                 "last_error": heartbeat.error,
+                "retrying": heartbeat.retrying,
+                "retry_code": heartbeat.retry_code,
+                "retry_attempt": heartbeat.retry_attempt,
                 "last_seen_at": now,
             }
+            if heartbeat.boot_id and heartbeat.boot_id != registry.get("boot_id"):
+                desired = StationDesiredState.model_validate(
+                    registry.get("desired_state") or {}
+                )
+                boot_running = desired.auto_start_capture
+                if desired.running != boot_running:
+                    desired = desired.model_copy(
+                        update={
+                            "running": boot_running,
+                            "generation": desired.generation + 1,
+                        }
+                    )
+                values["desired_state"] = desired.model_dump()
             registry.update(values)
             self.station_projections[registry["owner_uid"]][station_id].update(values)
+
+    def update_station_capabilities(
+        self, station_id: str, capabilities: StationCapabilities
+    ) -> None:
+        with self.lock:
+            registry = self.station_registry.get(station_id)
+            if not registry or not registry.get("owner_uid"):
+                raise api_error(403, "STATION_NOT_PAIRED", "Station has not been paired")
+            value = capabilities.model_dump()
+            registry["capabilities"] = value
+            projection = self.station_projections[registry["owner_uid"]][station_id]
+            projection["capabilities"] = value
+            desired = StationDesiredState.model_validate(
+                registry.get("desired_state") or {}
+            )
+            available = {
+                item.id: item.mode for item in capabilities.audio_devices
+            }
+            capture_mode = desired.capture_mode
+            if capture_mode not in capabilities.capture_modes:
+                capture_mode = "device"
+            if capture_mode != desired.capture_mode or (
+                desired.audio_device_id
+                and available.get(desired.audio_device_id) != capture_mode
+            ):
+                desired = desired.model_copy(
+                    update={
+                        "capture_mode": capture_mode,
+                        "audio_device_id": "",
+                        "generation": desired.generation + 1,
+                    }
+                )
+                registry["desired_state"] = desired.model_dump()
+                projection["desired_state"] = desired.model_dump()
+
+    def list_station_results(
+        self,
+        uid: str,
+        station_id: str,
+        session_id: str,
+        plan: Plan,
+        limit: int,
+    ) -> list[dict]:
+        station = self.station_projections.get(uid, {}).get(station_id)
+        if not station or not station.get("active", True):
+            raise api_error(404, "STATION_NOT_FOUND", "Station was not found")
+        now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(days=plan.history_unlock_delay_days)
+        values = [
+            dict(value)
+            for (owner, station_key, session, _), value in self.station_results.items()
+            if owner == uid and station_key == station_id and session == session_id
+        ]
+        values.sort(key=lambda item: _result_timestamp(item), reverse=True)
+        recent_limit = limit
+        if plan.live_log_limit:
+            recent_limit = min(recent_limit, plan.live_log_limit)
+        recent = [
+            item for item in values if _result_timestamp(item) > cutoff
+        ][:recent_limit]
+        unlocked = [
+            item for item in values if _result_timestamp(item) <= cutoff
+        ][: max(0, limit - len(recent))]
+        return sorted(
+            [*unlocked, *recent],
+            key=_result_timestamp,
+        )
 
     def consume_station_request(self, station_id: str, request_id: str, expires_at: datetime) -> None:
         del expires_at
@@ -418,7 +534,12 @@ class MemoryRepository:
                 {"used_audio_seconds": 0, "reserved_audio_seconds": 0, "active_requests": 0, "request_count": 0},
             )
             if usage["active_requests"] >= plan.max_concurrency:
-                raise api_error(429, "RATE_LIMITED", "Too many concurrent requests")
+                raise api_error(
+                    429,
+                    "RATE_LIMITED",
+                    "Too many concurrent requests",
+                    retry_after=2,
+                )
             if usage["used_audio_seconds"] + usage["reserved_audio_seconds"] + seconds > plan.audio_seconds_limit:
                 raise api_error(
                     429,
@@ -428,7 +549,12 @@ class MemoryRepository:
                 )
             minute = int(time.time() // 60)
             if self.rates.get((uid, minute), 0) >= plan.requests_per_minute:
-                raise api_error(429, "RATE_LIMITED", "Requests-per-minute limit exceeded")
+                raise api_error(
+                    429,
+                    "RATE_LIMITED",
+                    "Requests-per-minute limit exceeded",
+                    retry_after=max(1, 60 - now.second),
+                )
             for limit in (self.global_daily_audio_seconds, self.global_monthly_audio_seconds):
                 if limit and self.global_used + self.global_reserved + seconds > limit:
                     raise api_error(503, "SERVICE_USAGE_LIMIT_REACHED", "Service-wide usage limit reached")
