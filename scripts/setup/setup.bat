@@ -27,6 +27,7 @@ if exist "%ROOT%\.venv\dev\Scripts\python.exe" (
 
 echo [*] Installing dependencies...
 "%ROOT%\.venv\dev\Scripts\python.exe" -m pip install --upgrade pip
+"%ROOT%\.venv\dev\Scripts\python.exe" -m pip uninstall --yes prana-elex-linux >nul 2>&1
 "%ROOT%\.venv\dev\Scripts\python.exe" -m pip install --no-build-isolation -e "%ROOT%\packages\prana_core"
 if errorlevel 1 exit /b 1
 "%ROOT%\.venv\dev\Scripts\python.exe" -m pip install --no-build-isolation -e "%ROOT%\apps\windows"

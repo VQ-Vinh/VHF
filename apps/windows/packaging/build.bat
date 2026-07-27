@@ -6,6 +6,7 @@ title PRANA ELEX - Build
 set "ROOT=%~dp0..\..\.."
 for %%I in ("%ROOT%") do set "ROOT=%%~fI"
 set "SPEC=%~dp0PRANA_ELEX.spec"
+set "STATION_SPEC=%~dp0PRANA_Station.spec"
 set "VENV=%ROOT%\.venv\windows"
 set "WORK_DIR=%ROOT%\build\buildwin\work"
 set "DIST_DIR=%ROOT%\build\buildwin\dist"
@@ -47,10 +48,16 @@ if exist "%INSTALLER_DIR%" rmdir /s /q "%INSTALLER_DIR%"
 echo [5/7] Building PRANA_ELEX.exe...
 "%VENV%\Scripts\python.exe" -m PyInstaller --noconfirm --clean --workpath "%WORK_DIR%" --distpath "%DIST_DIR%" "%SPEC%"
 if errorlevel 1 goto :error
+"%VENV%\Scripts\python.exe" -m PyInstaller --noconfirm --clean --workpath "%WORK_DIR%" --distpath "%DIST_DIR%" "%STATION_SPEC%"
+if errorlevel 1 goto :error
 
 echo [6/7] Validating release bundle...
 "%VENV%\Scripts\python.exe" "%ROOT%\tools\packaging\validate_release.py" --platform windows --bundle "%DIST_DIR%\PRANA_ELEX"
 if errorlevel 1 goto :error
+if not exist "%DIST_DIR%\PRANA_Station\PRANA_Station.exe" (
+    echo [ERROR] PRANA Station bundle was not created.
+    goto :error
+)
 
 for /f "delims=" %%V in ('""%VENV%\Scripts\python.exe" "%ROOT%\tools\packaging\project_metadata.py" --field version"') do set "APP_VERSION=%%V"
 if not defined APP_VERSION (
@@ -76,6 +83,7 @@ if defined ISCC (
 
 echo.
 echo [OK] Output: %DIST_DIR%\PRANA_ELEX\PRANA_ELEX.exe
+echo [OK] Station: %DIST_DIR%\PRANA_Station\PRANA_Station.exe
 echo [SECURITY] The desktop release uses PRANA API and contains no Google credentials.
 pause
 exit /b 0

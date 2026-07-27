@@ -63,7 +63,20 @@ class WindowsInstallerDefinitionTests(unittest.TestCase):
         self.assertIn("build\\buildwin\\work", script)
         self.assertIn("build\\buildwin\\dist", script)
         self.assertIn("installers\\windows", script)
+        self.assertIn("PRANA_Station.spec", script)
+        self.assertIn("PRANA_Station\\PRANA_Station.exe", script)
         self.assertNotIn("release\\", script)
+
+    def test_installer_bundles_and_autostarts_station_agent(self) -> None:
+        script = (INSTALLER / "PRANA_ELEX.iss").read_text(encoding="utf-8")
+        self.assertIn("build\\buildwin\\dist\\PRANA_Station\\*", script)
+        self.assertIn("{userstartup}\\PRANA Station", script)
+        self.assertIn("PRANA_Station\\PRANA_Station.exe", script)
+
+        spec = (INSTALLER.parent / "PRANA_Station.spec").read_text(encoding="utf-8")
+        self.assertIn("station_frozen_entry.py", spec)
+        self.assertIn("apps/windows/config/default.toml", spec)
+        self.assertIn('excludes=["PySide6"', spec)
 
     def test_build_installs_local_packages_without_isolation(self) -> None:
         script = (ROOT / "apps" / "windows" / "packaging" / "build.bat").read_text(

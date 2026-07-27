@@ -121,6 +121,7 @@ Name: "autostart"; Description: "{cm:AutostartTask}"; GroupDescription: "{cm:Add
 
 [Files]
 Source: "..\..\..\..\build\buildwin\dist\PRANA_ELEX\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: application
+Source: "..\..\..\..\build\buildwin\dist\PRANA_Station\*"; DestDir: "{app}\PRANA_Station"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: application
 
 [Dirs]
 Name: "{code:GetSelectedDataDir}"; Permissions: users-modify; Check: IsAdminInstallMode
@@ -129,6 +130,7 @@ Name: "{code:GetSelectedDataDir}"; Permissions: users-modify; Check: IsAdminInst
 Name: "{group}\PRANA ELEX"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"
 Name: "{autodesktop}\PRANA ELEX"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
 Name: "{userstartup}\PRANA ELEX"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: autostart
+Name: "{userstartup}\PRANA Station"; Filename: "{app}\PRANA_Station\PRANA_Station.exe"; Parameters: "--data-dir ""{code:GetSelectedDataDir}"""; WorkingDir: "{app}\PRANA_Station"
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Description: "{cm:LaunchApp}"; Flags: nowait postinstall skipifsilent

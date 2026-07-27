@@ -6,6 +6,10 @@ param(
     [ValidateSet("auto", "debug", "release")]
     [string]$BuildMode = "auto",
 
+    [string]$ApiUrl = "",
+
+    [switch]$PhysicalDevice,
+
     [switch]$Clean
 )
 
@@ -51,18 +55,64 @@ $modeArgument = "--$resolvedMode"
 $flutterBuildDir = Join-Path $repoRoot "build\buildapp\flutter"
 $flutterBuildDirSetting = "..\..\build\buildapp\flutter"
 $expectedApk = Join-Path $flutterBuildDir "app\outputs\flutter-apk\app-$Flavor-$resolvedMode.apk"
+$localApk = Join-Path $appRoot "build\app\outputs\flutter-apk\app-$Flavor-$resolvedMode.apk"
 $installerDir = Join-Path $repoRoot "installers\android\$Flavor"
 $installerApk = Join-Path $installerDir "prana-elex-$Flavor-$resolvedMode.apk"
 $versionPath = Join-Path $repoRoot "packages\prana_core\src\prana_core\VERSION"
 $appVersion = (Get-Content -LiteralPath $versionPath -Raw).Trim()
 
+if ($PhysicalDevice -and -not $ApiUrl) {
+    $defaultRoutes = Get-NetRoute `
+        -AddressFamily IPv4 `
+        -DestinationPrefix "0.0.0.0/0" `
+        -ErrorAction SilentlyContinue |
+        Sort-Object { $_.RouteMetric + $_.InterfaceMetric }
+    foreach ($route in $defaultRoutes) {
+        $address = Get-NetIPAddress `
+            -AddressFamily IPv4 `
+            -InterfaceIndex $route.InterfaceIndex `
+            -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.IPAddress -notlike "169.254.*" -and
+                $_.IPAddress -ne "127.0.0.1"
+            } |
+            Select-Object -First 1
+        if ($address) {
+            $ApiUrl = "http://$($address.IPAddress):8080"
+            break
+        }
+    }
+    if (-not $ApiUrl) {
+        throw "Khong tim thay IPv4 LAN. Hay truyen -ApiUrl http://<IP-LAPTOP>:8080."
+    }
+}
+
 Write-Host "[PRANA] Flutter: $flutter" -ForegroundColor Cyan
 Write-Host "[PRANA] Flavor: $Flavor | Mode: $resolvedMode" -ForegroundColor Cyan
 Write-Host "[PRANA] Config: $configPath" -ForegroundColor Cyan
+if ($ApiUrl) {
+    $parsedApiUrl = $null
+    if (
+        -not [Uri]::TryCreate($ApiUrl, [UriKind]::Absolute, [ref]$parsedApiUrl) -or
+        $parsedApiUrl.Scheme -notin @("http", "https")
+    ) {
+        throw "ApiUrl phai la dia chi HTTP/HTTPS hop le."
+    }
+    Write-Host "[PRANA] API override: $ApiUrl" -ForegroundColor Cyan
+}
 
 Push-Location $appRoot
 $buildExitCode = 0
 try {
+    # Flutter SDK versions differ on whether they honor the configured
+    # build-dir. Remove only the exact APK candidates so this invocation can
+    # never publish an artifact left by an earlier build.
+    foreach ($oldApk in @($expectedApk, $localApk, $installerApk)) {
+        if (Test-Path -LiteralPath $oldApk) {
+            Remove-Item -LiteralPath $oldApk -Force
+        }
+    }
+
     if ($Clean) {
         Write-Host "[PRANA] Don Android build cache..." -ForegroundColor Yellow
         if (Test-Path -LiteralPath $flutterBuildDir) {
@@ -82,11 +132,17 @@ try {
 
     if ($buildExitCode -eq 0) {
         Write-Host "[PRANA] Build APK..." -ForegroundColor Cyan
-        & $flutter build apk `
-            $modeArgument `
-            --flavor $Flavor `
-            --build-name $appVersion `
+        $buildArguments = @(
+            "build", "apk",
+            $modeArgument,
+            "--flavor", $Flavor,
+            "--build-name", $appVersion,
             "--dart-define-from-file=config/$Flavor.json"
+        )
+        if ($ApiUrl) {
+            $buildArguments += "--dart-define=API_URL=$ApiUrl"
+        }
+        & $flutter @buildArguments
         $buildExitCode = $LASTEXITCODE
     }
 } finally {
@@ -96,9 +152,10 @@ try {
 
 if ($buildExitCode -ne 0) { exit $buildExitCode }
 
-$localApk = Join-Path $appRoot "build\app\outputs\flutter-apk\app-$Flavor-$resolvedMode.apk"
 $sourceApk = @($expectedApk, $localApk) |
     Where-Object { Test-Path -LiteralPath $_ } |
+    ForEach-Object { Get-Item -LiteralPath $_ } |
+    Sort-Object LastWriteTimeUtc -Descending |
     Select-Object -First 1
 if (-not $sourceApk) {
     throw "Flutter bao thanh cong nhung khong tim thay APK: $expectedApk hoac $localApk"
@@ -106,9 +163,9 @@ if (-not $sourceApk) {
 
 # Some Flutter SDK versions keep the Gradle APK under apps/android/build even
 # when build-dir is configured. Normalize it into the repository build tree.
-if ($sourceApk -ne $expectedApk) {
+if ($sourceApk.FullName -ne $expectedApk) {
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $expectedApk) | Out-Null
-    Copy-Item -LiteralPath $sourceApk -Destination $expectedApk -Force
+    Copy-Item -LiteralPath $sourceApk.FullName -Destination $expectedApk -Force
 }
 
 $apk = Get-Item -LiteralPath $expectedApk

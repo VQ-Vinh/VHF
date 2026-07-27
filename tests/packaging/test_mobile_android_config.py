@@ -13,19 +13,39 @@ def test_mobile_signing_properties_are_ignored() -> None:
     assert "apps/android/android/key.properties" in ignore
 
 
+def test_mobile_icons_use_density_resources_and_compact_ui_asset() -> None:
+    manifest = Path(
+        "apps/android/android/app/src/main/AndroidManifest.xml"
+    ).read_text(encoding="utf-8")
+    assert 'android:icon="@mipmap/ic_launcher"' in manifest
+    assert not Path(
+        "apps/android/android/app/src/main/res/drawable-nodpi/logo_mobileapp.png"
+    ).exists()
+    for density in ("mdpi", "hdpi", "xhdpi", "xxhdpi", "xxxhdpi"):
+        assert Path(
+            f"apps/android/android/app/src/main/res/mipmap-{density}/ic_launcher.png"
+        ).exists()
+    assert Path("apps/android/assets/logo_mobileapp.png").stat().st_size < 500_000
+
+
 def test_mobile_apk_build_wrapper_uses_flavor_config() -> None:
     wrapper = Path("buildapp.bat").read_text(encoding="utf-8")
     legacy = Path("build_mobile_apk.bat").read_text(encoding="utf-8")
     script = Path("apps/android/scripts/build-apk.ps1").read_text(encoding="utf-8")
     assert "apps\\android\\build.bat" in wrapper
     assert "buildapp.bat" in legacy
+    assert "-PhysicalDevice" in legacy
     assert 'ValidateSet("staging", "production")' in script
     assert "--dart-define-from-file=config/$Flavor.json" in script
+    assert '"--dart-define=API_URL=$ApiUrl"' in script
+    assert 'Get-NetRoute' in script
     assert "build\\buildapp\\flutter" in script
     assert "installers\\android\\$Flavor" in script
     assert 'config "--build-dir=$flutterBuildDirSetting"' in script
     assert 'config "--build-dir=build"' in script
     assert '$localApk = Join-Path $appRoot "build\\app\\outputs\\flutter-apk' in script
+    assert "foreach ($oldApk in @($expectedApk, $localApk, $installerApk))" in script
+    assert "Sort-Object LastWriteTimeUtc -Descending" in script
     assert "FIREBASE_API_KEY" not in script
 
 
