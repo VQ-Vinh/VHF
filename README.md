@@ -73,6 +73,16 @@ scripts\setup\setup.bat
 run_dev.bat
 ```
 
+Để chạy trọn bộ backend local, Laptop Station, Android Emulator và Flutter
+staging bằng một lệnh:
+
+```cmd
+enable_station.bat
+```
+
+API và Station chạy nền; log phát triển được ghi vào
+`VHF_Storage/logs/dev/`.
+
 CLI trên Windows:
 
 ```cmd

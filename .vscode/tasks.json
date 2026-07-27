@@ -2,9 +2,9 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "PRANA: Mở Android App",
+      "label": "PRANA: Enable Station + Android",
       "type": "process",
-      "command": "${workspaceFolder}\\run_mobile.bat",
+      "command": "${workspaceFolder}\\enable_station.bat",
       "options": {
         "cwd": "${workspaceFolder}"
       },
