@@ -1,5 +1,6 @@
 [CmdletBinding()]
 param(
+    [switch]$WithMobile,
     [string]$AvdName = "Prana_API_36",
     [ValidatePattern("^\d{3,5}x\d{3,5}$")]
     [string]$EmulatorResolution = "1080x2160",
@@ -55,6 +56,34 @@ function Test-ApiHealth {
     }
 }
 
+function Confirm-GoogleAdc {
+    $gcloud = Get-Command "gcloud.cmd" -ErrorAction SilentlyContinue
+    if (-not $gcloud) {
+        $gcloud = Get-Command "gcloud" -ErrorAction SilentlyContinue
+    }
+    if (-not $gcloud) {
+        throw "Khong tim thay gcloud CLI. Cai Google Cloud CLI va chay lai."
+    }
+
+    & $gcloud.Source auth application-default print-access-token 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "[PRANA] Google ADC da san sang." -ForegroundColor Green
+        return
+    }
+
+    Write-Host "[PRANA] Google ADC da het han. Dang mo trinh duyet de dang nhap lai..." -ForegroundColor Yellow
+    & $gcloud.Source auth application-default login
+    if ($LASTEXITCODE -ne 0) {
+        throw "Khong the lam moi Google ADC. Chay 'gcloud auth application-default login' roi thu lai."
+    }
+
+    & $gcloud.Source auth application-default print-access-token 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Google ADC chua san sang sau khi dang nhap."
+    }
+    Write-Host "[PRANA] Google ADC da san sang." -ForegroundColor Green
+}
+
 function Find-ProcessByCommand {
     param([string]$Pattern)
     try {
@@ -90,8 +119,13 @@ function Start-LoggedProcess {
 }
 
 Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host "  PRANA ELEX - Enable Laptop Station + Android" -ForegroundColor Cyan
+Write-Host "  PRANA ELEX - Enable Laptop Station + API" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
+
+# The health endpoint does not access Firestore, so it cannot detect expired
+# Application Default Credentials. Verify ADC before launching either process
+# to avoid five-minute Firestore timeouts and a permanently offline station.
+Confirm-GoogleAdc
 
 # This is the single development entry point, so restart processes managed by
 # an earlier invocation to pick up source/config and refreshed credentials.
@@ -157,10 +191,18 @@ if ($stationRunning) {
     }
 }
 
-Write-Host "[PRANA] Mo Android Emulator va Flutter $Flavor..." -ForegroundColor Cyan
-Write-Host "[PRANA] API/Station tiep tuc chay nen khi Flutter dung." -ForegroundColor DarkGray
-& (Join-Path $root "run_mobile.bat") `
-    -AvdName $AvdName `
-    -EmulatorResolution $EmulatorResolution `
-    -Flavor $Flavor
-exit $LASTEXITCODE
+Write-Host "[PRANA] API READY: $apiHealthUrl" -ForegroundColor Green
+Write-Host "[PRANA] Station dang chay. Cai APK tren dien thoai va quet QR de su dung." -ForegroundColor Green
+
+if ($WithMobile) {
+    Write-Host "[PRANA] Mo Android Emulator va Flutter $Flavor..." -ForegroundColor Cyan
+    Write-Host "[PRANA] API/Station tiep tuc chay nen khi Flutter dung." -ForegroundColor DarkGray
+    & (Join-Path $root "run_mobile.bat") `
+        -AvdName $AvdName `
+        -EmulatorResolution $EmulatorResolution `
+        -Flavor $Flavor
+    exit $LASTEXITCODE
+}
+
+Write-Host "[PRANA] Emulator khong duoc khoi dong. Dung -WithMobile khi phat trien Android." -ForegroundColor DarkGray
+exit 0

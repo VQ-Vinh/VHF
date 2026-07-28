@@ -62,7 +62,8 @@ Tester ứng dụng cần:
 Tester Web Admin cần:
 
 - Tài khoản Google đã được cấp quyền IAP và nằm trong allowlist Admin.
-- Tài khoản hiện đang sử dụng: `technical@samaser.com.vn`.
+- Sử dụng tài khoản kiểm thử được người quản trị staging thêm vào allowlist;
+  không ghi địa chỉ email cá nhân trong repository.
 - Quyền xem catalog plan, đổi trạng thái và quản lý thiết bị trên staging.
 
 ### 3.3. Dữ liệu test

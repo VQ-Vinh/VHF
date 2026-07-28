@@ -1,9 +1,13 @@
 # PRANA ELEX Mobile
 
 Ứng dụng Flutter Android dùng để ghép nối, điều khiển và theo dõi các station
-PRANA ELEX. Ứng dụng không kết nối trực tiếp với laptop hoặc Raspberry Pi. Các
-thao tác thay đổi trạng thái được gửi qua REST API, còn trạng thái và kết quả
-theo thời gian thực được nhận từ Firestore snapshot.
+PRANA ELEX. Ứng dụng không kết nối trực tiếp với laptop hoặc Raspberry Pi; mọi
+thao tác, trạng thái và kết quả đều đi qua Public API.
+
+Người dùng thông thường cài APK từ
+[GitHub Releases](https://github.com/VQ-Vinh/VHF/releases) và không cần cài
+Flutter, Android SDK hoặc Emulator. Phần còn lại của tài liệu này dành cho lập
+trình viên Android.
 
 ## Yêu cầu môi trường
 

@@ -18,24 +18,53 @@ if errorlevel 1 (
 )
 
 if exist "%ROOT%\.venv\dev\Scripts\python.exe" (
-    echo [*] Virtual environment already exists, skipping...
+    echo [*] Station environment already exists, skipping creation...
 ) else (
-    echo [*] Creating virtual environment...
+    echo [*] Creating Station environment...
     python -m venv "%ROOT%\.venv\dev"
     if errorlevel 1 exit /b 1
 )
 
-echo [*] Installing dependencies...
+echo [*] Installing Station dependencies...
 "%ROOT%\.venv\dev\Scripts\python.exe" -m pip install --upgrade pip
+if errorlevel 1 exit /b 1
 "%ROOT%\.venv\dev\Scripts\python.exe" -m pip uninstall --yes prana-elex-linux >nul 2>&1
 "%ROOT%\.venv\dev\Scripts\python.exe" -m pip install --no-build-isolation -e "%ROOT%\packages\prana_core"
 if errorlevel 1 exit /b 1
 "%ROOT%\.venv\dev\Scripts\python.exe" -m pip install --no-build-isolation -e "%ROOT%\apps\windows"
 if errorlevel 1 exit /b 1
 
+if not exist "%ROOT%\.venv\dev\Scripts\prana-station-provision.exe" (
+    echo [ERROR] Station provisioning command was not installed.
+    exit /b 1
+)
+
+if exist "%ROOT%\.venv\backend\Scripts\python.exe" (
+    echo [*] Backend environment already exists, skipping creation...
+) else (
+    echo [*] Creating backend environment...
+    python -m venv "%ROOT%\.venv\backend"
+    if errorlevel 1 exit /b 1
+)
+
+echo [*] Installing API and Admin dependencies...
+"%ROOT%\.venv\backend\Scripts\python.exe" -m pip install --upgrade pip
+if errorlevel 1 exit /b 1
+"%ROOT%\.venv\backend\Scripts\python.exe" -m pip install -r "%ROOT%\services\prana_api\requirements.txt"
+if errorlevel 1 exit /b 1
+"%ROOT%\.venv\backend\Scripts\python.exe" -m pip install -r "%ROOT%\services\prana_admin\requirements.txt"
+if errorlevel 1 exit /b 1
+
+if not exist "%ROOT%\.venv\backend\Scripts\uvicorn.exe" (
+    echo [ERROR] Backend API command was not installed.
+    exit /b 1
+)
+
 if not exist "%ROOT%\VHF_Storage\audio" mkdir "%ROOT%\VHF_Storage\audio"
 if not exist "%ROOT%\VHF_Storage\results" mkdir "%ROOT%\VHF_Storage\results"
 
 echo.
-echo [OK] Windows setup complete. Run: run_dev.bat
+echo [OK] Windows setup complete.
+echo      Generate Station QR: generate_station_qr.bat
+echo      Start API + Station: enable_station.bat
 pause

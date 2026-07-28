@@ -30,38 +30,56 @@ Xem thêm [kiến trúc hệ thống](docs/architecture.md) và
 ## Yêu cầu
 
 - Python 3.11 trở lên
-- Windows 10/11 x64 hoặc Raspberry Pi OS Bookworm ARM64
-- Flutter SDK và Android SDK nếu phát triển ứng dụng Android
+- Windows 10/11 x64 và Google Cloud CLI nếu vận hành Laptop Station
+- Raspberry Pi OS Bookworm ARM64 nếu vận hành Pi Station
+- Flutter SDK, Android SDK và JDK 17 chỉ khi phát triển hoặc build Android
 
-## Chạy từ source
+## Bắt đầu nhanh trên Windows
 
-### Windows
+Sau khi clone repository:
 
 ```bat
 scripts\setup\setup.bat
-run_dev.bat
-```
-
-Chạy Station, API local, Android Emulator và Flutter staging:
-
-```bat
+generate_station_qr.bat
 enable_station.bat
 ```
 
-Chạy API riêng:
+`setup.bat` cài môi trường Station và backend. `generate_station_qr.bat` tạo
+nhãn PNG/SVG trong thư mục cục bộ `stations\`; activation code trong nhãn không
+được commit hoặc chia sẻ công khai.
+
+Cài APK mới nhất từ [GitHub Releases](https://github.com/VQ-Vinh/VHF/releases),
+đối chiếu file SHA-256 đi kèm, sau đó quét QR trong ứng dụng. Người sử dụng APK
+không cần Flutter, Android SDK hoặc Emulator.
+
+Trước lần chạy đầu tiên, đăng nhập Application Default Credentials:
 
 ```bat
+gcloud auth application-default login
+```
+
+`enable_station.bat` mặc định chỉ chạy API local và Laptop Station. Khi phát
+triển Android và muốn mở thêm Emulator + Flutter:
+
+```bat
+enable_station.bat -WithMobile
+```
+
+Các lệnh phát triển riêng:
+
+```bat
+run_dev.bat
 run_api.bat
 ```
 
-### Raspberry Pi/Linux
+## Raspberry Pi/Linux
 
 ```bash
 ./scripts/setup/setup.sh
 ./apps/linux/run.sh
 ```
 
-### Android
+## Phát triển Android
 
 Tạo file cấu hình từ `apps/android/config/staging.example.json`, sau đó:
 
@@ -107,6 +125,9 @@ installers/linux/
 Android production cần cấu hình keystore. Windows release cần Inno Setup; Linux
 release phải được build trực tiếp trên Raspberry Pi ARM64.
 
+APK/AAB và bộ cài là artifact phát hành, không được commit vào repository.
+Người phát hành tải APK đã ký và file checksum `.sha256` lên GitHub Releases.
+
 ## Cấu hình và bảo mật
 
 Config client nằm tại:
@@ -118,5 +139,8 @@ Config client nằm tại:
 Không commit service-account JSON, private key, token, signing key hoặc credential.
 Firebase Web API key và OAuth client ID trong client chỉ là định danh public; mọi
 quyền nghiệp vụ vẫn được kiểm tra tại API.
+
+Các thư mục `.venv/`, `.secrets/`, `VHF_Storage/`, `stations/`, Terraform state
+và cấu hình Android thật đều được Git bỏ qua.
 
 Hướng dẫn staging đầy đủ: [docs/staging-e2e-test-guide.md](docs/staging-e2e-test-guide.md).

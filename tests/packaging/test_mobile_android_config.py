@@ -57,6 +57,8 @@ def test_mobile_runner_pins_the_named_avd_to_balanced_resolution() -> None:
 
     for script in (runner, enable_station):
         assert '[string]$EmulatorResolution = "1080x2160"' in script
+    assert "[switch]$WithMobile" in enable_station
+    assert "if ($WithMobile)" in enable_station
     assert "-EmulatorResolution $EmulatorResolution" in enable_station
 
     assert "getprop ro.boot.qemu.avd_name" in runner

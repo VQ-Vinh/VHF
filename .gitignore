@@ -5,9 +5,15 @@
 # Runtime data (audio, results, logs)
 VHF_Storage/
 
+# Station activation labels contain private activation codes
+stations/
+
 # Bytecode
 __pycache__/
 *.pyc
+.pytest_cache/
+.coverage
+htmlcov/
 
 # Secrets
 .env
@@ -49,6 +55,17 @@ build/
 dist/
 installers/*
 !installers/README.md
+*.apk
+*.aab
+*.deb
+*.exe
+!generate_station_qr.bat
+!enable_station.bat
+!run_api.bat
+!run_dev.bat
+!run_mobile.bat
+!buildapp.bat
+!buildwin.bat
 *.spec
 !apps/windows/packaging/PRANA_ELEX.spec
 !apps/linux/packaging/PRANA_ELEX.spec
