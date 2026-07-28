@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-heading"><div><h1>{{ t('audit.title') }}</h1><p>{{ t('audit.subtitle') }}</p></div></header>
+<form class="filter-bar audit-filters" method="get" action="/audit">
+  <label><span>{{ t('audit.operator') }}</span><input name="operator_filter" value="{{ filters.operator_filter }}"></label>
+  <label><span>{{ t('audit.action') }}</span><input name="action" value="{{ filters.action }}" placeholder="station.transfer"></label>
+  <label><span>{{ t('audit.target') }}</span><input name="target" value="{{ filters.target }}"></label>
+  <label><span>{{ t('audit.from') }}</span><input type="date" name="date_from" value="{{ filters.date_from }}"></label>
+  <label><span>{{ t('audit.to') }}</span><input type="date" name="date_to" value="{{ filters.date_to }}"></label>
+  <div class="filter-actions"><button class="button primary">{{ t('users.filter') }}</button><a class="button" href="/audit">{{ t('users.clear') }}</a></div>
+</form>
+<section class="audit-list">{% for item in entries %}<details class="panel audit-entry"><summary><span><strong>{{ t('audit.' ~ item.action) }}</strong><small>{{ item.operator }} · {{ item.when }}</small></span><code>{{ item.target_uid }}</code></summary><pre>{{ item.details_json }}</pre></details>{% else %}<div class="panel empty">{{ t('audit.empty') }}</div>{% endfor %}</section>
+<nav class="pagination">{% if cursor %}<a class="button" href="/audit?{{ first_query }}">{{ t('users.first') }}</a>{% endif %}{% if next_query %}<a class="button primary" href="/audit?{{ next_query }}">{{ t('users.next') }}</a>{% endif %}</nav>
+{% endblock %}

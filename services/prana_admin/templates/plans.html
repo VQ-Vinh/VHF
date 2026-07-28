@@ -5,20 +5,30 @@
   {% for plan in plans %}
   <article class="panel catalog-card {% if plan.id == 'free' %}featured{% endif %}">
     {% set availability = plan.availability|default('available', true) %}{% set audio_limit = plan.audio_seconds_limit|default(plan.monthly_audio_seconds, true) %}
-    <div class="catalog-heading"><div><code>{{ plan.id }}</code><h2>{{ plan.name }}</h2></div><span class="badge {% if availability == 'available' %}active{% else %}pending_payment{% endif %}">{{ t('plans.' ~ availability) }}</span></div>
-    <form class="plan-form catalog-plan-form" method="post" action="/plans/{{ plan.id }}">
-      <label><span>{{ t('plans.name') }}</span><input name="name" value="{{ plan.name }}" maxlength="40" required></label>
-      <label><span>{{ t('plans.minutes_daily') }}</span><input name="daily_minutes" type="number" min="1" max="1440" value="{{ '%.0f'|format(audio_limit / 60) }}" required></label>
-      <div class="plan-field-grid">
-        <label><span>{{ t('plans.rpm') }}</span><input name="requests_per_minute" type="number" min="1" max="600" value="{{ plan.requests_per_minute }}" required></label>
-        <label><span>{{ t('plans.concurrency') }}</span><input name="max_concurrency" type="number" min="1" max="10" value="{{ plan.max_concurrency }}" required></label>
-        <label><span>{{ t('plans.devices') }}</span><input name="max_devices" type="number" min="1" max="10" value="{{ plan.max_devices }}" required></label>
-        <label><span>{{ t('plans.stations') }}</span><input name="max_stations" type="number" min="1" max="20" value="{{ plan.max_stations or 2 }}" required></label>
-        <label><span>{{ t('plans.live_logs') }}</span><input name="live_log_limit" type="number" min="0" max="1000" value="{{ plan.live_log_limit }}" required></label>
-        <label><span>{{ t('plans.history_delay') }}</span><input name="history_unlock_delay_days" type="number" min="0" max="30" value="{{ plan.history_unlock_delay_days }}" required></label>
-        <label><span>{{ t('plans.sort_order') }}</span><input name="sort_order" type="number" min="0" max="1000" value="{{ plan.sort_order }}" required></label>
+    <div class="catalog-heading">
+      <div><code>{{ plan.id }}</code><h2>{{ plan.name }}</h2></div>
+      <div class="catalog-actions">
+        <span class="badge {% if availability == 'available' %}active{% else %}pending_payment{% endif %}">{{ t('plans.' ~ availability) }}</span>
+        <button class="icon-button plan-edit-button" type="button" data-plan-edit aria-label="{{ t('plans.edit') }}" title="{{ t('plans.edit') }}" aria-pressed="false">
+          <svg data-edit-icon aria-hidden="true" viewBox="0 0 24 24"><path d="M4 20h4l11-11-4-4L4 16v4Zm2-3.2 9-9 1.2 1.2-9 9H6v-1.2ZM17.8 3.2a1.4 1.4 0 0 1 2 0l1 1a1.4 1.4 0 0 1 0 2L19.6 7.4l-4-4 1.2-1.2Z"/></svg>
+          <svg data-cancel-icon aria-hidden="true" viewBox="0 0 24 24" hidden><path d="m6.4 5 5.6 5.6L17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4-5.6-5.6L6.4 19 5 17.6l5.6-5.6L5 6.4 6.4 5Z"/></svg>
+        </button>
       </div>
-      <button class="button primary" type="submit">{{ t('plans.save') }}</button>
+    </div>
+    <form class="plan-form catalog-plan-form" method="post" action="/plans/{{ plan.id }}" data-confirm="{{ t('plans.confirm') }}" data-plan-form data-edit-label="{{ t('plans.edit') }}" data-cancel-label="{{ t('plans.cancel') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label><span>{{ t('plans.name') }}</span><input name="name" value="{{ plan.name }}" maxlength="40" required disabled></label>
+      <label><span>{{ t('plans.minutes_daily') }}</span><input name="daily_minutes" type="number" min="1" max="1440" value="{{ '%.0f'|format(audio_limit / 60) }}" required disabled></label>
+      <div class="plan-field-grid">
+        <label><span>{{ t('plans.rpm') }}</span><input name="requests_per_minute" type="number" min="1" max="600" value="{{ plan.requests_per_minute }}" required disabled></label>
+        <label><span>{{ t('plans.concurrency') }}</span><input name="max_concurrency" type="number" min="1" max="10" value="{{ plan.max_concurrency }}" required disabled></label>
+        <label><span>{{ t('plans.devices') }}</span><input name="max_devices" type="number" min="1" max="10" value="{{ plan.max_devices }}" required disabled></label>
+        <label><span>{{ t('plans.stations') }}</span><input name="max_stations" type="number" min="1" max="20" value="{{ plan.max_stations or 2 }}" required disabled></label>
+        <label><span>{{ t('plans.live_logs') }}</span><input name="live_log_limit" type="number" min="0" max="1000" value="{{ plan.live_log_limit }}" required disabled></label>
+        <label><span>{{ t('plans.history_delay') }}</span><input name="history_unlock_delay_days" type="number" min="0" max="30" value="{{ plan.history_unlock_delay_days }}" required disabled></label>
+        <label><span>{{ t('plans.sort_order') }}</span><input name="sort_order" type="number" min="0" max="1000" value="{{ plan.sort_order }}" required disabled></label>
+      </div>
+      <button class="button primary" type="submit" data-plan-preview disabled>{{ t('plans.save') }}</button>
     </form>
   </article>
   {% else %}<p class="empty">{{ t('plans.empty') }}</p>{% endfor %}

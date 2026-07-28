@@ -76,6 +76,12 @@ data "google_secret_manager_secret" "google_desktop_oauth" {
   depends_on = [google_project_service.apis]
 }
 
+data "google_secret_manager_secret" "admin_csrf" {
+  project    = var.project_id
+  secret_id  = var.admin_csrf_secret_id
+  depends_on = [google_project_service.apis]
+}
+
 resource "google_firebase_web_app" "desktop" {
   provider        = google-beta
   project         = var.project_id
@@ -212,6 +218,85 @@ resource "google_firestore_index" "users_status_plan" {
   }
 }
 
+resource "google_firestore_index" "audit_operator_created" {
+  project     = var.project_id
+  database    = google_firestore_database.production.name
+  collection  = "admin_audit"
+  query_scope = "COLLECTION"
+  fields {
+    field_path = "operator"
+    order      = "ASCENDING"
+  }
+  fields {
+    field_path = "created_at"
+    order      = "DESCENDING"
+  }
+}
+
+resource "google_firestore_index" "audit_action_created" {
+  project     = var.project_id
+  database    = google_firestore_database.production.name
+  collection  = "admin_audit"
+  query_scope = "COLLECTION"
+  fields {
+    field_path = "action"
+    order      = "ASCENDING"
+  }
+  fields {
+    field_path = "created_at"
+    order      = "DESCENDING"
+  }
+}
+
+resource "google_firestore_index" "audit_target_created" {
+  project     = var.project_id
+  database    = google_firestore_database.production.name
+  collection  = "admin_audit"
+  query_scope = "COLLECTION"
+  fields {
+    field_path = "target_uid"
+    order      = "ASCENDING"
+  }
+  fields {
+    field_path = "created_at"
+    order      = "DESCENDING"
+  }
+}
+
+resource "google_firestore_index" "audit_station_created" {
+  project     = var.project_id
+  database    = google_firestore_database.production.name
+  collection  = "admin_audit"
+  query_scope = "COLLECTION"
+  fields {
+    field_path = "details.station_id"
+    order      = "ASCENDING"
+  }
+  fields {
+    field_path = "created_at"
+    order      = "DESCENDING"
+  }
+}
+
+resource "google_firestore_index" "stations_owner_platform" {
+  project     = var.project_id
+  database    = google_firestore_database.production.name
+  collection  = "station_registry"
+  query_scope = "COLLECTION"
+  fields {
+    field_path = "owner_uid"
+    order      = "ASCENDING"
+  }
+  fields {
+    field_path = "platform"
+    order      = "ASCENDING"
+  }
+  fields {
+    field_path = "__name__"
+    order      = "ASCENDING"
+  }
+}
+
 resource "google_firebaserules_ruleset" "firestore_deny_client" {
   project = var.project_id
   source {
@@ -288,6 +373,13 @@ resource "google_secret_manager_secret_iam_member" "api_google_oauth_secret" {
   secret_id = data.google_secret_manager_secret.google_desktop_oauth.secret_id
   role      = "roles/secretmanager.secretAccessor"
   member    = google_service_account.api_runtime.member
+}
+
+resource "google_secret_manager_secret_iam_member" "admin_csrf_secret" {
+  project   = var.project_id
+  secret_id = data.google_secret_manager_secret.admin_csrf.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = google_service_account.admin_runtime.member
 }
 
 resource "google_project_iam_member" "admin_firestore" {
@@ -436,9 +528,21 @@ resource "google_cloud_run_v2_service" "admin" {
         name  = "PRANA_ADMIN_ALLOWED_EMAILS"
         value = join(",", var.admin_emails)
       }
+      env {
+        name = "PRANA_ADMIN_CSRF_SECRET"
+        value_source {
+          secret_key_ref {
+            secret  = data.google_secret_manager_secret.admin_csrf.secret_id
+            version = "latest"
+          }
+        }
+      }
     }
   }
-  depends_on = [google_project_service.apis]
+  depends_on = [
+    google_project_service.apis,
+    google_secret_manager_secret_iam_member.admin_csrf_secret,
+  ]
 }
 
 resource "google_cloud_run_v2_service_iam_member" "iap_invoker" {

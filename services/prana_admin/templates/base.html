@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ title }} | PRANA ELEX Admin</title>
-  <link rel="stylesheet" href="/static/admin.css?v=brand-blue-1">
-  <script src="/static/admin.js" defer></script>
+  <link rel="stylesheet" href="/static/admin.css?v=admin-production-2">
+  <script src="/static/admin.js?v=admin-production-2" defer></script>
 </head>
 <body>
   <div class="app-shell">
@@ -17,7 +17,9 @@
       <nav aria-label="{{ t('nav.primary') }}">
         <a href="/" class="nav-link {% if active_nav == 'dashboard' %}active{% endif %}">{{ t('nav.dashboard') }}</a>
         <a href="/users" class="nav-link {% if active_nav == 'users' %}active{% endif %}">{{ t('nav.users') }}</a>
+        <a href="/stations" class="nav-link {% if active_nav == 'stations' %}active{% endif %}">{{ t('nav.stations') }}</a>
         <a href="/plans" class="nav-link {% if active_nav == 'plans' %}active{% endif %}">{{ t('nav.plans') }}</a>
+        <a href="/audit" class="nav-link {% if active_nav == 'audit' %}active{% endif %}">{{ t('nav.audit') }}</a>
       </nav>
       <div class="operator">
         <span class="operator-avatar" aria-hidden="true">{{ operator[:1]|upper }}</span>
@@ -40,5 +42,12 @@
       </div>
     </main>
   </div>
+  <dialog class="confirm-dialog" data-confirm-dialog>
+    <form method="dialog">
+      <h2>{{ t('confirm.title') }}</h2>
+      <p data-confirm-message></p>
+      <div class="dialog-actions"><button class="button" value="cancel">{{ t('confirm.cancel') }}</button><button class="button danger" value="confirm">{{ t('confirm.continue') }}</button></div>
+    </form>
+  </dialog>
 </body>
 </html>

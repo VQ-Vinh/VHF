@@ -68,3 +68,14 @@ uses a bounded in-memory window and all instances share a fixed Firestore counte
 Tune `google_auth_instance_requests_per_minute` and
 `google_auth_global_requests_per_minute` in the ignored environment tfvars when
 traffic requirements change.
+
+Before deploying `prana-admin`, create its CSRF signing secret outside Terraform
+state and add at least 32 random bytes as the latest version:
+
+```bash
+gcloud secrets create prana-admin-csrf-secret --replication-policy=automatic
+openssl rand -base64 48 | gcloud secrets versions add prana-admin-csrf-secret --data-file=-
+```
+
+Set `admin_csrf_secret_id` to that secret name. Only the Admin runtime service
+account receives `secretAccessor`; the value is never stored in tfvars.

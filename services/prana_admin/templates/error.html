@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="{{ locale }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ status }} | PRANA ELEX Admin</title>
+  <link rel="stylesheet" href="/static/admin.css?v=admin-production-1">
+</head>
+<body class="error-page">
+  <main class="error-card">
+    <span class="error-code">{{ status }}</span>
+    <h1>{{ t('error.' ~ status ~ '.title') }}</h1>
+    <p>{{ t('error.' ~ status ~ '.body') }}</p>
+    {% if detail %}<p class="error-detail">{{ detail }}</p>{% endif %}
+    <a class="button primary" href="/">{{ t('error.home') }}</a>
+  </main>
+</body>
+</html>

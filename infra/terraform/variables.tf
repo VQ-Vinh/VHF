@@ -25,6 +25,15 @@ variable "admin_members" {
 variable "admin_emails" {
   type        = set(string)
   description = "Defense-in-depth email allowlist used by prana-admin"
+  validation {
+    condition     = length(var.admin_emails) > 0
+    error_message = "admin_emails must contain at least one production Admin email."
+  }
+}
+variable "admin_csrf_secret_id" {
+  type        = string
+  default     = "prana-admin-csrf-secret"
+  description = "Existing Secret Manager secret containing at least 32 random bytes for Admin CSRF signing."
 }
 variable "terraform_operator" {
   type        = string

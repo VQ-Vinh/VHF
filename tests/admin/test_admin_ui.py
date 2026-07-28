@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+import inspect
 from pathlib import Path
 from unittest.mock import patch
 
@@ -8,9 +9,11 @@ from fastapi.testclient import TestClient
 from starlette.requests import Request
 
 from services.prana_admin.main import (
+    CSRF_COOKIE,
     _decode_cursor,
     _operator,
     _render,
+    _csrf_token,
     _station_stop_transition,
     _station_transfer_data,
     app,
@@ -45,10 +48,31 @@ class _Collection:
         self.name = name
 
     def document(self, document_id=None):
-        return self.db.plan_ref
+        if self.name == "plans":
+            return self.db.plan_ref
+        return _AuditRef(self.db)
 
     def add(self, value):
         self.db.audit.append(value)
+
+
+class _AuditRef:
+    def __init__(self, db):
+        self.db = db
+
+
+class _Batch:
+    def __init__(self, db):
+        self.db = db
+
+    def update(self, ref, updates):
+        ref.update(updates)
+
+    def set(self, ref, value):
+        ref.db.audit.append(value)
+
+    def commit(self):
+        return None
 
 
 class _PlanDb:
@@ -63,10 +87,18 @@ class _PlanDb:
     def collection(self, name):
         return _Collection(self, name)
 
+    def batch(self):
+        return _Batch(self)
+
 
 class AdminUiTests(unittest.TestCase):
     def setUp(self) -> None:
         self.client = TestClient(app)
+
+    def csrf(self, email: str = "operator@example.com") -> str:
+        token = _csrf_token(email)
+        self.client.cookies.set(CSRF_COOKIE, token)
+        return token
 
     def test_iap_is_required_and_locale_cookie_is_safe(self) -> None:
         self.assertEqual(self.client.get("/").status_code, 401)
@@ -87,7 +119,11 @@ class AdminUiTests(unittest.TestCase):
                 _operator(None)
 
     def test_templates_compile_and_dashboard_renders_in_both_languages(self) -> None:
-        for name in ("base.html", "dashboard.html", "users.html", "user_detail.html", "plans.html"):
+        for name in (
+            "base.html", "dashboard.html", "users.html", "user_detail.html",
+            "plans.html", "stations.html", "station_detail.html", "audit.html",
+            "error.html",
+        ):
             templates.get_template(name)
 
         scope = {"type": "http", "method": "GET", "path": "/", "query_string": b"", "headers": [],
@@ -98,7 +134,7 @@ class AdminUiTests(unittest.TestCase):
         english_html = english.body.decode()
         self.assertIn("Operations overview", english_html)
         self.assertIn(
-            'href="/static/admin.css?v=brand-blue-1"',
+            'href="/static/admin.css?v=admin-production-2"',
             english_html,
         )
 
@@ -221,6 +257,10 @@ class AdminUiTests(unittest.TestCase):
         self.assertIn('name="daily_minutes"', plan_html)
         self.assertIn('name="live_log_limit"', plan_html)
         self.assertIn('name="history_unlock_delay_days"', plan_html)
+        self.assertIn("data-plan-edit", plan_html)
+        self.assertIn("data-plan-form", plan_html)
+        self.assertIn('type="submit" data-plan-preview disabled', plan_html)
+        self.assertIn('required disabled', plan_html)
 
     def test_plan_limits_can_be_updated_with_audit(self) -> None:
         db = _PlanDb()
@@ -234,6 +274,7 @@ class AdminUiTests(unittest.TestCase):
                     "requests_per_minute": 45, "max_concurrency": 3,
                     "max_devices": 2, "sort_order": 10,
                     "live_log_limit": 10, "history_unlock_delay_days": 1,
+                    "csrf_token": self.csrf(),
                 },
                 follow_redirects=False,
             )
@@ -253,6 +294,7 @@ class AdminUiTests(unittest.TestCase):
                     "name": "Free", "daily_minutes": 10,
                     "requests_per_minute": 30, "max_concurrency": 11,
                     "max_devices": 2, "sort_order": 10,
+                    "csrf_token": self.csrf(),
                 },
             )
         self.assertEqual(invalid_limit.status_code, 422)
@@ -265,9 +307,106 @@ class AdminUiTests(unittest.TestCase):
                 "name": "Custom", "daily_minutes": 10,
                 "requests_per_minute": 30, "max_concurrency": 2,
                 "max_devices": 2, "sort_order": 50,
+                "csrf_token": self.csrf(),
             },
         )
         self.assertEqual(invalid.status_code, 404)
+
+    def test_mutations_require_matching_csrf_cookie_and_form_token(self) -> None:
+        headers = {
+            "X-Goog-Authenticated-User-Email":
+                "accounts.google.com:operator@example.com"
+        }
+        data = {
+            "name": "Free", "daily_minutes": 10,
+            "requests_per_minute": 30, "max_concurrency": 2,
+            "max_devices": 2, "sort_order": 10,
+        }
+        missing = self.client.post("/plans/free", headers=headers, data=data)
+        self.assertEqual(missing.status_code, 422)
+        token = self.csrf()
+        wrong = self.client.post(
+            "/plans/free",
+            headers=headers,
+            data={**data, "csrf_token": token + "x"},
+        )
+        self.assertEqual(wrong.status_code, 403)
+
+        other = _csrf_token("other@example.com")
+        self.client.cookies.set(CSRF_COOKIE, other)
+        wrong_operator = self.client.post(
+            "/plans/free",
+            headers=headers,
+            data={**data, "csrf_token": other},
+        )
+        self.assertEqual(wrong_operator.status_code, 403)
+
+        expired = _csrf_token("operator@example.com", now=1)
+        self.client.cookies.set(CSRF_COOKIE, expired)
+        expired_response = self.client.post(
+            "/plans/free",
+            headers=headers,
+            data={**data, "csrf_token": expired},
+        )
+        self.assertEqual(expired_response.status_code, 403)
+
+    def test_production_requires_non_empty_admin_allowlist(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {"K_SERVICE": "prana-admin", "PRANA_ADMIN_ALLOWED_EMAILS": ""},
+            clear=True,
+        ):
+            with self.assertRaises(Exception):
+                _operator("accounts.google.com:operator@example.com")
+
+    def test_admin_uses_plan_collection_atomic_audit_and_aggregate_counts(self) -> None:
+        import services.prana_admin.main as admin
+
+        transfer_source = inspect.getsource(admin.transfer_station)
+        dashboard_source = inspect.getsource(admin.dashboard)
+        status_source = inspect.getsource(admin.set_status)
+        self.assertIn('collection("plans")', transfer_source)
+        self.assertNotIn('collection("subscription_plans")', transfer_source)
+        self.assertIn("_write_audit", transfer_source)
+        self.assertIn("_aggregate_count", dashboard_source)
+        self.assertNotIn('collection("users").stream()', dashboard_source)
+        self.assertIn('not user.get("plan_id")', status_source)
+
+    def test_station_and_audit_templates_render_operational_data(self) -> None:
+        scope = {
+            "type": "http", "method": "GET", "path": "/stations",
+            "query_string": b"", "headers": [], "scheme": "https",
+            "server": ("testserver", 443),
+        }
+        request = Request(scope)
+        station = {
+            "id": "station-1", "name": "Bridge", "owner_email": "owner@example.com",
+            "online": False, "last_error": "AUDIO_DEVICE_UNAVAILABLE",
+            "capture_state": "error", "last_seen": "2026-07-28 10:00",
+            "platform": "Windows", "desired_state": {"generation": 3},
+            "observed_generation": 2,
+        }
+        listing = _render(
+            request, "stations.html", "operator@example.com", "Stations",
+            "stations", stations=[station],
+            filters={"q": "", "state": "", "platform": "", "error": ""},
+            cursor="", first_query="", next_query="",
+        )
+        self.assertIn("Bridge", listing.body.decode())
+        audit = _render(
+            request, "audit.html", "operator@example.com", "Audit", "audit",
+            entries=[{
+                "action": "station.stop", "operator": "operator@example.com",
+                "when": "2026-07-28", "target_uid": "uid-1",
+                "details_json": '{"station_id":"station-1"}',
+            }],
+            filters={
+                "operator_filter": "", "action": "", "target": "",
+                "date_from": "", "date_to": "",
+            },
+            cursor="", first_query="", next_query="",
+        )
+        self.assertIn("Station stop requested", audit.body.decode())
 
     def test_cursor_rejects_invalid_values(self) -> None:
         self.assertEqual(_decode_cursor("not-a-valid-cursor"), "")

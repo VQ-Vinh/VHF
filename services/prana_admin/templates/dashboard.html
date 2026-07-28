@@ -9,8 +9,8 @@
 </section>
 <div class="dashboard-grid">
   <section class="panel" aria-labelledby="attention-title">
-    <div class="panel-heading"><div><h2 id="attention-title">{{ t('dashboard.needs_action') }}</h2><p>{{ t('dashboard.needs_action_hint') }}</p></div><a class="text-link" href="/users">{{ t('dashboard.view_users') }}</a></div>
-    {% if attention %}<div class="compact-list">{% for item in attention %}<a href="/users/{{ item.uid }}"><span><strong>{{ item.email }}</strong><small>{{ item.uid }}</small></span><span class="badge {{ item.status }}">{{ t('status.' ~ item.status) }}</span></a>{% endfor %}</div>
+    <div class="panel-heading"><div><h2 id="attention-title">{{ t('dashboard.needs_action') }}</h2><p>{{ t('dashboard.needs_action_hint') }}</p></div><a class="text-link" href="/stations">{{ t('dashboard.view_stations') }}</a></div>
+    {% if attention %}<div class="compact-list">{% for item in attention %}<a href="/stations/{{ item.id }}"><span><strong>{{ item.name or item.id }}</strong><small>{{ item.owner_email }} · {{ item.last_seen }}</small></span><span class="badge {% if item.last_error %}suspended{% elif item.online %}active{% else %}expired{% endif %}">{% if item.last_error %}{{ t('stations.error') }}{% elif item.online %}{{ t('stations.online') }}{% else %}{{ t('stations.offline') }}{% endif %}</span></a>{% endfor %}</div>
     {% else %}<p class="empty">{{ t('users.empty') }}</p>{% endif %}
   </section>
   <section class="panel table-panel activity-panel" aria-labelledby="activity-title">

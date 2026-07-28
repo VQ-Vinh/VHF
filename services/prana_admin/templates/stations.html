@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-heading"><div><h1>{{ t('stations.title') }}</h1><p>{{ t('stations.subtitle') }}</p></div></header>
+<form class="filter-bar station-filters" method="get" action="/stations" aria-label="{{ t('stations.filters') }}">
+  <label><span>{{ t('stations.search') }}</span><input name="q" value="{{ filters.q }}" placeholder="{{ t('stations.search_hint') }}"></label>
+  <label><span>{{ t('stations.state') }}</span><select name="state"><option value="">{{ t('stations.all') }}</option><option value="online" {% if filters.state == 'online' %}selected{% endif %}>{{ t('stations.online') }}</option><option value="offline" {% if filters.state == 'offline' %}selected{% endif %}>{{ t('stations.offline') }}</option></select></label>
+  <label><span>{{ t('stations.platform') }}</span><input name="platform" value="{{ filters.platform }}" placeholder="Windows / Linux"></label>
+  <label><span>{{ t('stations.health') }}</span><select name="error"><option value="">{{ t('stations.all') }}</option><option value="yes" {% if filters.error == 'yes' %}selected{% endif %}>{{ t('stations.has_error') }}</option></select></label>
+  <div class="filter-actions"><button class="button primary">{{ t('users.filter') }}</button><a class="button" href="/stations">{{ t('users.clear') }}</a></div>
+</form>
+<section class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>{{ t('stations.station') }}</th><th>{{ t('stations.owner') }}</th><th>{{ t('stations.state') }}</th><th>{{ t('stations.capture') }}</th><th>{{ t('stations.last_seen') }}</th></tr></thead><tbody>
+{% for item in stations %}<tr><td><a class="user-link" href="/stations/{{ item.id }}"><strong>{{ item.name or item.id }}</strong><small>{{ item.id }}</small></a></td><td>{{ item.owner_email }}</td><td><span class="badge {% if item.online %}active{% else %}expired{% endif %}">{% if item.online %}{{ t('stations.online') }}{% else %}{{ t('stations.offline') }}{% endif %}</span>{% if item.last_error %}<span class="badge suspended">{{ t('stations.error') }}</span>{% endif %}</td><td>{{ item.capture_state or 'idle' }}</td><td>{{ item.last_seen }}</td></tr>
+{% else %}<tr><td colspan="5" class="empty">{{ t('stations.empty') }}</td></tr>{% endfor %}
+</tbody></table></div></section>
+<nav class="pagination">{% if cursor %}<a class="button" href="/stations?{{ first_query }}">{{ t('users.first') }}</a>{% endif %}{% if next_query %}<a class="button primary" href="/stations?{{ next_query }}">{{ t('users.next') }}</a>{% endif %}</nav>
+{% endblock %}

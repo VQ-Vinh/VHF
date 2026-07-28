@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<a class="back-link" href="/stations">{{ t('stations.back') }}</a>
+<header class="page-heading user-heading"><div><h1>{{ station.name or station.id }}</h1><p class="uid">{{ station.id }}</p></div><span class="badge large {% if station.online %}active{% else %}expired{% endif %}">{% if station.online %}{{ t('stations.online') }}{% else %}{{ t('stations.offline') }}{% endif %}</span></header>
+<div class="detail-grid">
+  <section class="panel"><div class="panel-heading"><div><h2>{{ t('stations.runtime') }}</h2><p>{{ t('stations.runtime_hint') }}</p></div></div>
+    <dl class="definition-list">
+      <div><dt>{{ t('stations.owner') }}</dt><dd>{{ station.owner_email }}</dd></div>
+      <div><dt>{{ t('stations.platform') }}</dt><dd>{{ station.platform or '-' }}</dd></div>
+      <div><dt>{{ t('stations.last_seen') }}</dt><dd>{{ station.last_seen }}</dd></div>
+      <div><dt>{{ t('stations.capture') }}</dt><dd>{{ station.capture_state or 'idle' }}</dd></div>
+      <div><dt>{{ t('stations.session') }}</dt><dd><code>{{ station.session_id or '-' }}</code></dd></div>
+      <div><dt>{{ t('stations.version') }}</dt><dd>{{ station.app_version or '-' }}</dd></div>
+      <div><dt>{{ t('stations.error') }}</dt><dd>{{ station.last_error or '-' }}</dd></div>
+    </dl>
+  </section>
+  <section class="panel"><div class="panel-heading"><div><h2>{{ t('stations.control') }}</h2><p>{{ t('stations.control_hint') }}</p></div></div>
+    <dl class="definition-list">
+      <div><dt>{{ t('stations.desired_generation') }}</dt><dd>{{ station.desired_state.generation or 0 }}</dd></div>
+      <div><dt>{{ t('stations.observed_generation') }}</dt><dd>{{ station.observed_generation or 0 }}</dd></div>
+      <div><dt>{{ t('stations.audio_device') }}</dt><dd>{{ station.active_audio_device_id or '-' }}</dd></div>
+    </dl>
+    <form method="post" action="/stations/{{ station.id }}/stop" data-confirm="{{ t('stations.stop_confirm') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button danger">{{ t('stations.stop') }}</button></form>
+  </section>
+</div>
+<section class="panel table-panel"><div class="panel-heading"><div><h2>{{ t('stations.transfer_history') }}</h2><p>{{ t('stations.transfer_history_hint') }}</p></div></div><div class="table-wrap"><table><thead><tr><th>{{ t('dashboard.action') }}</th><th>{{ t('dashboard.operator') }}</th><th>{{ t('dashboard.time') }}</th></tr></thead><tbody>{% for item in transfers %}<tr><td>{{ t('audit.' ~ item.action) }}</td><td>{{ item.operator }}</td><td>{{ item.when }}</td></tr>{% else %}<tr><td colspan="3" class="empty">{{ t('common.none') }}</td></tr>{% endfor %}</tbody></table></div></section>
+{% endblock %}
