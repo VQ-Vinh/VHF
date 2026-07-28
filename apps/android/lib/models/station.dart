@@ -188,6 +188,7 @@ class TranslationResult {
     required this.transcript,
     required this.translation,
     required this.language,
+    this.targetLanguage,
     required this.confidence,
     required this.timestamp,
     this.error,
@@ -198,6 +199,7 @@ class TranslationResult {
   final String transcript;
   final String translation;
   final String language;
+  final String? targetLanguage;
   final double confidence;
   final DateTime timestamp;
   final String? error;
@@ -219,6 +221,7 @@ class TranslationResult {
       transcript: map['transcript_restored'] as String? ?? '',
       translation: map['translation'] as String? ?? '',
       language: map['detected_language'] as String? ?? '',
+      targetLanguage: map['target_language'] as String?,
       confidence: (map['confidence'] as num?)?.toDouble() ?? 0,
       timestamp: _dateTime(map['timestamp']) ?? DateTime.now(),
       error: map['error'] as String?,

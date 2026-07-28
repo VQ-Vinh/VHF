@@ -7,6 +7,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'models/station.dart';
 import 'models/plan_entitlements.dart';
 import 'services/prana_api.dart';
+import 'services/translation_speech.dart';
 import 'core/localization.dart';
 
 final authProvider = Provider<FirebaseAuth>((ref) => FirebaseAuth.instance);
@@ -17,10 +18,16 @@ final apiProvider = Provider<PranaApi>(
   (ref) => PranaApi(ref.watch(authProvider)),
 );
 final secureStorageProvider = Provider<FlutterSecureStorage>(
-  (ref) => const FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
-  ),
+  (ref) => const FlutterSecureStorage(aOptions: AndroidOptions()),
 );
+final speechEngineProvider = Provider<SpeechEngine>(
+  (ref) => FlutterTtsSpeechEngine(),
+);
+final translationSpeechProvider =
+    ChangeNotifierProvider<TranslationSpeechController>(
+      (ref) => TranslationSpeechController(ref.watch(speechEngineProvider)),
+    );
+final activeSpeechStationProvider = StateProvider<String?>((ref) => null);
 
 final appLocaleProvider = ChangeNotifierProvider<AppLocaleController>(
   (ref) => AppLocaleController(ref.watch(secureStorageProvider)),
@@ -78,21 +85,22 @@ final stationProvider = StreamProvider.family<StationModel?, String>((
       .map((doc) => doc.exists ? StationModel.fromDocument(doc) : null);
 });
 
-final liveResultsProvider = StreamProvider.family<
-  List<TranslationResult>,
-  ({String stationId, String sessionId})
->((ref, key) {
-  final user = ref.watch(authStateProvider).value;
-  if (user == null || key.sessionId.isEmpty) return Stream.value(const []);
-  final api = ref.watch(apiProvider);
-  final limit = ref.watch(planEntitlementsProvider).liveLogLimit;
-  return _pollStationResults(
-    api,
-    key.stationId,
-    key.sessionId,
-    limit: limit <= 0 ? 1000 : limit,
-  );
-});
+final liveResultsProvider = StreamProvider.autoDispose
+    .family<List<TranslationResult>, ({String stationId, String sessionId})>((
+      ref,
+      key,
+    ) {
+      final user = ref.watch(authStateProvider).value;
+      if (user == null || key.sessionId.isEmpty) return Stream.value(const []);
+      final api = ref.watch(apiProvider);
+      final limit = ref.watch(planEntitlementsProvider).liveLogLimit;
+      return _pollStationResults(
+        api,
+        key.stationId,
+        key.sessionId,
+        limit: limit <= 0 ? 1000 : limit,
+      );
+    });
 
 Stream<List<TranslationResult>> _pollStationResults(
   PranaApi api,

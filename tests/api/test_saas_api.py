@@ -169,6 +169,8 @@ class SaasApiTests(unittest.TestCase):
             conflict = self._audio_request(request_id, "vi")
         self.assertEqual(first.status_code, 200, first.text)
         self.assertEqual(second.status_code, 200, second.text)
+        self.assertEqual(first.json()["target_language"], "en")
+        self.assertEqual(second.json()["target_language"], "en")
         self.assertEqual(FakeProcessor.calls, 1)
         self.assertEqual(conflict.status_code, 409)
         self.assertEqual(conflict.json()["detail"]["code"], "IDEMPOTENCY_CONFLICT")

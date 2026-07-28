@@ -716,9 +716,12 @@ class FirestoreRepository:
             "updated_at": firestore.SERVER_TIMESTAMP,
         }
 
-        # High-frequency heartbeat data belongs only in the user projection.
-        # Registry writes would contend with desired-state transactions.
-        projection_ref.set(visible, merge=True)
+        # Admin lists Stations from the global registry while mobile reads the
+        # owner projection. Keep both runtime views in sync atomically.
+        batch = self.db.batch()
+        batch.set(registry_ref, visible, merge=True)
+        batch.set(projection_ref, visible, merge=True)
+        batch.commit()
 
     def update_station_capabilities(
         self, station_id: str, capabilities: StationCapabilities

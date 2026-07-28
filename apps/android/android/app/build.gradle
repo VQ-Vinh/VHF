@@ -19,7 +19,7 @@ def productionReleaseRequested = gradle.startParameter.taskNames.any {
     task.contains("productionrelease") || task.endsWith("assemblerelease") || task.endsWith("bundlerelease")
 }
 if (productionReleaseRequested && !hasReleaseSigning) {
-    throw new GradleException(
+    throw new org.gradle.api.GradleException(
         "Production release signing is not configured. Set PRANA_ANDROID_KEYSTORE_* variables " +
         "or create android/key.properties."
     )
@@ -52,7 +52,7 @@ android {
         staging {
             dimension = "environment"
             applicationIdSuffix = ".staging"
-            resValue "string", "app_name", "PRANA ELEX Staging"
+            resValue "string", "app_name", "PRANA STG"
         }
         production {
             dimension = "environment"

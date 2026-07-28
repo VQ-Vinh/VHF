@@ -27,6 +27,10 @@ void main() {
     expect(source, contains('day.locked'));
     expect(source, contains('prana-\${widget.day.apiDate}'));
     expect(source, isNot(contains('title: Text(doc.id)')));
+    expect(source, isNot(contains('onSessionSelected')));
+    final live = File('lib/features/live/live_screen.dart').readAsStringSync();
+    expect(live, isNot(contains('?session=')));
+    expect(live, isNot(contains('_HistoryModeBanner')));
   });
 
   test('live translations only include the current local day', () {

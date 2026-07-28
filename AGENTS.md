@@ -15,7 +15,7 @@ Keep new modules under the existing package boundaries and place tests in the ma
 
 ## Build, Test, and Development Commands
 
-Create the local environment with `scripts\setup\setup.bat` (Windows) or `./scripts/setup/setup.sh` (Pi/Linux), then run the client with `run_dev.bat` or `./scripts/dev/run-dev.sh`. Use `scripts\dev\run-cli.bat` (or `run-cli.sh`) for batch transcription.
+Create the local environment with `scripts\setup\setup.bat` (Windows) or `./scripts/setup/setup.sh` (Pi/Linux). Use `enable_station_api.bat` for the Windows development Station/API stack, `run_android_emulator.bat` for Flutter development, and `scripts\dev\run-cli.bat` (or `run-cli.sh`) for batch transcription.
 
 Run all tests from the repository root:
 
@@ -23,7 +23,7 @@ Run all tests from the repository root:
 python -m pytest
 ```
 
-Build release artifacts with `buildwin.bat`, `./buildlinux`, or `buildapp.bat`. Packaging validation tests exercise the generated layouts; backend development can be started with `uvicorn services.prana_api.main:app --reload --port 8080` after installing that service's requirements.
+Build an Android APK for a physical phone with `build_android_apk.bat`, or a Linux artifact with `./buildlinux`. Platform-specific Windows build logic remains under `apps/windows/` but has no root wrapper while Android is the active development target. Packaging validation tests exercise the generated layouts; backend development can be started with `uvicorn services.prana_api.main:app --reload --port 8080` after installing that service's requirements.
 
 ## Coding Style & Naming Conventions
 

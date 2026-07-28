@@ -1,128 +1,756 @@
-# Kịch bản kiểm thử Android App và Web Admin
+# Hướng dẫn kiểm thử Android App và Web Admin
 
-## 1. Mục tiêu và chuẩn bị
+## 1. Mục đích
 
-Tài liệu này là checklist nghiệm thu đầy đủ cho Android, Station và Web Admin
-trên staging. Không dùng tài khoản hoặc audio thật của khách hàng.
+Tài liệu này dành cho đội ngũ tester kiểm thử thủ công PRANA ELEX trên môi
+trường staging. Tester không cần đọc source code.
 
-Chuẩn bị:
+Phạm vi gồm:
 
-- Một Android 10+ và một thiết bị có múi giờ có thể thay đổi.
-- Một Station provisioned, một Station pairing tạm thời và nguồn audio EN/VI.
-- Hai user đã xác minh (`user-a`, `user-b`), một user chưa xác minh, một Admin
-  trong IAP/allowlist và một Google account không có quyền Admin.
-- Plan Free (`live_log_limit > 0`, History delay 1), một plan delay 0 và dữ liệu
-  hơn 1.000 results trên nhiều session trong cùng ngày.
-- Ghi lại app build, API/Admin revision, Station version và thời gian test.
+- Android App: đăng ký, đăng nhập, ghép Station, điều khiển, xem Live, History,
+  Account và xử lý mất mạng.
+- Web Admin: đăng nhập, Dashboard, Users, Plans, Stations và Audit log.
+- Luồng xuyên hệ thống giữa Android App, Station và Web Admin.
 
-Mỗi case lưu `PASS/FAIL/BLOCKED`, ảnh màn hình, timestamp, account/Station ID
-đã che bớt và request ID nếu có. Không lưu token, activation code, private key
-hoặc CSRF secret.
+Không sử dụng tài khoản, audio hoặc Station thật của khách hàng.
 
-## 2. Android — xác thực và nền tảng
+## 2. Cách ghi nhận kết quả
 
-| ID | Kịch bản | Bước chính | Kết quả mong đợi |
-|---|---|---|---|
-| AND-AUTH-01 | Điều hướng chưa đăng nhập | Xóa app data, mở deep link Live/History | Luôn chuyển tới Sign in; không lộ dữ liệu |
-| AND-AUTH-02 | Đăng ký Email/Password | Thử email sai, mật khẩu yếu, sau đó dữ liệu hợp lệ | Validation rõ ràng; gửi email xác minh; account được tạo đúng trạng thái |
-| AND-AUTH-03 | Xác minh email | Đăng nhập trước và sau khi bấm link xác minh | Trước xác minh bị chặn nghiệp vụ; sau xác minh nhận Free và dùng App |
-| AND-AUTH-04 | Google sign-in | Đăng nhập Google mới và Google đã liên kết | Tạo/nhận đúng Firebase user, không tạo account trùng |
-| AND-AUTH-05 | Liên kết Google | Từ account Email/Password liên kết cùng email; thử email khác | Cùng email liên kết thành công; email khác bị từ chối |
-| AND-AUTH-06 | Quên/đổi mật khẩu | Gửi reset, dùng link, đăng nhập mật khẩu mới | Email được gửi; mật khẩu cũ vô hiệu; mật khẩu mới hoạt động |
-| AND-AUTH-07 | Session và logout | Kill/reopen App, sau đó logout | Login được nhớ an toàn; logout xóa phiên và route trở về Sign in |
-| AND-UI-01 | VI/EN và persistence | Đổi ngôn ngữ, đóng/mở App | Toàn bộ màn hình chính đổi ngôn ngữ và giữ lựa chọn |
-| AND-UI-02 | Accessibility/responsive | Font lớn, TalkBack, portrait/landscape, màn 360dp | Không tràn; control có label; focus và thứ tự đọc hợp lý |
-| AND-NET-01 | API/Firebase mất mạng | Tắt mạng khi mở list, Live và mutation | Hiển thị offline/error; không crash; phục hồi/poll lại khi có mạng |
+Mỗi test case phải được ghi một trong các trạng thái:
 
-## 3. Android — Station và pairing
+- **PASS:** kết quả thực tế giống kết quả mong đợi.
+- **FAIL:** chức năng chạy nhưng kết quả sai.
+- **BLOCKED:** không thể kiểm thử do thiếu tài khoản, dữ liệu hoặc môi trường.
+- **NOT RUN:** chưa thực hiện.
 
-| ID | Kịch bản | Bước chính | Kết quả mong đợi |
-|---|---|---|---|
-| AND-PAIR-01 | Activation QR cố định | Scan nhãn hợp lệ và xác nhận claim | Station xuất hiện đúng owner; QR không chứa private key |
-| AND-PAIR-02 | Activation idempotent | Cùng user scan lại nhãn | Không tạo Station trùng; trả cùng Station |
-| AND-PAIR-03 | Activation lỗi | Nhập code sai, Setup ID sai, Station revoked | Bị từ chối với thông báo an toàn; không đổi owner |
-| AND-PAIR-04 | Cross-owner | `user-b` scan Station của `user-a` | Bị từ chối; projection hai user không bị thay đổi |
-| AND-PAIR-05 | Giới hạn Station | Claim khi đã đạt `max_stations` | API từ chối đúng entitlement; Station cũ không ảnh hưởng |
-| AND-PAIR-06 | Pairing tạm thời | Scan deep link/nhập code 8 ký tự | Claim thành công trong 10 phút; code chỉ dùng một lần |
-| AND-PAIR-07 | Pairing hết hạn/replay | Dùng code hết hạn, sai hoặc đã dùng | Bị từ chối; không tạo projection; rate limit hoạt động |
-| AND-LIST-01 | Danh sách Station | Có online, offline, lỗi và nhiều Station | Sắp xếp/nhãn đúng; offline sau 15 giây; mở đúng Station |
-| AND-LIST-02 | Projection isolation | Đăng nhập `user-b`, thử ID/deep link của `user-a` | Không đọc được projection hoặc result của user khác |
+Khi FAIL, ticket lỗi cần có:
 
-## 4. Android — Live, điều khiển và audio
+1. Mã test case.
+2. Phiên bản APK, API, Web Admin và Station.
+3. Thiết bị, phiên bản Android, trình duyệt và múi giờ.
+4. Tài khoản và Station ID đã che bớt thông tin nhạy cảm.
+5. Các bước tái hiện.
+6. Kết quả thực tế và kết quả mong đợi.
+7. Ảnh hoặc video; request ID nếu màn hình có hiển thị.
 
-| ID | Kịch bản | Bước chính | Kết quả mong đợi |
-|---|---|---|---|
-| AND-LIVE-01 | Start/Stop | Start, quan sát pending/observed; sau đó Stop | Generation tăng; nút chờ tới khi Station ack; capture state đúng |
-| AND-LIVE-02 | Latest-wins | Gửi liên tiếp Start/Stop/ngôn ngữ | Station áp dụng generation mới nhất, không lùi trạng thái |
-| AND-LIVE-03 | Ngôn ngữ | Đổi target language khi online và khi API lỗi | Optimistic khi gửi; rollback rõ ràng nếu thất bại |
-| AND-LIVE-04 | Retry | Tạo processing error rồi bấm Retry | Retry counter tăng; banner tiến trình đúng; không nhầm command failure |
-| AND-LIVE-05 | Station offline | Ngắt Station hơn 15 giây | OFFLINE; mutation bị vô hiệu; log đã có không làm App crash |
-| AND-LIVE-06 | Dịch EN/VI | Phát audio rõ dưới 15 giây theo hai chiều | Transcript restored, translation, language, timestamp đúng |
-| AND-LIVE-07 | WAV/segment lỗi | Im lặng, codec sai, audio quá dài/nhiễu | Lỗi phù hợp; quota/concurrency được hoàn lại khi xử lý thất bại |
-| AND-LIVE-08 | Idempotency | Retry cùng request; đổi payload với cùng request ID | Cùng payload trả cache; payload khác trả conflict; không trừ quota hai lần |
-| AND-LIVE-09 | Live entitlement | Tạo log vượt `live_log_limit`; thử plan limit 0 | Plan hữu hạn chỉ hiện giới hạn; 0 không áp giới hạn entitlement |
-| AND-LIVE-10 | Chỉ log hôm nay | Session chứa 23:59 hôm trước và 00:00 hôm nay | Live chỉ hiện log có ngày địa phương hôm nay |
-| AND-LIVE-11 | Qua nửa đêm | Giữ Live mở qua 00:00 hoặc đổi clock test | Poll kế tiếp loại log hôm trước, không cần restart |
-| AND-LIVE-12 | Quota | Dùng gần 90%, đạt 100%, chờ reset ngày | Banner cảnh báo; hết quota bị chặn; reset đúng kỳ |
-| AND-SET-01 | Capabilities/audio device | Scan device, đổi capture mode/device và Save | Chỉ option được Station hỗ trợ; desired/observed đồng bộ |
-| AND-SET-02 | Dirty/pending settings | Không đổi, đổi rồi hoàn tác, gửi khi command pending | Save chỉ bật khi dirty/hợp lệ; pending chống gửi trùng |
+Không chụp hoặc đưa vào ticket access token, password, activation code đầy đủ,
+private key, CSRF token hay credential Google Cloud.
 
-## 5. Android — History và Account Center
+## 3. Chuẩn bị môi trường và dữ liệu
 
-| ID | Kịch bản | Bước chính | Kết quả mong đợi |
-|---|---|---|---|
-| AND-HIS-01 | Gộp nhiều session | Tạo nhiều session cùng ngày | Chỉ một thẻ `Ngày dd/MM/yyyy`, không lộ session ID |
-| AND-HIS-02 | Qua nửa đêm/múi giờ | Session có result hai phía 00:00; đổi timezone | Result vào đúng ngày địa phương và range đúng |
-| AND-HIS-03 | Khóa ngày | Free delay 1 và plan delay 0 | Free thấy thẻ khóa tới 00:00 hôm sau; delay 0 mở ngay |
-| AND-HIS-04 | Pagination lớn | Mở ngày có hơn 1.000 results | Tải đủ mọi trang, không thiếu/trùng, thứ tự ổn định |
-| AND-HIS-05 | Search/ẩn | Tìm transcript/translation, ẩn một result | Search trên toàn ngày; ẩn chỉ tác động UI hiện tại |
-| AND-HIS-06 | Export | Export TXT và CSV một ngày | Tên `prana-YYYY-MM-DD`; đủ log, escape CSV và Unicode đúng |
-| AND-HIS-07 | TTL | Kiểm tra result sát và quá 14 ngày | Dữ liệu trong TTL xem được; dữ liệu hết TTL được dọn |
-| AND-ACC-01 | Account/quota/plans | Mở Account Center và refresh | Email/status/plan/usage đúng backend; coming-soon bị vô hiệu |
-| AND-ACC-02 | Device revoke | Xác nhận revoke device hiện tại/khác | Hủy dialog không đổi; xác nhận revoke đúng device |
-| AND-ACC-03 | Station revoke | Revoke Station từ Account Center | Station bị vô hiệu và biến khỏi luồng điều khiển; owner khác không ảnh hưởng |
+### 3.1. Thiết bị
 
-## 6. Web Admin
+- Một điện thoại Android 10 trở lên đã cài APK staging mới nhất.
+- Có thể thay đổi múi giờ và cỡ chữ trên điện thoại.
+- Chrome hoặc Edge bản mới để kiểm thử Web Admin.
+- Một Laptop/Pi Station đã provision và có nguồn audio tiếng Việt/Anh.
+- Mạng có thể chủ động tắt/bật để kiểm tra offline.
 
-| ID | Kịch bản | Bước chính | Kết quả mong đợi |
-|---|---|---|---|
-| ADM-SEC-01 | IAP và allowlist | Truy cập bằng Admin, account ngoài allowlist và chưa đăng nhập | Admin vào được; hai trường hợp còn lại 403/login; không lộ nội dung |
-| ADM-SEC-02 | CSRF | POST thiếu/sai/hết hạn/token operator khác | 403; mutation và audit không được ghi |
-| ADM-SEC-03 | Error pages | Gây 403/404/409/422/500 an toàn | Trang VI/EN đúng mã; không hiển thị exception/secret |
-| ADM-UI-01 | Locale/responsive | Đổi VI/EN, mobile width, keyboard-only | Cookie locale đúng; nav/dialog/form usable và focus rõ |
-| ADM-DASH-01 | Dashboard | Đối chiếu count, Station attention và audit gần nhất | Count đúng aggregation; không stream toàn bộ users |
-| ADM-USR-01 | User search/filter/page | Tìm email/UID; lọc status/plan; Next/First | Không thiếu/trùng trong trang; empty state đúng |
-| ADM-USR-02 | Suspend/reactivate | Suspend user Plus/Pro rồi activate | Audit nguyên tử; reactivate giữ plan hợp lệ, chỉ Free khi chưa có plan |
-| ADM-USR-03 | Reset devices | Reset user tồn tại/không tồn tại | Revoke đúng số device và audit count; user thiếu trả 404 |
-| ADM-USR-04 | Re-enrollment | Cho phép một device revoked đăng ký lại | Chỉ target được xóa/re-enroll; audit đúng operator/request |
-| ADM-PLAN-01 | Read-only/Edit | Mở Plans, dùng mouse và keyboard bấm bút chì | Mọi input mặc định khóa; chỉ card được chọn mở; ARIA/tooltip đúng |
-| ADM-PLAN-02 | Dirty Save/Cancel | Không đổi, đổi, hoàn tác, nhập invalid, Cancel | Save chỉ sáng khi dirty+hợp lệ; hoàn tác tắt Save; Cancel phục hồi |
-| ADM-PLAN-03 | Save plan | Sửa limit, xác nhận preview, thử hủy/xác nhận | Hủy không ghi; xác nhận cập nhật ngay và audit before/after nguyên tử |
-| ADM-STA-01 | List/filter/search | Lọc online/offline/error/platform; tìm ID/email | Kết quả, last seen, version, capture/error và pagination đúng |
-| ADM-STA-02 | Detail/generation | Mở Station detail khi command pending | Desired/observed, audio device, session và transfer history đúng |
-| ADM-STA-03 | Stop | Stop Station running và Station idle | Running nhận desired Stop/audit; thao tác idempotent, trạng thái rõ |
-| ADM-STA-04 | Transfer idle | Nhập lại target email, transfer sang user còn quota | Registry/projection đổi owner nguyên tử; lịch sử/audit đủ before/after |
-| ADM-STA-05 | Transfer bị chặn | Station running, email confirm sai, target đủ quota | Yêu cầu Stop hoặc 409/422 phù hợp; không transfer/audit sai |
-| ADM-AUD-01 | Audit filters/page | Lọc operator/action/target/Station/ngày và chuyển trang | Không thiếu/trùng; before/after, request ID, timestamp chính xác |
-| ADM-AUD-02 | Transaction rollback | Mô phỏng mutation hoặc audit write thất bại | Cả mutation và audit rollback; trang báo lỗi an toàn |
+### 3.2. Tài khoản
 
-## 7. Kịch bản xuyên hệ thống và nghiệm thu
+Chuẩn bị các tài khoản riêng:
 
-| ID | Kịch bản | Kết quả mong đợi |
-|---|---|---|
-| E2E-01 | Admin đổi `live_log_limit`, App refresh account rồi tạo thêm log | App áp entitlement mới; Live vẫn chỉ hiện ngày hiện tại |
-| E2E-02 | Admin đổi History delay 1 → 0 | Sau refresh, ngày hiện tại mở được và đủ log mọi session |
-| E2E-03 | Android Start, Admin theo dõi rồi Stop | Generation hội tụ trên Station, Android và Admin; audit chỉ ghi Stop Admin |
-| E2E-04 | Admin transfer Station từ A sang B | A mất quyền đọc/điều khiển; B nhận projection sạch và pairing key không đổi |
-| E2E-05 | Admin suspend khi Station đang chạy | Request mới bị fail-closed theo entitlement; dữ liệu tenant khác không lộ |
-| E2E-06 | Mất API/Firestore rồi phục hồi | Không ghi trùng command/result/audit; UI tự hồi phục hoặc cho retry rõ ràng |
+| Tên dùng trong tài liệu | Trạng thái |
+|---|---|
+| User A | Đã xác minh email, plan Free |
+| User B | Đã xác minh email, còn quyền nhận thêm Station |
+| User Pro | Đã xác minh, plan cho phép xem History ngay |
+| User Unverified | Chưa xác minh email |
+| Admin | Có quyền IAP và nằm trong allowlist |
+| Non-admin | Tài khoản Google không có quyền Admin |
 
-Một test run chỉ được nghiệm thu khi:
+### 3.3. Dữ liệu lịch sử
 
-- Tất cả case Critical về auth, tenant isolation, CSRF, quota, transfer và
-  History lock đều PASS.
-- Không còn crash, dữ liệu chéo tenant, mutation không audit hoặc secret xuất
-  hiện trong UI/log.
-- Android đạt unit/widget tests; API/Admin pytest đạt; Terraform validate và
-  smoke test revision staging mới đạt.
-- Mọi FAIL còn lại có issue, mức độ ảnh hưởng, owner và quyết định phát hành.
+Nhờ người quản trị staging chuẩn bị:
+
+- Nhiều session có log trong cùng một ngày.
+- Một session có log trước và sau 00:00.
+- Một ngày có hơn 1.000 log để kiểm tra phân trang.
+- Log có cả tiếng Việt, tiếng Anh, dấu phẩy và dấu ngoặc kép để test export.
+- Một Station online, một Station offline và một Station có lỗi.
+
+### 3.4. Kiểm tra trước khi bắt đầu
+
+Ghi lại:
+
+- Phiên bản APK và Station.
+- Revision API và Web Admin.
+- Múi giờ điện thoại.
+- Thời gian bắt đầu test.
+
+Xác nhận màn hình Station báo `API READY` và `ONLINE` trước các case cần thu âm.
+
+---
+
+## 4. Android App — tài khoản
+
+### AND-AUTH-01 — Đăng ký bằng email
+
+**Các bước**
+
+1. Xóa dữ liệu App hoặc đăng xuất.
+2. Chọn đăng ký tài khoản.
+3. Lần lượt nhập email sai định dạng, mật khẩu yếu và form hợp lệ.
+4. Gửi form hợp lệ.
+
+**Kết quả mong đợi**
+
+- App báo lỗi ngay tại trường sai và không bị crash.
+- Tài khoản hợp lệ được tạo một lần.
+- App yêu cầu xác minh email và chưa cho sử dụng tính năng Station.
+
+### AND-AUTH-02 — Xác minh email
+
+**Các bước**
+
+1. Đăng nhập bằng User Unverified.
+2. Thử mở danh sách Station.
+3. Mở email xác minh và bấm liên kết.
+4. Quay lại App, refresh hoặc đăng nhập lại.
+
+**Kết quả mong đợi**
+
+- Trước khi xác minh, chức năng nghiệp vụ bị khóa với hướng dẫn rõ ràng.
+- Sau khi xác minh, tài khoản được dùng App và nhận plan mặc định.
+
+### AND-AUTH-03 — Đăng nhập Google
+
+**Các bước**
+
+1. Đăng nhập bằng một Google account mới.
+2. Đăng xuất và đăng nhập lại bằng cùng account.
+3. Nếu có account Email/Password cùng email, thử liên kết Google.
+
+**Kết quả mong đợi**
+
+- Không tạo hai người dùng cho cùng một danh tính.
+- Đăng nhập lại mở đúng dữ liệu của người dùng đó.
+- Không hiển thị token hoặc thông tin lỗi nội bộ.
+
+### AND-AUTH-04 — Quên mật khẩu và đăng xuất
+
+**Các bước**
+
+1. Yêu cầu đặt lại mật khẩu.
+2. Dùng email nhận được để đặt mật khẩu mới.
+3. Thử mật khẩu cũ và mật khẩu mới.
+4. Đóng/mở App, sau đó đăng xuất.
+
+**Kết quả mong đợi**
+
+- Mật khẩu cũ không còn dùng được; mật khẩu mới đăng nhập thành công.
+- App ghi nhớ phiên khi đóng/mở.
+- Đăng xuất xóa phiên và đưa về màn hình đăng nhập.
+
+---
+
+## 5. Android App — ghép và quản lý Station
+
+### AND-PAIR-01 — Ghép Station bằng QR
+
+**Các bước**
+
+1. Đăng nhập User A và chọn thêm Station.
+2. Quét QR hợp lệ được tạo bởi `generate_station_qr.bat`.
+3. Xác nhận ghép.
+4. Quét lại cùng QR bằng User A.
+
+**Kết quả mong đợi**
+
+- Station xuất hiện trong danh sách của User A.
+- Quét lại không tạo Station trùng.
+- App không hiển thị activation code sau khi hoàn tất.
+
+### AND-PAIR-02 — QR không hợp lệ hoặc đã có chủ
+
+**Các bước**
+
+1. Quét QR sai, QR bị sửa hoặc QR đã thu hồi.
+2. Đăng nhập User B và quét QR Station đang thuộc User A.
+
+**Kết quả mong đợi**
+
+- App từ chối với thông báo dễ hiểu.
+- Không Station nào bị đổi chủ hoặc tạo trùng.
+- User B không xem được dữ liệu của User A.
+
+### AND-PAIR-03 — Giới hạn số Station
+
+**Các bước**
+
+1. Dùng tài khoản đã đạt giới hạn Station của plan.
+2. Thử ghép thêm một Station hợp lệ.
+
+**Kết quả mong đợi**
+
+- App thông báo đã đạt giới hạn.
+- Station cũ và Station mới không bị thay đổi sai.
+
+### AND-PAIR-04 — Pairing tạm thời
+
+**Các bước**
+
+1. Cho Station tạo pairing code tạm thời.
+2. Ghép bằng deep link hoặc nhập code 8 ký tự trong vòng 10 phút.
+3. Đăng xuất, dùng User B thử lại cùng code.
+4. Tạo code khác, chờ hết 10 phút rồi thử ghép.
+5. Nhập sai code nhiều lần theo giới hạn được phép của môi trường test.
+
+**Kết quả mong đợi**
+
+- Code hợp lệ ghép đúng Station và chỉ sử dụng được một lần.
+- Code đã dùng, sai hoặc hết hạn đều bị từ chối.
+- Không tạo Station trùng hoặc đổi owner khi bị từ chối.
+- Khi thử sai liên tục, App báo tạm giới hạn thay vì gửi không giới hạn.
+
+### AND-STA-01 — Trạng thái online/offline
+
+**Các bước**
+
+1. Mở danh sách Station khi Station đang chạy.
+2. Tắt Station và chờ ít nhất 15 giây.
+3. Chạy Station trở lại.
+
+**Kết quả mong đợi**
+
+- Trạng thái lần lượt là online, offline rồi online.
+- Có thể mở đúng Station từ danh sách.
+- App không cần đăng nhập lại khi Station kết nối trở lại.
+
+---
+
+## 6. Android App — Live và điều khiển
+
+### AND-LIVE-01 — Start, Stop và đổi ngôn ngữ
+
+**Các bước**
+
+1. Mở Station online.
+2. Chọn ngôn ngữ đích và bấm Start.
+3. Phát audio rõ, mỗi đoạn dưới 15 giây.
+4. Đổi ngôn ngữ đích rồi phát thêm audio.
+5. Bấm Stop.
+
+**Kết quả mong đợi**
+
+- Nút hiển thị trạng thái đang chờ trong lúc gửi lệnh.
+- Station bắt đầu/dừng thu đúng lệnh cuối cùng.
+- Transcript, bản dịch, ngôn ngữ và thời gian hiển thị đúng.
+- Không tạo bản dịch mới sau khi Stop đã được Station nhận.
+
+### AND-LIVE-02 — Station offline
+
+**Các bước**
+
+1. Ngắt Station cho tới khi App báo offline.
+2. Thử Start, Stop và thay đổi cài đặt.
+3. Kết nối lại Station.
+
+**Kết quả mong đợi**
+
+- Các thao tác không hợp lệ bị khóa hoặc báo lỗi rõ ràng.
+- App không crash và không mất các log đang hiển thị.
+- Sau khi online lại, người dùng có thể tiếp tục thao tác.
+
+### AND-LIVE-03 — Retry khi xử lý audio lỗi
+
+**Các bước**
+
+1. Tạo một đoạn audio lỗi theo dữ liệu test.
+2. Chọn Retry.
+3. Quan sát trạng thái cho đến khi hoàn tất.
+
+**Kết quả mong đợi**
+
+- Chỉ đoạn lỗi được xử lý lại.
+- Không tạo kết quả trùng.
+- Thông báo tiến trình và kết quả cuối rõ ràng.
+
+### AND-LIVE-04 — Không xử lý trùng một yêu cầu
+
+Case này cần người quản trị hoặc công cụ test gửi lại cùng một request ID.
+
+**Các bước**
+
+1. Gửi một đoạn audio hợp lệ và ghi lại request ID.
+2. Gửi lại đúng audio với cùng request ID.
+3. Gửi audio khác nhưng vẫn dùng request ID đó.
+4. Đối chiếu usage/quota trước và sau.
+
+**Kết quả mong đợi**
+
+- Cùng request ID và cùng dữ liệu trả lại cùng kết quả, không tạo log mới.
+- Cùng request ID nhưng dữ liệu khác bị từ chối do xung đột.
+- Quota chỉ bị trừ một lần.
+
+### AND-LIVE-05 — Chỉ hiển thị log hôm nay
+
+**Các bước**
+
+1. Dùng dữ liệu có log lúc 23:59 hôm trước và 00:00 hôm nay.
+2. Mở Live và chờ ít nhất một vòng refresh.
+3. Nếu có thể, giữ màn hình qua 00:00 hoặc dùng môi trường test đổi ngày.
+
+**Kết quả mong đợi**
+
+- Live chỉ hiển thị log thuộc ngày hiện tại theo giờ điện thoại.
+- Sau 00:00, log ngày cũ tự biến mất mà không cần khởi động lại App.
+- Log cũ vẫn xem được trong History khi đã mở khóa.
+
+### AND-LIVE-06 — Quota và giới hạn log
+
+**Các bước**
+
+1. Dùng tài khoản gần hết quota và tạo thêm kết quả.
+2. Tạo kết quả cho tới khi hết quota.
+3. Dùng plan có giới hạn Live và plan không giới hạn.
+
+**Kết quả mong đợi**
+
+- App cảnh báo khi gần hết quota.
+- Hết quota thì không xử lý thêm và giải thích rõ lý do.
+- Live tuân theo giới hạn của từng plan; giá trị `0` được hiểu là không giới hạn.
+
+### AND-SET-01 — Cài đặt audio
+
+**Các bước**
+
+1. Mở cài đặt Station.
+2. Không thay đổi gì và quan sát nút Save.
+3. Đổi audio device/capture mode, sau đó đổi về giá trị ban đầu.
+4. Thay đổi hợp lệ và Save.
+
+**Kết quả mong đợi**
+
+- Chỉ hiển thị lựa chọn Station hỗ trợ.
+- Save tắt khi không thay đổi hoặc đã hoàn tác.
+- Save sáng khi dữ liệu hợp lệ và có thay đổi.
+- Sau khi lưu, trạng thái App và Station giống nhau.
+
+---
+
+## 7. Android App — History, export và Account
+
+### AND-HIS-01 — Gộp lịch sử theo ngày
+
+**Các bước**
+
+1. Mở History với dữ liệu có nhiều session trong cùng một ngày.
+2. Mở thẻ ngày.
+3. Cuộn từ đầu tới cuối danh sách.
+
+**Kết quả mong đợi**
+
+- Mỗi ngày chỉ có một thẻ `Ngày dd/MM/yyyy`.
+- Không hiển thị tên `session001`, `session002` hoặc session ID.
+- Chi tiết ngày chứa log của tất cả session, không thiếu hoặc trùng.
+- Log được sắp xếp đúng theo thời gian.
+
+### AND-HIS-02 — Múi giờ và nửa đêm
+
+**Các bước**
+
+1. Mở ngày có log ở hai phía của 00:00.
+2. Ghi lại nhóm ngày hiện tại.
+3. Đổi múi giờ điện thoại sang múi giờ test khác và tải lại.
+
+**Kết quả mong đợi**
+
+- Log được nhóm theo ngày địa phương của điện thoại.
+- Một session chạy qua nửa đêm được chia vào đúng hai ngày.
+
+### AND-HIS-03 — Khóa lịch sử
+
+**Các bước**
+
+1. Đăng nhập User A có History delay 1 ngày.
+2. Mở History trong ngày hiện tại.
+3. Đăng nhập User Pro có delay 0 và lặp lại.
+
+**Kết quả mong đợi**
+
+- User A thấy ngày hiện tại nhưng thẻ có khóa và không mở được.
+- Thẻ mở vào 00:00 ngày hôm sau theo giờ điện thoại.
+- User Pro xem được ngày hiện tại ngay.
+
+### AND-HIS-04 — Ngày có hơn 1.000 log
+
+**Các bước**
+
+1. Mở ngày đã chuẩn bị hơn 1.000 log.
+2. Cuộn cho tới khi tải hết.
+3. So sánh tổng số và các mốc đầu/cuối với dữ liệu chuẩn.
+
+**Kết quả mong đợi**
+
+- Tải đủ dữ liệu qua nhiều trang.
+- Không thiếu, trùng hoặc đổi thứ tự bất thường.
+- App vẫn phản hồi khi cuộn và tìm kiếm.
+
+### AND-HIS-05 — Tìm kiếm và export
+
+**Các bước**
+
+1. Tìm một từ trong transcript và một từ trong bản dịch.
+2. Export ngày dưới dạng TXT và CSV.
+3. Mở file bằng trình đọc text và phần mềm bảng tính.
+
+**Kết quả mong đợi**
+
+- Tìm kiếm áp dụng cho toàn bộ log trong ngày.
+- Tên file là `prana-YYYY-MM-DD.txt` hoặc `.csv`.
+- File có đủ log, đúng Unicode; CSV không vỡ cột khi nội dung có dấu phẩy hoặc
+  dấu ngoặc kép.
+
+### AND-HIS-06 — Ẩn log trên màn hình
+
+**Các bước**
+
+1. Mở chi tiết một ngày và ghi lại tổng số log.
+2. Chọn ẩn một log.
+3. Tìm kiếm lại nội dung của log vừa ẩn.
+4. Đóng rồi mở lại ngày theo hành vi mà bản build đang công bố.
+
+**Kết quả mong đợi**
+
+- Log bị ẩn khỏi danh sách và kết quả tìm kiếm hiện tại.
+- Các log khác không bị ảnh hưởng.
+- Chức năng ẩn chỉ thay đổi phạm vi UI được công bố, không xóa dữ liệu backend.
+
+### AND-HIS-07 — Thời hạn lưu lịch sử
+
+**Các bước**
+
+1. Mở ngày có dữ liệu gần đủ 14 ngày.
+2. Tìm dữ liệu đã quá thời hạn 14 ngày do quản trị viên chuẩn bị.
+3. Đối chiếu với thời gian hiện tại và múi giờ điện thoại.
+
+**Kết quả mong đợi**
+
+- Dữ liệu còn trong thời hạn được xem bình thường.
+- Dữ liệu hết thời hạn không còn được trả về.
+- App không hiển thị thẻ ngày rỗng hoặc báo lỗi khi dữ liệu đã được dọn.
+
+### AND-ACC-01 — Account, device và Station
+
+**Các bước**
+
+1. Mở Account Center.
+2. Đối chiếu email, plan, usage và quota.
+3. Hủy rồi xác nhận revoke một device test.
+4. Hủy rồi xác nhận revoke một Station test.
+
+**Kết quả mong đợi**
+
+- Thông tin tài khoản khớp dữ liệu staging.
+- Hủy dialog không thay đổi dữ liệu.
+- Xác nhận chỉ thu hồi đúng device/Station đã chọn.
+
+### AND-ACC-02 — Cho phép device đăng ký lại
+
+**Các bước**
+
+1. Thu hồi một device test và xác nhận device đó không còn truy cập được.
+2. Trên Web Admin, cho phép đúng device đó đăng ký lại.
+3. Thực hiện enrollment lại trên device.
+4. Kiểm tra một device khác của cùng user.
+
+**Kết quả mong đợi**
+
+- Chỉ device được chọn có thể enrollment lại.
+- Device khác không bị revoke hoặc thay đổi.
+- Audit ghi đúng user, device và Admin thực hiện.
+
+---
+
+## 8. Android App — giao diện và lỗi mạng
+
+### AND-UI-01 — Ngôn ngữ và khả năng truy cập
+
+**Các bước**
+
+1. Đổi qua lại tiếng Việt và tiếng Anh.
+2. Đóng và mở lại App.
+3. Bật cỡ chữ lớn, TalkBack và xoay màn hình.
+
+**Kết quả mong đợi**
+
+- Nội dung đổi ngôn ngữ đầy đủ và giữ lựa chọn sau khi mở lại.
+- Không tràn chữ hoặc mất nút chính.
+- TalkBack đọc được tên và trạng thái của control theo thứ tự hợp lý.
+
+### AND-NET-01 — Mất mạng
+
+**Các bước**
+
+1. Mở lần lượt Station list, Live và History.
+2. Tắt mạng rồi thử refresh và gửi một thao tác.
+3. Bật mạng trở lại.
+
+**Kết quả mong đợi**
+
+- App hiển thị offline/lỗi thân thiện, không crash.
+- Không tạo thao tác hoặc log trùng.
+- App tự tải lại hoặc cung cấp nút Retry rõ ràng.
+
+---
+
+## 9. Web Admin
+
+### ADM-SEC-01 — Quyền truy cập
+
+**Các bước**
+
+1. Mở Web Admin khi chưa đăng nhập.
+2. Đăng nhập bằng Non-admin.
+3. Đăng nhập bằng Admin.
+
+**Kết quả mong đợi**
+
+- Người chưa đăng nhập được yêu cầu đăng nhập.
+- Non-admin nhận trang 403 và không thấy dữ liệu quản trị.
+- Admin truy cập Dashboard bình thường.
+
+### ADM-SEC-02 — Chống giả mạo form quản trị
+
+Case này cần công cụ test HTTP hoặc DevTools theo hướng dẫn của quản trị viên.
+
+**Các bước**
+
+1. Gửi một POST form không có CSRF token.
+2. Lặp lại với token sai và token đã hết hạn.
+3. Lấy token của Admin A và thử gửi trong phiên của Admin B.
+4. Kiểm tra dữ liệu mục tiêu và Audit log sau mỗi lần.
+
+**Kết quả mong đợi**
+
+- Tất cả request không hợp lệ trả 403.
+- Không mutation nào được thực hiện.
+- Không tạo audit thành công cho request bị từ chối.
+- Response không lộ token, secret hoặc exception nội bộ.
+
+### ADM-DASH-01 — Dashboard
+
+**Các bước**
+
+1. Mở Dashboard.
+2. Đối chiếu số user, Station và mục cần xử lý với dữ liệu staging.
+3. Mở từng liên kết từ mục cần xử lý.
+
+**Kết quả mong đợi**
+
+- Số liệu và trạng thái đúng.
+- Chỉ Station offline/có lỗi, tài khoản chưa xác minh quá hạn và thao tác quản
+  trị lỗi/chờ xử lý được đưa vào mục cần xử lý.
+- Liên kết mở đúng đối tượng.
+
+### ADM-USR-01 — Tìm kiếm và phân trang User
+
+**Các bước**
+
+1. Tìm theo email và UID.
+2. Lọc theo trạng thái và plan.
+3. Dùng Previous/Next qua nhiều trang.
+4. Tìm một giá trị không tồn tại.
+
+**Kết quả mong đợi**
+
+- Kết quả đúng bộ lọc, không thiếu/trùng khi đổi trang.
+- Trạng thái loading và empty state rõ ràng.
+
+### ADM-USR-02 — Suspend, reactivate và reset device
+
+**Các bước**
+
+1. Suspend một User Plus/Pro test.
+2. Reactivate cùng user.
+3. Reset device của user và thử với UID không tồn tại.
+
+**Kết quả mong đợi**
+
+- User bị suspend/reactivate đúng.
+- Reactivate giữ nguyên plan hợp lệ; chỉ gán Free nếu trước đó chưa có plan.
+- Reset thu hồi đúng số device.
+- UID không tồn tại báo 404 và không tạo audit sai.
+
+### ADM-USR-03 — Re-enrollment một device
+
+**Các bước**
+
+1. Mở user có nhiều device, trong đó một device đã revoked.
+2. Chọn cho phép enrollment lại đúng device đó.
+3. Kiểm tra danh sách device và Audit log.
+4. Thử thao tác với device ID không tồn tại.
+
+**Kết quả mong đợi**
+
+- Chỉ trạng thái của device được chọn thay đổi.
+- Các device còn lại giữ nguyên.
+- Audit ghi đúng operator, user, device và before/after.
+- Device không tồn tại trả lỗi an toàn, không tạo audit sai.
+
+### ADM-PLAN-01 — Chỉnh sửa plan
+
+**Các bước**
+
+1. Mở Plans và thử nhập trực tiếp khi chưa bấm bút chì.
+2. Bấm icon bút chì của một plan.
+3. Không đổi dữ liệu, đổi rồi hoàn tác, nhập dữ liệu sai.
+4. Thay đổi hợp lệ và bấm Save.
+5. Kiểm tra preview; lần đầu Cancel, lần sau xác nhận Save.
+
+**Kết quả mong đợi**
+
+- Mọi input mặc định chỉ đọc.
+- Chỉ plan được chọn cho phép sửa.
+- Save chỉ sáng khi dữ liệu hợp lệ và thực sự thay đổi.
+- Cancel khôi phục toàn bộ giá trị ban đầu.
+- Xác nhận Save cập nhật plan và hiển thị thông báo thành công.
+
+### ADM-STA-01 — Danh sách và chi tiết Station
+
+**Các bước**
+
+1. Tìm theo Station ID và email owner.
+2. Lọc online/offline/error và platform.
+3. Mở chi tiết từng Station mẫu.
+
+**Kết quả mong đợi**
+
+- Bộ lọc và phân trang không thiếu/trùng.
+- Owner, last seen, capture state, lỗi, platform và app version đúng.
+- Chi tiết hiển thị audio device, session hiện tại, trạng thái lệnh và lịch sử
+  chuyển chủ.
+
+### ADM-STA-02 — Stop và transfer
+
+**Các bước**
+
+1. Gửi Stop cho Station đang chạy.
+2. Thử transfer khi Station vẫn chạy.
+3. Sau khi Station idle, nhập sai email xác nhận.
+4. Nhập đúng email của User B còn quota và xác nhận.
+5. Lặp lại với target đã đạt giới hạn Station.
+
+**Kết quả mong đợi**
+
+- Stop được gửi và trạng thái hội tụ về idle.
+- Không transfer Station đang chạy.
+- Email xác nhận sai không làm thay đổi dữ liệu.
+- Transfer hợp lệ đổi đúng owner; owner cũ mất quyền, owner mới thấy Station.
+- Target hết quota bị từ chối và ownership không thay đổi.
+
+### ADM-AUD-01 — Audit log
+
+**Các bước**
+
+1. Lọc theo operator, action, user/Station và khoảng ngày.
+2. Chuyển qua nhiều trang.
+3. Mở chi tiết các thao tác plan, user, Stop và transfer vừa thực hiện.
+
+**Kết quả mong đợi**
+
+- Không thiếu hoặc trùng bản ghi khi phân trang.
+- Mỗi bản ghi có operator, action, target, before/after, request ID và timestamp.
+- Thao tác bị hủy hoặc thất bại không tạo audit thành công giả.
+
+### ADM-AUD-02 — Rollback khi mutation hoặc audit thất bại
+
+Case này chỉ chạy khi quản trị viên bật failure injection an toàn trên staging.
+
+**Các bước**
+
+1. Ghi lại trạng thái ban đầu của một user/Station test.
+2. Mô phỏng lỗi mutation và gửi thao tác quản trị.
+3. Mô phỏng lỗi ghi Audit rồi gửi lại thao tác.
+4. Refresh trang chi tiết và Audit log sau mỗi lần.
+
+**Kết quả mong đợi**
+
+- Nếu mutation lỗi, dữ liệu và Audit đều không thay đổi.
+- Nếu Audit lỗi, mutation cũng được rollback.
+- UI báo lỗi an toàn và cho phép thử lại.
+
+### ADM-UI-01 — Giao diện và trang lỗi
+
+**Các bước**
+
+1. Đổi tiếng Việt/Anh.
+2. Thu nhỏ trình duyệt về chiều rộng điện thoại.
+3. Điều hướng chỉ bằng bàn phím.
+4. Mở URL không tồn tại và tạo các lỗi test được cho phép.
+
+**Kết quả mong đợi**
+
+- Ngôn ngữ được giữ, giao diện không tràn và focus nhìn thấy rõ.
+- Dialog dùng được bằng bàn phím.
+- Trang 403/404/409/422/500 song ngữ, đúng mã lỗi và không lộ exception,
+  stack trace hay secret.
+
+---
+
+## 10. Kiểm thử xuyên hệ thống
+
+### E2E-01 — Admin đổi plan, Android nhận quyền mới
+
+1. Admin đổi `live_log_limit` của User A qua plan.
+2. User A refresh Account và tạo thêm log.
+3. Admin đổi History delay từ 1 thành 0.
+4. User A refresh và mở ngày hiện tại.
+
+**Mong đợi:** App nhận giới hạn mới; Live vẫn chỉ hiện log hôm nay; History ngày
+hiện tại mở được sau khi delay bằng 0.
+
+### E2E-02 — Android Start, Admin Stop
+
+1. User A Start Station trên Android.
+2. Admin mở Station detail và gửi Stop.
+3. Theo dõi Android, Web Admin và Station.
+
+**Mong đợi:** cả ba nơi cuối cùng cùng báo đã dừng; Audit ghi thao tác Stop của
+Admin đúng một lần.
+
+### E2E-03 — Transfer Station
+
+1. User A xác nhận đang thấy và điều khiển được Station.
+2. Admin transfer Station idle sang User B.
+3. Refresh App của cả hai user.
+
+**Mong đợi:** User A mất quyền đọc/điều khiển; User B thấy Station và sử dụng
+được; không lộ lịch sử riêng không thuộc quyền của User B.
+
+### E2E-04 — Mất API rồi phục hồi
+
+1. Trong lúc Station hoạt động, dùng môi trường test làm API không khả dụng.
+2. Thử Start/Stop và tải History.
+3. Khôi phục API và refresh.
+
+**Mong đợi:** giao diện báo lỗi an toàn; không có command, result hoặc audit bị
+ghi trùng; hệ thống phục hồi mà không cần xóa dữ liệu App.
+
+### E2E-05 — Suspend user khi Station đang chạy
+
+1. User A Start Station và xác nhận Live đang nhận kết quả.
+2. Admin suspend User A.
+3. User A thử Start/Stop, tải History và tạo request mới.
+4. Kiểm tra dữ liệu của User B trong cùng thời gian.
+5. Admin reactivate User A và xác nhận plan được giữ nguyên.
+
+**Mong đợi:** request mới của User A bị chặn theo trạng thái tài khoản; dữ liệu
+User B không bị ảnh hưởng hoặc lộ cho User A; sau reactivate, User A giữ plan
+hợp lệ trước đó và có thể tiếp tục sau khi refresh.
+
+---
+
+## 11. Tiêu chí nghiệm thu
+
+Bản phát hành chỉ được đề xuất nghiệm thu khi:
+
+- Tất cả case về đăng nhập, phân quyền, dữ liệu chéo người dùng, quota, History
+  lock, transfer và Audit đều PASS.
+- Không có crash, mất dữ liệu, lộ secret hoặc người dùng xem được dữ liệu không
+  thuộc quyền.
+- Các lỗi còn lại đều có ticket, mức độ ưu tiên, người phụ trách và quyết định
+  có chấp nhận phát hành hay không.
+- Báo cáo test đính kèm phiên bản APK, API, Admin, Station và danh sách case
+  PASS/FAIL/BLOCKED/NOT RUN.

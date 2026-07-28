@@ -4,6 +4,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'core/localization.dart';
 import 'core/theme.dart';
+import 'features/speech/translation_speech_host.dart';
 import 'providers.dart';
 import 'router.dart';
 
@@ -27,6 +28,9 @@ class PranaMobileApp extends ConsumerWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
+      builder:
+          (context, child) =>
+              TranslationSpeechHost(child: child ?? const SizedBox.shrink()),
       routerConfig: ref.watch(routerProvider),
     );
   }

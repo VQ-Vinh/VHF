@@ -4,7 +4,7 @@
     {
       "label": "PRANA: Enable Station + Android",
       "type": "process",
-      "command": "${workspaceFolder}\\enable_station.bat",
+      "command": "${workspaceFolder}\\enable_station_api.bat",
       "options": {
         "cwd": "${workspaceFolder}"
       },

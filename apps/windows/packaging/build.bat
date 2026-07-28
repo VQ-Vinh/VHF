@@ -14,7 +14,7 @@ set "INSTALLER_DIR=%ROOT%\installers\windows"
 cd /d "%ROOT%"
 
 if /I not "%OS%"=="Windows_NT" (
-    echo [ERROR] buildwin.bat can only run on Windows.
+    echo [ERROR] The Windows package can only be built on Windows.
     exit /b 1
 )
 

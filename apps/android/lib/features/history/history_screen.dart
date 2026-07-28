@@ -16,13 +16,10 @@ class HistoryScreen extends ConsumerStatefulWidget {
     super.key,
     required this.stationId,
     this.embedded = false,
-    this.onSessionSelected,
   });
 
   final String stationId;
   final bool embedded;
-  // Retained for source compatibility with existing LiveScreen callers.
-  final ValueChanged<String>? onSessionSelected;
 
   @override
   ConsumerState<HistoryScreen> createState() => _HistoryScreenState();

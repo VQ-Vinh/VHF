@@ -643,8 +643,10 @@ class StationApiTests(unittest.TestCase):
         self.assertEqual(repeated.status_code, 200, repeated.text)
         self.assertEqual(Processor.calls, 1)
         self.assertEqual(response.json()["station_id"], self.station_id)
+        self.assertEqual(response.json()["target_language"], "vi")
         key = (self.identity.uid, self.station_id, "session-1", request_id)
         self.assertIn(key, self.repo.station_results)
+        self.assertEqual(self.repo.station_results[key]["target_language"], "vi")
         usage = self.repo.get_usage(self.identity.uid, self.repo.plans["free"])
         self.assertEqual(usage.used_audio_seconds, 1)
 

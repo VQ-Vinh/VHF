@@ -32,7 +32,8 @@ Xem thêm [kiến trúc hệ thống](docs/architecture.md) và
 - Python 3.11 trở lên
 - Windows 10/11 x64 và Google Cloud CLI nếu vận hành Laptop Station
 - Raspberry Pi OS Bookworm ARM64 nếu vận hành Pi Station
-- Flutter SDK, Android SDK và JDK 17 chỉ khi phát triển hoặc build Android
+- Flutter SDK stable 3.44.8+, Android SDK và JDK 17 chỉ khi phát triển hoặc
+  build Android
 
 ## Bắt đầu nhanh trên Windows
 
@@ -41,7 +42,7 @@ Sau khi clone repository:
 ```bat
 scripts\setup\setup.bat
 generate_station_qr.bat
-enable_station.bat
+enable_station_api.bat
 ```
 
 `setup.bat` cài môi trường Station và backend. `generate_station_qr.bat` tạo
@@ -58,18 +59,11 @@ Trước lần chạy đầu tiên, đăng nhập Application Default Credential
 gcloud auth application-default login
 ```
 
-`enable_station.bat` mặc định chỉ chạy API local và Laptop Station. Khi phát
+`enable_station_api.bat` chạy API local và Laptop Station. Khi phát
 triển Android và muốn mở thêm Emulator + Flutter:
 
 ```bat
-enable_station.bat -WithMobile
-```
-
-Các lệnh phát triển riêng:
-
-```bat
-run_dev.bat
-run_api.bat
+enable_station_api.bat -WithMobile
 ```
 
 ## Raspberry Pi/Linux
@@ -84,7 +78,7 @@ run_api.bat
 Tạo file cấu hình từ `apps/android/config/staging.example.json`, sau đó:
 
 ```bat
-run_mobile.bat
+run_android_emulator.bat
 ```
 
 ## Test
@@ -104,11 +98,11 @@ flutter test
 Chạy lệnh tương ứng từ thư mục gốc:
 
 ```bat
-buildwin.bat
-buildapp.bat
+build_android_apk.bat
 ```
 
-Trên Raspberry Pi:
+APK được cấu hình cho điện thoại thật và tự chọn IP LAN của laptop. Trên
+Raspberry Pi:
 
 ```bash
 ./buildlinux

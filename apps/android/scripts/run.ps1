@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$AvdName = "Prana_API_36",
     [ValidatePattern("^\d{3,5}x\d{3,5}$")]
@@ -9,6 +9,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$utf8 = New-Object System.Text.UTF8Encoding($false)
+[Console]::InputEncoding = $utf8
+[Console]::OutputEncoding = $utf8
+$OutputEncoding = $utf8
 
 $appRoot = Split-Path -Parent $PSScriptRoot
 $configPath = Join-Path $appRoot "config\$Flavor.json"
@@ -44,6 +48,7 @@ if (Test-Path -LiteralPath $androidStudioJdk) {
     $env:Path = "$(Join-Path $androidStudioJdk 'bin');$env:Path"
 }
 $env:ANDROID_SDK_ROOT = $androidSdk
+$prebuiltApk = Join-Path $appRoot "build\app\outputs\flutter-apk\app-$Flavor-debug.apk"
 
 function Get-EmulatorAvdName {
     param([string]$DeviceId)
@@ -88,6 +93,23 @@ function Get-EmulatorResolution {
         return $Matches[1]
     }
     return $null
+}
+
+Write-Host "[PRANA] Chuẩn bị APK debug trước khi mở Emulator..." -ForegroundColor Cyan
+Push-Location $appRoot
+try {
+    & $flutter build apk `
+        --debug `
+        --flavor $Flavor `
+        "--dart-define-from-file=config/$Flavor.json"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Không thể build APK $Flavor cho Emulator."
+    }
+} finally {
+    Pop-Location
+}
+if (-not (Test-Path -LiteralPath $prebuiltApk)) {
+    throw "Flutter báo build thành công nhưng không tìm thấy APK: $prebuiltApk"
 }
 
 Write-Host "[PRANA] Kiểm tra Android Emulator..." -ForegroundColor Cyan
@@ -151,6 +173,15 @@ if (-not $deviceId) {
 }
 
 Write-Host "[PRANA] Thiết bị sẵn sàng: $deviceId" -ForegroundColor Green
+for ($stableCheck = 1; $stableCheck -le 3; $stableCheck++) {
+    Start-Sleep -Seconds 2
+    if ((Get-OnlineEmulatorId) -ne $deviceId) {
+        throw (
+            "Emulator bị ngắt khỏi ADB ngay sau khi boot. " +
+            "Hãy đóng ứng dụng nặng hoặc giảm RAM của AVD rồi chạy lại."
+        )
+    }
+}
 Write-Host "[PRANA] Chạy Flutter $Flavor. Nhấn r để Hot Reload, q để dừng app." -ForegroundColor Cyan
 
 Push-Location $appRoot
@@ -158,6 +189,7 @@ try {
     & $flutter run `
         -d $deviceId `
         --flavor $Flavor `
+        "--use-application-binary=$prebuiltApk" `
         "--dart-define-from-file=config/$Flavor.json"
     exit $LASTEXITCODE
 } finally {

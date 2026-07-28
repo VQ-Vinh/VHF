@@ -60,12 +60,9 @@ installers/*
 *.deb
 *.exe
 !generate_station_qr.bat
-!enable_station.bat
-!run_api.bat
-!run_dev.bat
-!run_mobile.bat
-!buildapp.bat
-!buildwin.bat
+!enable_station_api.bat
+!run_android_emulator.bat
+!build_android_apk.bat
 *.spec
 !apps/windows/packaging/PRANA_ELEX.spec
 !apps/linux/packaging/PRANA_ELEX.spec

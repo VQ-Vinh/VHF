@@ -49,6 +49,7 @@ build/buildapp/    Android/Flutter intermediate files
 installers/<platform> distributable artifacts
 ```
 
-Entrypoint build ổn định ở root là `buildwin.bat`, `buildlinux` và
-`buildapp.bat`. Logic và asset thật nằm cạnh từng app. Generated output,
+Entrypoint build đang dùng ở root là `build_android_apk.bat` và `buildlinux`.
+Logic Windows vẫn nằm trong `apps/windows/` nhưng không có root wrapper trong
+giai đoạn tập trung phát triển Android. Generated output,
 credential, activation label và runtime storage không được commit.

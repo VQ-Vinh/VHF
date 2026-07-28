@@ -17,6 +17,7 @@ class AccountScreen extends ConsumerStatefulWidget {
 
 class _AccountScreenState extends ConsumerState<AccountScreen> {
   bool busy = false;
+  bool showPlans = false;
   String? message;
   late Future<Map<String, dynamic>> _accountData;
 
@@ -140,6 +141,14 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
               const <String>{};
           final used = (usage['used_audio_seconds'] ?? 0) as num;
           final limit = (usage['audio_seconds_limit'] ?? 0) as num;
+          final planId = account['plan_id']?.toString() ?? '';
+          final matchingPlans = plans.where(
+            (plan) => plan['id']?.toString() == planId,
+          );
+          final planName =
+              matchingPlans.isEmpty
+                  ? planId
+                  : matchingPlans.first['name']?.toString() ?? planId;
           return RefreshIndicator(
             onRefresh: _refresh,
             child: ListView(
@@ -148,114 +157,223 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                 _Section(
                   title: AppText.of(context, 'account'),
                   children: [
-                    ListTile(
-                      leading: const Icon(Icons.person_outline),
-                      title: Text(user?.email ?? ''),
-                      subtitle: Text(
-                        '${account['status'] ?? '—'} • '
-                        '${account['plan_id'] ?? '—'}',
-                      ),
-                    ),
-                    ListTile(
-                      title: Text(
-                        user?.emailVerified == true
-                            ? AppText.of(context, 'email_verified')
-                            : AppText.of(context, 'email_unverified'),
-                      ),
-                      trailing:
-                          user?.emailVerified == false
-                              ? TextButton(
-                                onPressed:
-                                    busy
-                                        ? null
-                                        : () => _action(
-                                          () => user!.sendEmailVerification(),
-                                        ),
-                                child: Text(
-                                  AppText.of(context, 'resend_verification'),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 2, 14, 12),
+                      child: Row(
+                        children: [
+                          const CircleAvatar(
+                            radius: 20,
+                            child: Icon(Icons.person_outline, size: 22),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  user?.email ?? '',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style:
+                                      Theme.of(context).textTheme.titleMedium,
                                 ),
-                              )
-                              : null,
-                    ),
-                    ListTile(
-                      title: const Text('Google'),
-                      subtitle: Text(
-                        providers.contains('google.com')
-                            ? AppText.of(context, 'linked')
-                            : AppText.of(context, 'not_linked'),
-                      ),
-                      trailing:
-                          providers.contains('google.com')
-                              ? null
-                              : TextButton(
-                                onPressed: busy ? null : _linkGoogle,
-                                child: Text(AppText.of(context, 'link_google')),
-                              ),
-                    ),
-                    ListTile(
-                      title: Text(AppText.of(context, 'reset_password')),
-                      trailing: const Icon(Icons.mail_outline),
-                      onTap:
-                          user?.email == null || busy
-                              ? null
-                              : () => _action(
-                                () => ref
-                                    .read(authProvider)
-                                    .sendPasswordResetEmail(
-                                      email: user!.email!,
+                                const SizedBox(height: 6),
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 6,
+                                  children: [
+                                    _StatusChip(
+                                      icon: Icons.check_circle_outline,
+                                      label:
+                                          account['status']?.toString() ?? '—',
                                     ),
-                              ),
-                    ),
-                  ],
-                ),
-                _Section(
-                  title: AppText.of(context, 'usage'),
-                  children: [
-                    ListTile(
-                      title: LinearProgressIndicator(
-                        value:
-                            limit > 0
-                                ? (used / limit).clamp(0, 1).toDouble()
-                                : 0,
+                                    _StatusChip(
+                                      icon:
+                                          user?.emailVerified == true
+                                              ? Icons.verified_outlined
+                                              : Icons.warning_amber_outlined,
+                                      label:
+                                          user?.emailVerified == true
+                                              ? AppText.of(
+                                                context,
+                                                'email_verified',
+                                              )
+                                              : AppText.of(
+                                                context,
+                                                'email_unverified',
+                                              ),
+                                    ),
+                                    _StatusChip(
+                                      icon: Icons.g_mobiledata,
+                                      label:
+                                          providers.contains('google.com')
+                                              ? AppText.of(context, 'linked')
+                                              : AppText.of(
+                                                context,
+                                                'not_linked',
+                                              ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
-                      subtitle: Text('$used / $limit seconds'),
+                    ),
+                    const Divider(height: 1),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      child: Wrap(
+                        spacing: 4,
+                        runSpacing: 2,
+                        children: [
+                          if (user?.emailVerified == false)
+                            TextButton.icon(
+                              onPressed:
+                                  busy
+                                      ? null
+                                      : () => _action(
+                                        () => user!.sendEmailVerification(),
+                                      ),
+                              icon: const Icon(Icons.mark_email_read_outlined),
+                              label: Text(
+                                AppText.of(context, 'resend_verification'),
+                              ),
+                            ),
+                          if (!providers.contains('google.com'))
+                            TextButton.icon(
+                              onPressed: busy ? null : _linkGoogle,
+                              icon: const Icon(Icons.link),
+                              label: Text(AppText.of(context, 'link_google')),
+                            ),
+                          TextButton.icon(
+                            onPressed:
+                                user?.email == null || busy
+                                    ? null
+                                    : () => _action(
+                                      () => ref
+                                          .read(authProvider)
+                                          .sendPasswordResetEmail(
+                                            email: user!.email!,
+                                          ),
+                                    ),
+                            icon: const Icon(Icons.mail_outline),
+                            label: Text(
+                              AppText.of(context, 'reset_password_short'),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
                 _Section(
                   title: AppText.of(context, 'plans'),
                   children: [
-                    RadioGroup<String>(
-                      groupValue: account['plan_id']?.toString(),
-                      onChanged: (value) {
-                        if (value == null) return;
-                        final plan = plans.firstWhere(
-                          (item) => item['id'].toString() == value,
-                        );
-                        if (!busy && plan['availability'] == 'available') {
-                          _action(
-                            () => ref.read(apiProvider).selectPlan(value),
-                            refreshData: true,
-                          );
-                        }
-                      },
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
                       child: Column(
-                        children:
-                            plans
-                                .map(
-                                  (plan) => RadioListTile<String>(
-                                    value: plan['id'].toString(),
-                                    enabled:
-                                        plan['availability'] == 'available',
-                                    title: Text(plan['name'].toString()),
-                                    subtitle: Text(
-                                      '${plan['audio_seconds_limit']} seconds',
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      planName,
+                                      style:
+                                          Theme.of(
+                                            context,
+                                          ).textTheme.titleMedium,
                                     ),
+                                    Text(
+                                      '${_number(used)} / ${_number(limit)} '
+                                      '${AppText.of(context, 'seconds')}',
+                                      style: const TextStyle(
+                                        color: Color(0xFF65767D),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              TextButton.icon(
+                                onPressed:
+                                    busy
+                                        ? null
+                                        : () => setState(
+                                          () => showPlans = !showPlans,
+                                        ),
+                                icon: Icon(
+                                  showPlans
+                                      ? Icons.expand_less
+                                      : Icons.swap_horiz,
+                                ),
+                                label: Text(
+                                  AppText.of(
+                                    context,
+                                    showPlans ? 'collapse' : 'change_plan',
                                   ),
-                                )
-                                .toList(),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          LinearProgressIndicator(
+                            value:
+                                limit > 0
+                                    ? (used / limit).clamp(0, 1).toDouble()
+                                    : 0,
+                            minHeight: 5,
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                        ],
                       ),
                     ),
+                    if (showPlans) ...[
+                      const Divider(height: 1),
+                      RadioGroup<String>(
+                        groupValue: planId,
+                        onChanged: (value) {
+                          if (value == null || value == planId) return;
+                          final plan = plans.firstWhere(
+                            (item) => item['id'].toString() == value,
+                          );
+                          if (!busy && plan['availability'] == 'available') {
+                            _action(
+                              () => ref.read(apiProvider).selectPlan(value),
+                              refreshData: true,
+                            );
+                          }
+                        },
+                        child: Column(
+                          children:
+                              plans
+                                  .map(
+                                    (plan) => RadioListTile<String>(
+                                      dense: true,
+                                      visualDensity: const VisualDensity(
+                                        vertical: -3,
+                                      ),
+                                      value: plan['id'].toString(),
+                                      enabled:
+                                          plan['availability'] == 'available',
+                                      title: Text(plan['name'].toString()),
+                                      subtitle: Text(
+                                        '${_number((plan['audio_seconds_limit'] ?? 0) as num)} '
+                                        '${AppText.of(context, 'seconds')}',
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
                 _Section(
@@ -263,6 +381,9 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                   children: [
                     ...devices.map(
                       (device) => ListTile(
+                        dense: true,
+                        visualDensity: const VisualDensity(vertical: -2),
+                        leading: const Icon(Icons.devices_outlined),
                         title: Text(device['name']?.toString() ?? 'Device'),
                         subtitle: Text(device['platform']?.toString() ?? ''),
                         trailing: IconButton(
@@ -291,6 +412,8 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                     ),
                     ...stations.map(
                       (station) => ListTile(
+                        dense: true,
+                        visualDensity: const VisualDensity(vertical: -2),
                         leading: const Icon(Icons.radio),
                         title: Text(station['name']?.toString() ?? 'Station'),
                         subtitle: Text(station['platform']?.toString() ?? ''),
@@ -322,6 +445,8 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                   title: AppText.of(context, 'settings'),
                   children: [
                     ListTile(
+                      dense: true,
+                      visualDensity: const VisualDensity(vertical: -2),
                       title: Text(AppText.of(context, 'ui_language')),
                       trailing: SegmentedButton<String>(
                         showSelectedIcon: false,
@@ -338,8 +463,10 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                       ),
                     ),
                     ListTile(
+                      dense: true,
+                      visualDensity: const VisualDensity(vertical: -3),
                       title: Text(AppText.of(context, 'environment')),
-                      subtitle: Text(AppConfig.flavor),
+                      trailing: Text(AppConfig.flavor),
                     ),
                   ],
                 ),
@@ -361,6 +488,11 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
       ),
     );
   }
+
+  static String _number(num value) =>
+      value == value.roundToDouble()
+          ? value.toInt().toString()
+          : value.toStringAsFixed(1);
 }
 
 class _Section extends StatelessWidget {
@@ -370,15 +502,51 @@ class _Section extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Card(
-    margin: const EdgeInsets.only(bottom: 12),
+    margin: const EdgeInsets.only(bottom: 10),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
-          child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+          padding: const EdgeInsets.fromLTRB(14, 11, 14, 6),
+          child: Text(
+            title,
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+          ),
         ),
         ...children,
+      ],
+    ),
+  );
+}
+
+class _StatusChip extends StatelessWidget {
+  const _StatusChip({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    decoration: BoxDecoration(
+      color: const Color(0xFFEAF2F5),
+      borderRadius: BorderRadius.circular(99),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: const Color(0xFF315F72)),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xFF315F72),
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       ],
     ),
   );

@@ -11,7 +11,9 @@ trình viên Android.
 
 ## Yêu cầu môi trường
 
-- Flutter stable với phiên bản Dart SDK tương thích với `pubspec.yaml`.
+- Flutter stable 3.44.8 trở lên với phiên bản Dart SDK tương thích với
+  `pubspec.yaml`. Built-in Kotlin sẽ được bật khi Flutter stable 3.47+ phát
+  hành; Flutter 3.44.x vẫn dùng lớp tương thích KGP.
 - Android Studio, Android SDK 26 trở lên và điện thoại hoặc Android Emulator.
 - JDK 17 trở lên; có thể dùng JDK đi kèm Android Studio.
 - Firebase đã bật phương thức đăng nhập Email/Password và Google.
@@ -35,7 +37,7 @@ máy tính host.
 Từ thư mục gốc của dự án, chạy một lệnh:
 
 ```powershell
-.\run_mobile.bat
+.\run_android_emulator.bat
 ```
 
 Lệnh này tự động:
@@ -49,7 +51,7 @@ Emulator `Prana_API_36` mặc định chạy ở `1080x2160` (18:9). Muốn th�
 một tỷ lệ khác:
 
 ```powershell
-.\run_mobile.bat -EmulatorResolution 1080x1920
+.\run_android_emulator.bat -EmulatorResolution 1080x1920
 ```
 
 Trong terminal đang chạy Flutter, nhấn `r` để Hot Reload, `R` để Hot Restart và
@@ -60,20 +62,20 @@ Trong terminal đang chạy Flutter, nhấn `r` để Hot Reload, `R` để Hot 
 Từ thư mục gốc, build APK staging debug bằng một lệnh:
 
 ```powershell
-.\buildapp.bat
+.\build_android_apk.bat
 ```
 
 Các lựa chọn khác:
 
 ```powershell
 # Staging release
-.\buildapp.bat -Flavor staging -BuildMode release
+.\apps\android\build.bat -Flavor staging -BuildMode release -PhysicalDevice
 
 # Production release; yêu cầu keystore production
-.\buildapp.bat -Flavor production
+.\apps\android\build.bat -Flavor production -PhysicalDevice
 
 # Xóa build cache trước khi build
-.\buildapp.bat -Clean
+.\apps\android\build.bat -PhysicalDevice -Clean
 ```
 
 `BuildMode=auto` là mặc định: staging dùng debug, production dùng release. APK được
@@ -88,7 +90,7 @@ này đã được đặt làm build task mặc định nên các lần sau ch�
 Muốn chạy production:
 
 ```powershell
-.\run_mobile.bat -Flavor production
+.\run_android_emulator.bat -Flavor production
 ```
 
 ## Mở mô phỏng thủ công

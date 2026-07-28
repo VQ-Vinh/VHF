@@ -814,7 +814,10 @@ def process_audio(
             {"audio_seconds": info.seconds, "latency_ms": round((time.perf_counter() - started) * 1000, 1)},
         )
         raise api_error(503, "SERVICE_USAGE_LIMIT_REACHED", "Translation service is temporarily unavailable")
-    response = model_result.response.model_dump(mode="json")
+    processed_response = model_result.response.model_copy(
+        update={"target_language": target_language}
+    )
+    response = processed_response.model_dump(mode="json")
     metrics = dict(model_result.metrics)
     metrics.update({"audio_seconds": info.seconds, "request_id": request_id})
     try:
@@ -824,7 +827,7 @@ def process_audio(
         repo.settle_success(identity.uid, request_id, response, metrics)
         raise api_error(503, "SERVICE_USAGE_LIMIT_REACHED", "Result was processed but cloud archival is temporarily unavailable")
     repo.settle_success(identity.uid, request_id, response, metrics)
-    return model_result.response
+    return processed_response
 
 
 @app.post("/v1/stations/{station_id}/audio/process", response_model=ProcessingResponse)
@@ -920,8 +923,11 @@ def process_station_audio(
             "Translation service is temporarily unavailable",
         )
 
+    processed_response = model_result.response.model_copy(
+        update={"target_language": target_language}
+    )
     response = {
-        **model_result.response.model_dump(mode="json"),
+        **processed_response.model_dump(mode="json"),
         "request_id": request_id,
         "station_id": station_id,
     }

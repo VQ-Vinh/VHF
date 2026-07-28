@@ -98,6 +98,7 @@ class GeminiProcessor:
             transcript_raw=data.get("transcript_raw", ""),
             transcript_restored=data.get("transcript_restored", ""),
             translation=data.get("translation", ""),
+            target_language=target_language,
             confidence=confidence,
             latency_ms=latency_ms,
             error=data.get("error"),

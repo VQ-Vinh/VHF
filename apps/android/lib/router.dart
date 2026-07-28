@@ -36,10 +36,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/stations/:id/live',
         builder:
-            (_, state) => LiveScreen(
-              stationId: state.pathParameters['id']!,
-              sessionId: state.uri.queryParameters['session'],
-            ),
+            (_, state) => LiveScreen(stationId: state.pathParameters['id']!),
       ),
       GoRoute(
         path: '/stations/:id/history',

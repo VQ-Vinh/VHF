@@ -197,7 +197,7 @@ Write-Host "[PRANA] Station dang chay. Cai APK tren dien thoai va quet QR de su 
 if ($WithMobile) {
     Write-Host "[PRANA] Mo Android Emulator va Flutter $Flavor..." -ForegroundColor Cyan
     Write-Host "[PRANA] API/Station tiep tuc chay nen khi Flutter dung." -ForegroundColor DarkGray
-    & (Join-Path $root "run_mobile.bat") `
+    & (Join-Path $root "run_android_emulator.bat") `
         -AvdName $AvdName `
         -EmulatorResolution $EmulatorResolution `
         -Flavor $Flavor

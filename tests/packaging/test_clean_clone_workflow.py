@@ -32,7 +32,7 @@ def test_enable_station_opens_mobile_only_when_requested() -> None:
 
     assert "[switch]$WithMobile" in script
     assert "if ($WithMobile)" in script
-    mobile_call = '& (Join-Path $root "run_mobile.bat")'
+    mobile_call = '& (Join-Path $root "run_android_emulator.bat")'
     assert mobile_call in script
     assert script.index("if ($WithMobile)") < script.index(mobile_call)
 

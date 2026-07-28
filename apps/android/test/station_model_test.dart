@@ -76,4 +76,16 @@ void main() {
 
     expect(values.map((item) => item.requestId), ['first', 'second', 'new']);
   });
+
+  test('translation result decodes its target speech language', () {
+    final value = TranslationResult.fromMap({
+      'request_id': 'request-1',
+      'sequence': 1,
+      'translation': 'Xin chào',
+      'target_language': 'vi',
+      'timestamp': '2026-07-28T12:00:00Z',
+    });
+
+    expect(value.targetLanguage, 'vi');
+  });
 }

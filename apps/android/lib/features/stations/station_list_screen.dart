@@ -56,7 +56,7 @@ class StationListScreen extends ConsumerWidget {
                           gridDelegate:
                               SliverGridDelegateWithFixedCrossAxisCount(
                                 crossAxisCount: columns,
-                                childAspectRatio: columns == 1 ? 2.35 : 1.75,
+                                childAspectRatio: columns == 1 ? 2.7 : 2,
                                 crossAxisSpacing: 14,
                                 mainAxisSpacing: 14,
                               ),
@@ -169,11 +169,6 @@ class _StationCard extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              Text(
-                '${AppText.of(context, 'session')} ${station.sessionId.isEmpty ? AppText.of(context, 'not_started') : station.sessionId}',
-                style: const TextStyle(color: Color(0xFF607983)),
-              ),
             ],
           ),
         ),
@@ -188,6 +183,6 @@ class _StationSkeleton extends StatelessWidget {
   Widget build(BuildContext context) => ListView.builder(
     padding: const EdgeInsets.all(16),
     itemCount: 3,
-    itemBuilder: (_, _) => const Card(child: SizedBox(height: 142)),
+    itemBuilder: (_, _) => const Card(child: SizedBox(height: 118)),
   );
 }

@@ -12,9 +12,8 @@ import '../history/history_screen.dart';
 import 'live_controller.dart';
 
 class LiveScreen extends ConsumerStatefulWidget {
-  const LiveScreen({super.key, required this.stationId, this.sessionId});
+  const LiveScreen({super.key, required this.stationId});
   final String stationId;
-  final String? sessionId;
 
   static const languages = {
     'vi': 'Tiếng Việt',
@@ -31,6 +30,15 @@ class LiveScreen extends ConsumerStatefulWidget {
 class _LiveScreenState extends ConsumerState<LiveScreen> {
   String? _dismissedProcessingError;
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(activeSpeechStationProvider.notifier).state = widget.stationId;
+    });
+  }
+
   Future<void> _showHistory() async {
     final wide = MediaQuery.sizeOf(context).width >= 700;
     if (wide) {
@@ -44,12 +52,6 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
                 child: HistoryScreen(
                   stationId: widget.stationId,
                   embedded: true,
-                  onSessionSelected: (sessionId) {
-                    Navigator.of(context).pop();
-                    context.push(
-                      '/stations/${widget.stationId}/live?session=${Uri.encodeQueryComponent(sessionId)}',
-                    );
-                  },
                 ),
               ),
             ),
@@ -62,16 +64,7 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
         builder:
             (context) => FractionallySizedBox(
               heightFactor: .94,
-              child: HistoryScreen(
-                stationId: widget.stationId,
-                embedded: true,
-                onSessionSelected: (sessionId) {
-                  Navigator.of(context).pop();
-                  context.push(
-                    '/stations/${widget.stationId}/live?session=${Uri.encodeQueryComponent(sessionId)}',
-                  );
-                },
-              ),
+              child: HistoryScreen(stationId: widget.stationId, embedded: true),
             ),
       );
     }
@@ -108,11 +101,10 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
         });
         final ux = controller.state;
         final entitlements = ref.watch(planEntitlementsProvider);
-        final selectedSession = widget.sessionId ?? station.sessionId;
         final results = ref.watch(
           liveResultsProvider((
             stationId: widget.stationId,
-            sessionId: selectedSession,
+            sessionId: station.sessionId,
           )),
         );
         final items = results.value ?? const <TranslationResult>[];
@@ -165,31 +157,18 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
                       () => setState(
                         () => _dismissedProcessingError = processingErrorKey,
                       ),
+                  actionLabel: AppText.of(context, 'retry'),
+                  onAction:
+                      online && !ux.busy && !station.retrying
+                          ? () => controller.retry(station)
+                          : null,
                 ),
-              if (widget.sessionId != null) const _HistoryModeBanner(),
               _FeedHeader(
                 onHistory: _showHistory,
                 count: items.length,
                 limit: entitlements.liveLogLimit,
               ),
-              Expanded(
-                child: _TranslationFeed(
-                  value: results,
-                  historyMode: widget.sessionId != null,
-                ),
-              ),
-              _DiagnosticsPanel(
-                station: station,
-                online: online,
-                ux: ux,
-                onRetry:
-                    online &&
-                            !ux.busy &&
-                            !station.retrying &&
-                            (station.lastError?.isNotEmpty ?? false)
-                        ? () => controller.retry(station)
-                        : null,
-              ),
+              Expanded(child: _TranslationFeed(value: results)),
               _BottomStatus(
                 station: station,
                 online: online,
@@ -523,9 +502,8 @@ class _FeedHeader extends StatelessWidget {
 }
 
 class _TranslationFeed extends StatefulWidget {
-  const _TranslationFeed({required this.value, required this.historyMode});
+  const _TranslationFeed({required this.value});
   final AsyncValue<List<TranslationResult>> value;
-  final bool historyMode;
 
   @override
   State<_TranslationFeed> createState() => _TranslationFeedState();
@@ -563,7 +541,7 @@ class _TranslationFeedState extends State<_TranslationFeed> {
         _scrollController.position.maxScrollExtent -
                 _scrollController.position.pixels <=
             80;
-    if (hasNewResult && nearNewest && !widget.historyMode) {
+    if (hasNewResult && nearNewest) {
       _scrollToNewest(animate: _visibleResultSignature != null);
     }
     _visibleResultSignature = signature;
@@ -585,9 +563,7 @@ class _TranslationFeedState extends State<_TranslationFeed> {
           subtitle: '$error',
         ),
     data: (items) {
-      if (items.isNotEmpty &&
-          _visibleResultSignature == null &&
-          !widget.historyMode) {
+      if (items.isNotEmpty && _visibleResultSignature == null) {
         _visibleResultSignature = items.map((item) => item.requestId).join('|');
         _scrollToNewest(animate: false);
       }
@@ -612,55 +588,92 @@ class _TranslationFeedState extends State<_TranslationFeed> {
   );
 }
 
-class _ResultCard extends StatelessWidget {
+class _ResultCard extends ConsumerWidget {
   const _ResultCard({super.key, required this.result});
   final TranslationResult result;
 
   @override
-  Widget build(BuildContext context) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '${DateFormat.Hms().format(result.timestamp)}  ·  '
-            '${result.language.toUpperCase().isEmpty ? '?' : result.language.toUpperCase()}  ·  '
-            '${(result.confidence * 100).round()}%',
-            style: const TextStyle(
-              color: PranaTheme.muted,
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          if (result.error != null) ...[
-            const SizedBox(height: 10),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final speech = ref.watch(translationSpeechProvider);
+    final speaking = speech.speakingRequestId == result.requestId;
+    final canSpeak =
+        result.translation.trim().isNotEmpty &&
+        !(result.error?.trim().isNotEmpty ?? false);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             Text(
-              result.error!,
-              style: const TextStyle(color: Color(0xFFB12F40)),
-            ),
-          ],
-          if (result.transcript.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Text(
-              result.transcript,
-              style: const TextStyle(fontSize: 14, color: Color(0xFF355762)),
-            ),
-          ],
-          if (result.translation.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(
-              result.translation,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: PranaTheme.navy,
+              '${DateFormat.Hms().format(result.timestamp)}  ·  '
+              '${result.language.toUpperCase().isEmpty ? '?' : result.language.toUpperCase()}  ·  '
+              '${(result.confidence * 100).round()}%',
+              style: const TextStyle(
+                color: PranaTheme.muted,
+                fontSize: 10,
                 fontWeight: FontWeight.w700,
               ),
             ),
+            if (result.error != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                result.error!,
+                style: const TextStyle(color: Color(0xFFB12F40)),
+              ),
+            ],
+            if (result.transcript.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                result.transcript,
+                style: const TextStyle(fontSize: 14, color: Color(0xFF355762)),
+              ),
+            ],
+            if (result.translation.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      result.translation,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: PranaTheme.navy,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    key: ValueKey('speak-${result.requestId}'),
+                    tooltip: AppText.of(
+                      context,
+                      speaking ? 'stop_speaking' : 'speak_translation',
+                    ),
+                    onPressed:
+                        canSpeak
+                            ? () {
+                              if (speaking) {
+                                speech.stopCurrent();
+                              } else {
+                                speech.speakNow(result);
+                              }
+                            }
+                            : null,
+                    icon: Icon(
+                      speaking
+                          ? Icons.stop_circle_outlined
+                          : Icons.volume_up_outlined,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
-        ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _BottomStatus extends StatelessWidget {
@@ -723,91 +736,6 @@ class _StatusDot extends StatelessWidget {
   );
 }
 
-class _DiagnosticsPanel extends StatelessWidget {
-  const _DiagnosticsPanel({
-    required this.station,
-    required this.online,
-    required this.ux,
-    required this.onRetry,
-  });
-  final StationModel station;
-  final bool online;
-  final LiveUxState ux;
-  final VoidCallback? onRetry;
-
-  @override
-  Widget build(BuildContext context) => ExpansionTile(
-    dense: true,
-    tilePadding: const EdgeInsets.symmetric(horizontal: 16),
-    childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-    leading: const Icon(Icons.terminal, size: 18, color: PranaTheme.brandBlue),
-    title: Text(
-      AppText.of(context, 'diagnostics'),
-      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-    ),
-    trailing:
-        onRetry == null
-            ? const Icon(Icons.expand_more)
-            : TextButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh, size: 16),
-              label: Text(AppText.of(context, 'retry')),
-            ),
-    children: [
-      _DiagnosticRow(label: 'Platform', value: station.platform),
-      _DiagnosticRow(
-        label: 'Session',
-        value: station.sessionId.isEmpty ? '—' : station.sessionId,
-      ),
-      _DiagnosticRow(label: 'Sequence', value: '${station.sequence}'),
-      _DiagnosticRow(
-        label: 'Generation',
-        value: '${station.observedGeneration} / ${station.desired.generation}',
-      ),
-      _DiagnosticRow(
-        label: 'Last seen',
-        value:
-            station.lastSeenAt == null
-                ? '—'
-                : DateFormat.Hms().format(station.lastSeenAt!.toLocal()),
-      ),
-      if (station.lastError?.isNotEmpty ?? false)
-        _DiagnosticRow(label: 'Error', value: station.lastError!),
-    ],
-  );
-}
-
-class _DiagnosticRow extends StatelessWidget {
-  const _DiagnosticRow({required this.label, required this.value});
-  final String label;
-  final String value;
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 3),
-    child: Row(
-      children: [
-        SizedBox(
-          width: 94,
-          child: Text(
-            label,
-            style: const TextStyle(color: PranaTheme.muted, fontSize: 11),
-          ),
-        ),
-        Expanded(
-          child: Text(
-            value,
-            style: const TextStyle(
-              color: PranaTheme.navy,
-              fontFamily: 'monospace',
-              fontSize: 11,
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
 class _QuotaBanner extends StatelessWidget {
   const _QuotaBanner({required this.account});
   final AsyncValue<Map<String, dynamic>> account;
@@ -841,15 +769,26 @@ class _QuotaBanner extends StatelessWidget {
 }
 
 class _CommandErrorBanner extends StatelessWidget {
-  const _CommandErrorBanner({required this.error, required this.onDismiss});
+  const _CommandErrorBanner({
+    required this.error,
+    required this.onDismiss,
+    this.actionLabel,
+    this.onAction,
+  });
   final String error;
   final VoidCallback onDismiss;
+  final String? actionLabel;
+  final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) => MaterialBanner(
     content: Text(error),
     leading: const Icon(Icons.error_outline, color: Color(0xFFB12F40)),
-    actions: [TextButton(onPressed: onDismiss, child: const Text('OK'))],
+    actions: [
+      if (actionLabel != null && onAction != null)
+        TextButton(onPressed: onAction, child: Text(actionLabel!)),
+      TextButton(onPressed: onDismiss, child: const Text('OK')),
+    ],
   );
 }
 
@@ -885,21 +824,6 @@ class _RetryingBanner extends StatelessWidget {
           ),
         ),
       ],
-    ),
-  );
-}
-
-class _HistoryModeBanner extends StatelessWidget {
-  const _HistoryModeBanner();
-  @override
-  Widget build(BuildContext context) => Container(
-    width: double.infinity,
-    color: const Color(0xFFE7EEF0),
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-    child: Text(
-      AppText.of(context, 'history_mode'),
-      textAlign: TextAlign.center,
-      style: TextStyle(color: PranaTheme.muted, fontSize: 12),
     ),
   );
 }
