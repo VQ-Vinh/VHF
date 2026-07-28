@@ -101,7 +101,12 @@ Stream<List<TranslationResult>> _pollStationResults(
   required int limit,
 }) async* {
   while (true) {
-    yield await api.stationResults(stationId, sessionId, limit: limit);
+    final results = await api.stationResults(
+      stationId,
+      sessionId,
+      limit: limit,
+    );
+    yield liveTranslationsForLocalDay(results, DateTime.now());
     await Future<void>.delayed(const Duration(seconds: 2));
   }
 }

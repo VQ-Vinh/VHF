@@ -500,6 +500,102 @@ class StationApiTests(unittest.TestCase):
             [1, 3, 4],
         )
 
+    def test_history_groups_sessions_by_local_day_and_locks_today(self):
+        self.create_and_claim()
+        local_timezone = timezone(timedelta(hours=7))
+        local_today = datetime.now(timezone.utc).astimezone(local_timezone).date()
+        previous_day = local_today - timedelta(days=1)
+        timestamps = [
+            datetime.combine(
+                previous_day,
+                datetime.min.time(),
+                local_timezone,
+            ).replace(hour=23, minute=59),
+            datetime.combine(
+                local_today,
+                datetime.min.time(),
+                local_timezone,
+            ).replace(minute=1),
+        ]
+        for sequence, timestamp in enumerate(timestamps, start=1):
+            self.repo.publish_station_result(
+                self.identity.uid,
+                self.station_id,
+                ProcessingResponse(
+                    request_id=f"day-request-{sequence}",
+                    station_id=self.station_id,
+                    session_id=f"session-{sequence}",
+                    sequence=sequence,
+                    audio_file=f"{sequence}.wav",
+                    timestamp=timestamp.astimezone(timezone.utc),
+                ).model_dump(mode="json"),
+            )
+
+        response = self.client.get(
+            f"/v1/stations/{self.station_id}/history/days",
+            params={"timezone_offset_minutes": 420},
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        days = response.json()
+        self.assertEqual(
+            [item["date"] for item in days],
+            [local_today.isoformat(), previous_day.isoformat()],
+        )
+        self.assertTrue(days[0]["locked"])
+        self.assertFalse(days[1]["locked"])
+        locked = self.client.get(
+            f"/v1/stations/{self.station_id}/history/days/"
+            f"{local_today.isoformat()}/results",
+            params={"timezone_offset_minutes": 420},
+        )
+        self.assertEqual(locked.status_code, 403, locked.text)
+        unlocked = self.client.get(
+            f"/v1/stations/{self.station_id}/history/days/"
+            f"{previous_day.isoformat()}/results",
+            params={"timezone_offset_minutes": 420},
+        )
+        self.assertEqual(unlocked.status_code, 200, unlocked.text)
+        self.assertEqual(
+            [item["request_id"] for item in unlocked.json()["items"]],
+            ["day-request-1"],
+        )
+
+    def test_history_paginates_all_sessions_and_zero_delay_unlocks_today(self):
+        self.create_and_claim()
+        self.repo.plans["free"] = self.repo.plans["free"].model_copy(
+            update={"history_unlock_delay_days": 0}
+        )
+        now = datetime.now(timezone.utc)
+        for sequence in range(1001):
+            self.repo.publish_station_result(
+                self.identity.uid,
+                self.station_id,
+                ProcessingResponse(
+                    request_id=f"page-request-{sequence:04d}",
+                    station_id=self.station_id,
+                    session_id=f"session-{sequence % 3}",
+                    sequence=sequence,
+                    audio_file=f"{sequence}.wav",
+                    timestamp=now + timedelta(microseconds=sequence),
+                ).model_dump(mode="json"),
+            )
+        history_date = now.date().isoformat()
+        first = self.client.get(
+            f"/v1/stations/{self.station_id}/history/days/{history_date}/results",
+            params={"limit": 1000},
+        )
+        self.assertEqual(first.status_code, 200, first.text)
+        self.assertEqual(len(first.json()["items"]), 1000)
+        self.assertEqual(first.json()["next_cursor"], "1000")
+        second = self.client.get(
+            f"/v1/stations/{self.station_id}/history/days/{history_date}/results",
+            params={"limit": 1000, "cursor": first.json()["next_cursor"]},
+        )
+        self.assertEqual(second.status_code, 200, second.text)
+        self.assertEqual(len(second.json()["items"]), 1)
+        self.assertIsNone(second.json()["next_cursor"])
+
     def test_station_audio_uses_owner_quota_and_publishes_projection(self):
         self.create_and_claim()
         Processor.calls = 0

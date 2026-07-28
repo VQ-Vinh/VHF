@@ -78,6 +78,10 @@ abstract final class AppText {
       'not_started': 'chưa bắt đầu',
       'no_sessions': 'Chưa có phiên dịch nào',
       'no_sessions_body': 'Các phiên hoàn tất sẽ xuất hiện tại đây.',
+      'no_history_days': 'Chưa có lịch sử dịch',
+      'no_history_days_body': 'Các ngày có bản dịch sẽ xuất hiện tại đây.',
+      'history_day_title': 'Ngày {date}',
+      'history_day_summary': '{count} log • {range}',
       'syncing': 'Đang đồng bộ',
       'connect_station': 'Kết nối PRANA Station',
       'label_help':
@@ -185,6 +189,10 @@ abstract final class AppText {
       'not_started': 'not started',
       'no_sessions': 'No translation sessions yet',
       'no_sessions_body': 'Completed sessions will appear here.',
+      'no_history_days': 'No translation history yet',
+      'no_history_days_body': 'Days containing translations will appear here.',
+      'history_day_title': 'Date {date}',
+      'history_day_summary': '{count} logs • {range}',
       'syncing': 'Synchronizing',
       'connect_station': 'Connect PRANA Station',
       'label_help':

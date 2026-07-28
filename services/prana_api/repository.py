@@ -118,6 +118,11 @@ class Repository(Protocol):
         plan: Plan,
         limit: int,
     ) -> list[dict]: ...
+    def list_station_history_results(
+        self,
+        uid: str,
+        station_id: str,
+    ) -> list[dict]: ...
     def consume_station_request(self, station_id: str, request_id: str, expires_at: datetime) -> None: ...
     def publish_station_result(self, uid: str, station_id: str, response: dict) -> None: ...
     def reserve(
@@ -806,6 +811,22 @@ class FirestoreRepository:
         )
         values = [snap.to_dict() for snap in (*unlocked, *recent)]
         values.sort(key=lambda item: item.get("timestamp") or now)
+        return values
+
+    def list_station_history_results(
+        self,
+        uid: str,
+        station_id: str,
+    ) -> list[dict]:
+        station_ref = self._user_ref(uid).collection("stations").document(station_id)
+        station = station_ref.get()
+        if not station.exists or not station.to_dict().get("active", True):
+            raise api_error(404, "STATION_NOT_FOUND", "Station was not found")
+
+        values: list[dict] = []
+        for session in station_ref.collection("sessions").stream():
+            for result in session.reference.collection("results").stream():
+                values.append(result.to_dict())
         return values
 
     def consume_station_request(

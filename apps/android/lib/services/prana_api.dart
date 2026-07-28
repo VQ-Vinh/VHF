@@ -151,12 +151,55 @@ class PranaApi {
     );
     return (response.data ?? const [])
         .map(
-          (item) => TranslationResult.fromMap(
-            Map<String, dynamic>.from(item as Map),
-          ),
+          (item) =>
+              TranslationResult.fromMap(Map<String, dynamic>.from(item as Map)),
         )
         .toList()
       ..sort(compareTranslationChronologically);
+  }
+
+  Future<List<StationHistoryDay>> stationHistoryDays(
+    String stationId, {
+    required int timezoneOffsetMinutes,
+  }) async {
+    final response = await _dio.get<List<dynamic>>(
+      '/v1/stations/$stationId/history/days',
+      queryParameters: {'timezone_offset_minutes': timezoneOffsetMinutes},
+    );
+    return (response.data ?? const [])
+        .map(
+          (item) =>
+              StationHistoryDay.fromMap(Map<String, dynamic>.from(item as Map)),
+        )
+        .toList();
+  }
+
+  Future<List<TranslationResult>> stationHistoryDayResults(
+    String stationId,
+    String date, {
+    required int timezoneOffsetMinutes,
+  }) async {
+    final unique = <String, TranslationResult>{};
+    String? cursor;
+    do {
+      final response = await _dio.get<Map<String, dynamic>>(
+        '/v1/stations/$stationId/history/days/$date/results',
+        queryParameters: {
+          'timezone_offset_minutes': timezoneOffsetMinutes,
+          'limit': 1000,
+          if (cursor != null) 'cursor': cursor,
+        },
+      );
+      final data = response.data ?? const <String, dynamic>{};
+      for (final value in data['items'] as List? ?? const []) {
+        final result = TranslationResult.fromMap(
+          Map<String, dynamic>.from(value as Map),
+        );
+        unique[result.requestId] = result;
+      }
+      cursor = data['next_cursor'] as String?;
+    } while (cursor != null && cursor.isNotEmpty);
+    return unique.values.toList()..sort(compareTranslationChronologically);
   }
 
   Future<void> revokeStation(String stationId) async {

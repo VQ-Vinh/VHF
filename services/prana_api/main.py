@@ -5,7 +5,7 @@ import secrets
 import time
 import re
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, Response, UploadFile
@@ -44,6 +44,8 @@ from services.prana_api.models import (
     StationDesiredState,
     StationDesiredStatePatch,
     StationHeartbeat,
+    StationHistoryDay,
+    StationHistoryPage,
     StationPairingRequest,
     StationPairingResponse,
     StationProvisionRequest,
@@ -156,6 +158,61 @@ def _validate_request_id(value: str) -> None:
         uuid.UUID(value)
     except ValueError as exc:
         raise api_error(422, "INVALID_REQUEST", "X-Request-ID must be a UUID") from exc
+
+
+def _history_timezone(offset_minutes: int) -> timezone:
+    if offset_minutes < -840 or offset_minutes > 840:
+        raise api_error(
+            422,
+            "INVALID_TIMEZONE",
+            "Timezone offset must be between -840 and 840 minutes",
+        )
+    return timezone(timedelta(minutes=offset_minutes))
+
+
+def _history_timestamp(value: dict) -> datetime:
+    timestamp = value.get("timestamp")
+    if isinstance(timestamp, datetime):
+        return (
+            timestamp.replace(tzinfo=timezone.utc)
+            if timestamp.tzinfo is None
+            else timestamp
+        )
+    if isinstance(timestamp, str):
+        parsed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        return (
+            parsed.replace(tzinfo=timezone.utc)
+            if parsed.tzinfo is None
+            else parsed
+        )
+    return datetime.min.replace(tzinfo=timezone.utc)
+
+
+def _history_unlocked(history_date: date, plan: Plan, local_today: date) -> bool:
+    return history_date + timedelta(days=plan.history_unlock_delay_days) <= local_today
+
+
+def _station_history_values(
+    repo: Repository,
+    uid: str,
+    station_id: str,
+) -> list[dict]:
+    unique: dict[str, dict] = {}
+    for value in repo.list_station_history_results(uid, station_id):
+        request_id = str(value.get("request_id") or "")
+        key = request_id or (
+            f"{value.get('session_id', '')}:{value.get('sequence', 0)}:"
+            f"{_history_timestamp(value).isoformat()}"
+        )
+        unique[key] = value
+    return sorted(
+        unique.values(),
+        key=lambda item: (
+            _history_timestamp(item),
+            int(item.get("sequence") or 0),
+            str(item.get("request_id") or ""),
+        ),
+    )
 
 
 def _authenticate_station_request(
@@ -459,6 +516,83 @@ def list_stations(
 ):
     active_account(identity, repo)
     return repo.list_stations(identity.uid)
+
+
+@app.get(
+    "/v1/stations/{station_id}/history/days",
+    response_model=list[StationHistoryDay],
+)
+def list_station_history_days(
+    station_id: str,
+    timezone_offset_minutes: int = 0,
+    identity: Identity = Depends(require_identity),
+    repo: Repository = Depends(get_repository),
+):
+    account, plan = active_account(identity, repo)
+    local_timezone = _history_timezone(timezone_offset_minutes)
+    local_today = datetime.now(timezone.utc).astimezone(local_timezone).date()
+    grouped: dict[date, list[datetime]] = {}
+    for value in _station_history_values(repo, account.uid, station_id):
+        timestamp = _history_timestamp(value)
+        local_date = timestamp.astimezone(local_timezone).date()
+        grouped.setdefault(local_date, []).append(timestamp)
+    return [
+        StationHistoryDay(
+            date=history_date,
+            result_count=len(timestamps),
+            first_result_at=min(timestamps),
+            last_result_at=max(timestamps),
+            locked=not _history_unlocked(history_date, plan, local_today),
+        )
+        for history_date, timestamps in sorted(
+            grouped.items(),
+            reverse=True,
+        )
+    ]
+
+
+@app.get(
+    "/v1/stations/{station_id}/history/days/{history_date}/results",
+    response_model=StationHistoryPage,
+)
+def list_station_history_day_results(
+    station_id: str,
+    history_date: date,
+    timezone_offset_minutes: int = 0,
+    limit: int = 200,
+    cursor: str | None = None,
+    identity: Identity = Depends(require_identity),
+    repo: Repository = Depends(get_repository),
+):
+    account, plan = active_account(identity, repo)
+    local_timezone = _history_timezone(timezone_offset_minutes)
+    local_today = datetime.now(timezone.utc).astimezone(local_timezone).date()
+    if not _history_unlocked(history_date, plan, local_today):
+        raise api_error(
+            403,
+            "HISTORY_LOCKED",
+            "Full history is not available until the configured unlock date",
+        )
+    safe_limit = max(1, min(limit, 1000))
+    try:
+        offset = int(cursor or "0")
+    except ValueError as exc:
+        raise api_error(422, "INVALID_CURSOR", "History cursor is invalid") from exc
+    if offset < 0:
+        raise api_error(422, "INVALID_CURSOR", "History cursor is invalid")
+
+    values = [
+        value
+        for value in _station_history_values(repo, account.uid, station_id)
+        if _history_timestamp(value).astimezone(local_timezone).date()
+        == history_date
+    ]
+    page = values[offset : offset + safe_limit]
+    next_offset = offset + len(page)
+    return StationHistoryPage(
+        items=page,
+        next_cursor=str(next_offset) if next_offset < len(values) else None,
+    )
 
 
 @app.get(

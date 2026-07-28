@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Literal
 
 from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
@@ -188,6 +188,19 @@ class ProcessingResponse(BaseModel):
     latency_ms: float = 0.0
     queue_wait_ms: float = 0.0
     error: str | None = None
+
+
+class StationHistoryDay(BaseModel):
+    date: date
+    result_count: int = Field(ge=1)
+    first_result_at: datetime
+    last_result_at: datetime
+    locked: bool
+
+
+class StationHistoryPage(BaseModel):
+    items: list[ProcessingResponse]
+    next_cursor: str | None = None
 
 
 class Reservation(BaseModel):

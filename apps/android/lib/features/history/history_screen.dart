@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -9,7 +8,6 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../core/localization.dart';
 import '../../core/widgets.dart';
-import '../../models/plan_entitlements.dart';
 import '../../models/station.dart';
 import '../../providers.dart';
 
@@ -23,6 +21,7 @@ class HistoryScreen extends ConsumerStatefulWidget {
 
   final String stationId;
   final bool embedded;
+  // Retained for source compatibility with existing LiveScreen callers.
   final ValueChanged<String>? onSessionSelected;
 
   @override
@@ -30,31 +29,42 @@ class HistoryScreen extends ConsumerStatefulWidget {
 }
 
 class _HistoryScreenState extends ConsumerState<HistoryScreen> {
-  String? selectedSession;
+  StationHistoryDay? selectedDay;
+  late Future<List<StationHistoryDay>> days;
+
+  int get timezoneOffsetMinutes => DateTime.now().timeZoneOffset.inMinutes;
+
+  @override
+  void initState() {
+    super.initState();
+    days = _loadDays();
+  }
+
+  Future<List<StationHistoryDay>> _loadDays() => ref
+      .read(apiProvider)
+      .stationHistoryDays(
+        widget.stationId,
+        timezoneOffsetMinutes: timezoneOffsetMinutes,
+      );
+
+  Future<void> _refresh() async {
+    final refreshed = _loadDays();
+    setState(() => days = refreshed);
+    await refreshed;
+  }
 
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(authStateProvider).value;
-    final entitlements = ref.watch(planEntitlementsProvider);
     if (user == null) return const SizedBox.shrink();
-    if (selectedSession != null) {
-      return _SessionHistory(
+    if (selectedDay != null) {
+      return _DayHistory(
         stationId: widget.stationId,
-        sessionId: selectedSession!,
-        entitlements: entitlements,
-        onBack: () => setState(() => selectedSession = null),
+        day: selectedDay!,
+        timezoneOffsetMinutes: timezoneOffsetMinutes,
+        onBack: () => setState(() => selectedDay = null),
       );
     }
-    final stream =
-        ref
-            .watch(firestoreProvider)
-            .collection('users')
-            .doc(user.uid)
-            .collection('stations')
-            .doc(widget.stationId)
-            .collection('sessions')
-            .orderBy('updated_at', descending: true)
-            .snapshots();
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: !widget.embedded,
@@ -67,8 +77,8 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
             ),
         ],
       ),
-      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: stream,
+      body: FutureBuilder<List<StationHistoryDay>>(
+        future: days,
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             return Center(child: Text('${snapshot.error}'));
@@ -76,40 +86,53 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
-          if (snapshot.data!.docs.isEmpty) {
+          if (snapshot.data!.isEmpty) {
             return EmptyState(
               icon: Icons.history,
-              title: AppText.of(context, 'no_sessions'),
-              subtitle: AppText.of(context, 'no_sessions_body'),
+              title: AppText.of(context, 'no_history_days'),
+              subtitle: AppText.of(context, 'no_history_days_body'),
             );
           }
-          return ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: snapshot.data!.docs.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 10),
-            itemBuilder: (_, index) {
-              final doc = snapshot.data!.docs[index];
-              final updated =
-                  (doc.data()['updated_at'] as Timestamp?)?.toDate();
-              final locked =
-                  updated != null &&
-                  !entitlements.historyIsUnlocked(updated, DateTime.now());
-              return Card(
-                child: ListTile(
-                  leading: const Icon(Icons.translate),
-                  title: Text(doc.id),
-                  subtitle: Text(
-                    updated == null
-                        ? AppText.of(context, 'syncing')
-                        : DateFormat.yMMMd().add_Hm().format(updated),
+          return RefreshIndicator(
+            onRefresh: _refresh,
+            child: ListView.separated(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(16),
+              itemCount: snapshot.data!.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 10),
+              itemBuilder: (_, index) {
+                final day = snapshot.data![index];
+                final date = DateFormat('dd/MM/yyyy').format(day.date);
+                final timeRange =
+                    '${DateFormat.Hm().format(day.firstResultAt.toLocal())}'
+                    '–${DateFormat.Hm().format(day.lastResultAt.toLocal())}';
+                return Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.calendar_today_outlined),
+                    title: Text(
+                      AppText.format(context, 'history_day_title', {
+                        'date': date,
+                      }),
+                    ),
+                    subtitle: Text(
+                      AppText.format(context, 'history_day_summary', {
+                        'count': day.resultCount,
+                        'range': timeRange,
+                      }),
+                    ),
+                    trailing: Icon(
+                      day.locked
+                          ? Icons.lock_clock_outlined
+                          : Icons.chevron_right,
+                    ),
+                    onTap:
+                        day.locked
+                            ? null
+                            : () => setState(() => selectedDay = day),
                   ),
-                  trailing: Icon(
-                    locked ? Icons.lock_clock_outlined : Icons.chevron_right,
-                  ),
-                  onTap: () => setState(() => selectedSession = doc.id),
-                ),
-              );
-            },
+                );
+              },
+            ),
           );
         },
       ),
@@ -117,23 +140,24 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   }
 }
 
-class _SessionHistory extends ConsumerStatefulWidget {
-  const _SessionHistory({
+class _DayHistory extends ConsumerStatefulWidget {
+  const _DayHistory({
     required this.stationId,
-    required this.sessionId,
-    required this.entitlements,
+    required this.day,
+    required this.timezoneOffsetMinutes,
     required this.onBack,
   });
+
   final String stationId;
-  final String sessionId;
-  final PlanEntitlements entitlements;
+  final StationHistoryDay day;
+  final int timezoneOffsetMinutes;
   final VoidCallback onBack;
 
   @override
-  ConsumerState<_SessionHistory> createState() => _SessionHistoryState();
+  ConsumerState<_DayHistory> createState() => _DayHistoryState();
 }
 
-class _SessionHistoryState extends ConsumerState<_SessionHistory> {
+class _DayHistoryState extends ConsumerState<_DayHistory> {
   final search = TextEditingController();
   final hidden = <String>{};
   late Future<List<TranslationResult>> results;
@@ -142,10 +166,13 @@ class _SessionHistoryState extends ConsumerState<_SessionHistory> {
   @override
   void initState() {
     super.initState();
-    results = ref.read(apiProvider).stationResults(
-      widget.stationId,
-      widget.sessionId,
-    );
+    results = ref
+        .read(apiProvider)
+        .stationHistoryDayResults(
+          widget.stationId,
+          widget.day.apiDate,
+          timezoneOffsetMinutes: widget.timezoneOffsetMinutes,
+        );
   }
 
   @override
@@ -154,10 +181,19 @@ class _SessionHistoryState extends ConsumerState<_SessionHistory> {
     super.dispose();
   }
 
+  String _title(BuildContext context) => AppText.format(
+    context,
+    'history_day_title',
+    {'date': DateFormat('dd/MM/yyyy').format(widget.day.date)},
+  );
+
   Future<void> _export(List<TranslationResult> items, bool csv) async {
+    final shareTitle = _title(context);
     final directory = await getTemporaryDirectory();
     final extension = csv ? 'csv' : 'txt';
-    final file = File('${directory.path}/prana-${widget.sessionId}.$extension');
+    final file = File(
+      '${directory.path}/prana-${widget.day.apiDate}.$extension',
+    );
     final text =
         csv
             ? [
@@ -174,14 +210,14 @@ class _SessionHistoryState extends ConsumerState<_SessionHistory> {
             : items
                 .map(
                   (item) =>
-                      '[${DateFormat.Hms().format(item.timestamp)}] '
+                      '[${DateFormat.Hms().format(item.timestamp.toLocal())}] '
                       '[${item.language.toUpperCase()}]\n'
                       'TXT: ${item.transcript}\nTRN: ${item.translation}\n',
                 )
                 .join('\n');
     await file.writeAsString(text);
     await SharePlus.instance.share(
-      ShareParams(files: [XFile(file.path)], title: widget.sessionId),
+      ShareParams(files: [XFile(file.path)], title: shareTitle),
     );
   }
 
@@ -193,7 +229,7 @@ class _SessionHistoryState extends ConsumerState<_SessionHistory> {
           onPressed: widget.onBack,
           icon: const Icon(Icons.arrow_back),
         ),
-        title: Text(widget.sessionId),
+        title: Text(_title(context)),
       ),
       body: FutureBuilder<List<TranslationResult>>(
         future: results,
@@ -204,9 +240,8 @@ class _SessionHistoryState extends ConsumerState<_SessionHistory> {
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
-          final entitled = snapshot.data!;
           final all =
-              entitled
+              snapshot.data!
                   .where((item) => !hidden.contains(item.requestId))
                   .toList();
           final filtered =
@@ -217,17 +252,6 @@ class _SessionHistoryState extends ConsumerState<_SessionHistory> {
               }).toList();
           return Column(
             children: [
-              if (widget.entitlements.historyUnlockDelayDays > 0)
-                Container(
-                  width: double.infinity,
-                  color: const Color(0xFFFFF3D8),
-                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-                  child: Text(
-                    AppText.format(context, 'history_restricted', {
-                      'days': widget.entitlements.historyUnlockDelayDays,
-                    }),
-                  ),
-                ),
               Padding(
                 padding: const EdgeInsets.all(12),
                 child: TextField(
@@ -274,7 +298,9 @@ class _SessionHistoryState extends ConsumerState<_SessionHistory> {
                       child: ListTile(
                         title: Text(item.transcript),
                         subtitle: Text(item.translation),
-                        trailing: Text(DateFormat.Hm().format(item.timestamp)),
+                        trailing: Text(
+                          DateFormat.Hm().format(item.timestamp.toLocal()),
+                        ),
                       ),
                     );
                   },

@@ -493,6 +493,20 @@ class MemoryRepository:
             key=_result_timestamp,
         )
 
+    def list_station_history_results(
+        self,
+        uid: str,
+        station_id: str,
+    ) -> list[dict]:
+        station = self.station_projections.get(uid, {}).get(station_id)
+        if not station or not station.get("active", True):
+            raise api_error(404, "STATION_NOT_FOUND", "Station was not found")
+        return [
+            dict(value)
+            for (owner, station_key, _, _), value in self.station_results.items()
+            if owner == uid and station_key == station_id
+        ]
+
     def consume_station_request(self, station_id: str, request_id: str, expires_at: datetime) -> None:
         del expires_at
         with self.lock:
