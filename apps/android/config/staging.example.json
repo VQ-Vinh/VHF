@@ -1,6 +1,6 @@
 {
   "FLAVOR": "staging",
-  "API_URL": "http://10.0.2.2:8080",
+  "API_URL": "https://prana-api-owuilj5d4a-uc.a.run.app",
   "FIREBASE_API_KEY": "replace-me",
   "FIREBASE_APP_ID": "replace-me",
   "FIREBASE_MESSAGING_SENDER_ID": "replace-me",

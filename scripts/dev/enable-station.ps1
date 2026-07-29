@@ -1,5 +1,6 @@
 [CmdletBinding()]
 param(
+    [switch]$LocalApi,
     [switch]$WithMobile,
     [string]$AvdName = "Prana_API_36",
     [ValidatePattern("^\d{3,5}x\d{3,5}$")]
@@ -14,7 +15,12 @@ $runtimeDir = Join-Path $root "VHF_Storage\runtime"
 $logDir = Join-Path $root "VHF_Storage\logs\dev"
 $apiPidFile = Join-Path $runtimeDir "api.pid"
 $stationPidFile = Join-Path $runtimeDir "station.pid"
-$apiHealthUrl = "http://127.0.0.1:8080/health"
+$cloudApiUrl = "https://prana-api-owuilj5d4a-uc.a.run.app"
+$apiHealthUrl = if ($LocalApi) {
+    "http://127.0.0.1:8080/health"
+} else {
+    "$cloudApiUrl/health"
+}
 
 New-Item -ItemType Directory -Force -Path $runtimeDir, $logDir | Out-Null
 $env:PYTHONUTF8 = "1"
@@ -122,19 +128,17 @@ Write-Host "============================================================" -Foreg
 Write-Host "  PRANA ELEX - Enable Laptop Station + API" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
 
-# The health endpoint does not access Firestore, so it cannot detect expired
-# Application Default Credentials. Verify ADC before launching either process
-# to avoid five-minute Firestore timeouts and a permanently offline station.
-Confirm-GoogleAdc
-
 # This is the single development entry point, so restart processes managed by
 # an earlier invocation to pick up source/config and refreshed credentials.
+if ($LocalApi) {
+    # Local backend development accesses Firestore with the developer's ADC.
+    # Customer/remote operation never enters this branch.
+    Confirm-GoogleAdc
+}
 Stop-ManagedProcess -PidFile $apiPidFile -Name "API"
 Stop-ManagedProcess -PidFile $stationPidFile -Name "Station"
 
-if (Test-ApiHealth) {
-    Write-Host "[PRANA] API da san sang tai $apiHealthUrl." -ForegroundColor Green
-} else {
+if ($LocalApi -and -not (Test-ApiHealth)) {
     $apiPython = Join-Path $root ".venv\backend\Scripts\python.exe"
     if (-not (Test-Path -LiteralPath $apiPython)) {
         throw "Khong tim thay backend environment. Can tao .venv\backend truoc."
@@ -163,6 +167,12 @@ if (Test-ApiHealth) {
     Write-Host "[PRANA] API READY." -ForegroundColor Green
 }
 
+$apiMode = if ($LocalApi) { "local development" } else { "Cloud" }
+if (-not (Test-ApiHealth)) {
+    throw "Khong the ket noi $apiMode API tai $apiHealthUrl."
+}
+Write-Host "[PRANA] $apiMode API READY: $apiHealthUrl" -ForegroundColor Green
+
 $stationRunning =
     $null -ne (Find-ProcessByCommand "prana_windows[\\/]station|prana_windows\.station")
 
@@ -175,12 +185,17 @@ if ($stationRunning) {
     }
     $coreSource = Join-Path $root "packages\prana_core\src"
     $windowsSource = Join-Path $root "apps\windows\src"
+    $stationConfig = if ($LocalApi) {
+        Join-Path $root "apps\windows\config\staging.toml"
+    } else {
+        Join-Path $root "apps\windows\config\default.toml"
+    }
     $env:PYTHONPATH = "$coreSource;$windowsSource"
     Start-LoggedProcess `
         -FilePath $stationPython `
         -ArgumentList @(
             "-m", "prana_windows.station",
-            "--config", (Join-Path $root "apps\windows\config\staging.toml"),
+            "--config", $stationConfig,
             "--data-dir", $root
         ) `
         -Name "station" `
@@ -191,8 +206,8 @@ if ($stationRunning) {
     }
 }
 
-Write-Host "[PRANA] API READY: $apiHealthUrl" -ForegroundColor Green
-Write-Host "[PRANA] Station dang chay. Cai APK tren dien thoai va quet QR de su dung." -ForegroundColor Green
+Write-Host "[PRANA] Station dang chay qua $apiMode API." -ForegroundColor Green
+Write-Host "[PRANA] Khach hang chi can Internet; khong can gcloud, ADC hay cung Wi-Fi." -ForegroundColor Green
 
 if ($WithMobile) {
     Write-Host "[PRANA] Mo Android Emulator va Flutter $Flavor..." -ForegroundColor Cyan
@@ -205,4 +220,7 @@ if ($WithMobile) {
 }
 
 Write-Host "[PRANA] Emulator khong duoc khoi dong. Dung -WithMobile khi phat trien Android." -ForegroundColor DarkGray
+if (-not $LocalApi) {
+    Write-Host "[PRANA] Developer muon chay backend local: enable_station_api.bat -LocalApi" -ForegroundColor DarkGray
+}
 exit 0

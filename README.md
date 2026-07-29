@@ -53,14 +53,18 @@ Cài APK mới nhất từ [GitHub Releases](https://github.com/VQ-Vinh/VHF/rele
 đối chiếu file SHA-256 đi kèm, sau đó quét QR trong ứng dụng. Người sử dụng APK
 không cần Flutter, Android SDK hoặc Emulator.
 
-Trước lần chạy đầu tiên, đăng nhập Application Default Credentials:
+`enable_station_api.bat` mặc định kết nối Laptop Station với Cloud API. Người
+vận hành chỉ cần Internet, không cần Google Cloud CLI, ADC hoặc dùng chung Wi-Fi
+với điện thoại.
+
+Chỉ lập trình viên cần chạy backend local mới sử dụng ADC:
 
 ```bat
 gcloud auth application-default login
+enable_station_api.bat -LocalApi
 ```
 
-`enable_station_api.bat` chạy API local và Laptop Station. Khi phát
-triển Android và muốn mở thêm Emulator + Flutter:
+Khi phát triển Android và muốn mở thêm Emulator + Flutter:
 
 ```bat
 enable_station_api.bat -WithMobile

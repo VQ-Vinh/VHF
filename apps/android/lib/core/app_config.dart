@@ -7,7 +7,7 @@ abstract final class AppConfig {
   );
   static const apiUrl = String.fromEnvironment(
     'API_URL',
-    defaultValue: 'http://10.0.2.2:8080',
+    defaultValue: 'https://prana-api-owuilj5d4a-uc.a.run.app',
   );
   static const firebaseGoogleWebClientId = String.fromEnvironment(
     'FIREBASE_GOOGLE_WEB_CLIENT_ID',

@@ -37,6 +37,17 @@ def test_enable_station_opens_mobile_only_when_requested() -> None:
     assert script.index("if ($WithMobile)") < script.index(mobile_call)
 
 
+def test_enable_station_uses_cloud_without_customer_adc_by_default() -> None:
+    script = _read("scripts/dev/enable-station.ps1")
+
+    assert "[switch]$LocalApi" in script
+    assert "apps\\windows\\config\\default.toml" in script
+    assert "apps\\windows\\config\\staging.toml" in script
+    assert "Confirm-GoogleAdc" in script
+    local_branch = script.index("if ($LocalApi) {", script.index("Confirm-GoogleAdc"))
+    assert local_branch < script.index("Confirm-GoogleAdc", local_branch)
+
+
 def test_private_and_generated_files_are_ignored() -> None:
     gitignore = _read(".gitignore")
 

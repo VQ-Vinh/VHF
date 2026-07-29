@@ -1,15 +1,20 @@
 # Kiến trúc Android và Station
 
+> **Phạm vi RX:** Kiến trúc hiện tại chỉ phục vụ chiều thu (RX): Station nhận
+> audio từ thiết bị đầu vào, gửi audio để nhận dạng/dịch và Android phát bản
+> dịch. Hệ thống không phát RF, không điều khiển PTT và không truyền audio trở
+> lại máy vô tuyến. TX nằm ngoài phạm vi phiên bản này.
+
 ## Tổng quan
 
 PRANA ELEX gồm bốn vùng chạy độc lập:
 
 ```text
-Android App ── Firebase ID token ──> PRANA API ── IAM ──> Firestore/GCS/Gemini
-     │                                  ▲
-     │ Firestore read-only projection   │ Ed25519 signed requests
-     ▼                                  │
-users/{uid}/stations/...             Station Windows/Linux/Pi
+Android App ── Internet + Firebase ID token ──> Cloud PRANA API
+                                                     │
+Station Windows/Linux/Pi ─ Internet + Ed25519 ───────┤
+                                                     ▼
+                                           Firestore/GCS/Gemini
 
 Web Admin ── IAP + allowlist ──> Admin service ── IAM ──> Firestore
 ```
@@ -19,6 +24,10 @@ Web Admin ── IAP + allowlist ──> Admin service ── IAM ──> Firest
 - PRANA API là đường ghi duy nhất cho Android và Station.
 - Android chỉ đọc projection Station của chính chủ sở hữu.
 - Web Admin là dịch vụ riêng, được bảo vệ bởi IAP, allowlist và CSRF.
+- Android và Station có thể ở hai mạng khác nhau; cả hai chỉ cần Internet và
+  không cần mở inbound port trên mạng của khách hàng.
+- Google ADC chỉ dùng khi lập trình viên chủ động chạy API local. Khách hàng
+  không cài `gcloud`, không đăng nhập Google Cloud và không được cấp IAM.
 
 ## Android App
 
@@ -73,6 +82,9 @@ Activation code không dùng để chuyển chủ. Transfer chỉ thực hiện 
 Admin và phải được audit.
 
 ## Điều khiển và xử lý bản dịch
+
+Các lệnh Start/Stop trong tài liệu là bật/tắt **thu và xử lý RX** của phần mềm,
+không phải Start/Stop phát sóng hay điều khiển PTT.
 
 Station poll desired state mỗi 2 giây, heartbeat mỗi 5 giây. Generation counter
 giúp Start, Stop, thay ngôn ngữ và cấu hình audio latest-wins, idempotent. Retry
@@ -147,6 +159,12 @@ giữ desired state, replay/idempotency, pairing, audit và indexes phục vụ 
 
 - Generate label từ máy Windows tại thư mục dự án:
   `generate_station_qr.bat`. PNG/SVG được lưu trong `stations/`.
+- Chạy Station Windows cho khách hàng:
+  `enable_station_api.bat`. Mặc định script dùng Cloud API và không yêu cầu
+  Google Cloud CLI, ADC hoặc cùng Wi-Fi với Android.
+- Chỉ khi phát triển backend local mới chạy
+  `gcloud auth application-default login`, sau đó
+  `enable_station_api.bat -LocalApi`.
 - Provision trực tiếp trên Pi:
   `prana-station-provision --config apps/linux/config/default.toml --output ~/prana-station-label`
 - Chạy Station:

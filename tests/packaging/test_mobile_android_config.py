@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 
@@ -69,7 +70,7 @@ def test_mobile_apk_build_wrapper_uses_flavor_config() -> None:
     assert 'ValidateSet("staging", "production")' in script
     assert "--dart-define-from-file=config/$Flavor.json" in script
     assert '"--dart-define=API_URL=$ApiUrl"' in script
-    assert 'Get-NetRoute' in script
+    assert 'Get-NetRoute' not in script
     assert "build\\buildapp\\flutter" in script
     assert "installers\\android\\$Flavor" in script
     assert 'config "--build-dir=$flutterBuildDirSetting"' in script
@@ -188,6 +189,24 @@ def test_platform_build_wrappers_forward_arguments() -> None:
         "build_android_apk.bat"
     ).read_text(encoding="utf-8")
     assert 'apps/linux/build.sh" "$@"' in Path("buildlinux").read_text(encoding="utf-8")
+
+
+def test_physical_android_build_defaults_to_remote_cloud_api() -> None:
+    example = json.loads(
+        Path("apps/android/config/staging.example.json").read_text(encoding="utf-8")
+    )
+    app_config = Path("apps/android/lib/core/app_config.dart").read_text(
+        encoding="utf-8"
+    )
+    build_script = Path("apps/android/scripts/build-apk.ps1").read_text(
+        encoding="utf-8"
+    )
+
+    assert example["API_URL"].startswith("https://")
+    assert ".run.app" in example["API_URL"]
+    assert example["API_URL"] in app_config
+    assert "Get-NetRoute" not in build_script
+    assert "Get-NetIPAddress" not in build_script
 
 
 def test_python_packages_share_one_version_source() -> None:

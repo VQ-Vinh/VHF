@@ -1,5 +1,10 @@
 # Hướng dẫn kiểm thử Android App và Web Admin
 
+> **Chú ý phạm vi:** Tài liệu này chỉ kiểm thử phần RX (thu audio, nhận
+> dạng/dịch, hiển thị và phát giọng nói bản dịch). Không kiểm thử TX, PTT, phát
+> RF hoặc truyền audio từ App/Station trở lại máy vô tuyến vì các chức năng đó
+> chưa thuộc sản phẩm hiện tại.
+
 ## 1. Mục đích
 
 Tài liệu này dành cho đội ngũ tester kiểm thử thủ công PRANA ELEX trên môi
@@ -13,6 +18,8 @@ Phạm vi gồm:
 - Luồng xuyên hệ thống giữa Android App, Station và Web Admin.
 
 Không sử dụng tài khoản, audio hoặc Station thật của khách hàng.
+Trong toàn bộ tài liệu, Start/Stop Station có nghĩa là Start/Stop thu và xử lý
+RX; không có nghĩa là điều khiển phát sóng.
 
 ## 2. Cách ghi nhận kết quả
 
@@ -44,6 +51,8 @@ private key, CSRF token hay credential Google Cloud.
 - Có thể thay đổi múi giờ và cỡ chữ trên điện thoại.
 - Chrome hoặc Edge bản mới để kiểm thử Web Admin.
 - Một Laptop/Pi Station đã provision và có nguồn audio tiếng Việt/Anh.
+- Laptop/Pi và điện thoại có thể kết nối hai mạng Internet khác nhau để xác
+  nhận vận hành từ xa qua Cloud API.
 - Mạng có thể chủ động tắt/bật để kiểm tra offline.
 
 ### 3.2. Tài khoản
@@ -79,6 +88,8 @@ Ghi lại:
 - Thời gian bắt đầu test.
 
 Xác nhận màn hình Station báo `API READY` và `ONLINE` trước các case cần thu âm.
+Ở luồng khách hàng, chạy `enable_station_api.bat` không được yêu cầu cài
+`gcloud`, đăng nhập ADC hoặc nhập credential Google Cloud.
 
 ---
 
@@ -493,6 +504,41 @@ Case này cần người quản trị hoặc công cụ test gửi lại cùng m
 - Không tạo thao tác hoặc log trùng.
 - App tự tải lại hoặc cung cấp nút Retry rõ ràng.
 
+### AND-NET-02 — Truy cập Station từ mạng khác
+
+**Các bước**
+
+1. Kết nối Station với mạng Internet A.
+2. Tắt Wi-Fi trên điện thoại và dùng 4G/5G hoặc mạng Internet B.
+3. Mở App, kiểm tra trạng thái Station, Start RX và tạo một đoạn audio.
+4. Mở Live và History; sau đó Stop RX.
+
+**Kết quả mong đợi**
+
+- App báo Cloud API sẵn sàng và Station online dù hai thiết bị không cùng LAN.
+- Start/Stop RX, Live result và History hoạt động qua Internet.
+- APK không gọi `10.0.2.2`, `127.0.0.1` hoặc IP LAN của Station.
+- Không cần port forwarding hay mở inbound port trên router khách hàng.
+
+### OPS-RX-01 — Khởi động Station khách hàng không dùng Google ADC
+
+**Các bước**
+
+1. Dùng máy Windows không có phiên ADC đang hoạt động; không chạy
+   `gcloud auth application-default login`.
+2. Chạy `enable_station_api.bat`.
+3. Kiểm tra process, log Station và trạng thái trên Android/Web Admin.
+4. Khởi động lại máy và chạy lại script.
+
+**Kết quả mong đợi**
+
+- Script mặc định không gọi `gcloud`, không mở trình duyệt đăng nhập và không
+  yêu cầu tài khoản Google Cloud.
+- Station kết nối Cloud API bằng Station identity Ed25519 đã provision.
+- Station online và xử lý RX sau mỗi lần khởi động mà không cần đăng nhập lại.
+- API local không được khởi động trong luồng khách hàng.
+- `-LocalApi` được xem là chế độ developer riêng và mới được phép yêu cầu ADC.
+
 ---
 
 ## 9. Web Admin
@@ -740,6 +786,15 @@ ghi trùng; hệ thống phục hồi mà không cần xóa dữ liệu App.
 User B không bị ảnh hưởng hoặc lộ cho User A; sau reactivate, User A giữ plan
 hợp lệ trước đó và có thể tiếp tục sau khi refresh.
 
+### E2E-RX-01 — Xác nhận không có hành vi TX
+
+1. Thực hiện Start/Stop, đổi ngôn ngữ, Live, nghe lại bản dịch và History.
+2. Theo dõi cổng audio output, PTT/GPIO và thiết bị vô tuyến test trong suốt
+   quá trình.
+
+**Mong đợi:** hệ thống chỉ thu/xử lý RX và phát TTS trên điện thoại; không kích
+PTT, không phát RF và không gửi audio bản dịch trở lại thiết bị vô tuyến.
+
 ---
 
 ## 11. Tiêu chí nghiệm thu
@@ -750,6 +805,7 @@ Bản phát hành chỉ được đề xuất nghiệm thu khi:
   lock, transfer và Audit đều PASS.
 - Không có crash, mất dữ liệu, lộ secret hoặc người dùng xem được dữ liệu không
   thuộc quyền.
+- Các case vận hành từ xa, không ADC và ranh giới RX/TX đều PASS.
 - Các lỗi còn lại đều có ticket, mức độ ưu tiên, người phụ trách và quyết định
   có chấp nhận phát hành hay không.
 - Báo cáo test đính kèm phiên bản APK, API, Admin, Station và danh sách case

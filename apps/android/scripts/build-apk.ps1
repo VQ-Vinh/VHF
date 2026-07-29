@@ -61,35 +61,12 @@ $installerApk = Join-Path $installerDir "prana-elex-$Flavor-$resolvedMode.apk"
 $versionPath = Join-Path $repoRoot "packages\prana_core\src\prana_core\VERSION"
 $appVersion = (Get-Content -LiteralPath $versionPath -Raw).Trim()
 
-if ($PhysicalDevice -and -not $ApiUrl) {
-    $defaultRoutes = Get-NetRoute `
-        -AddressFamily IPv4 `
-        -DestinationPrefix "0.0.0.0/0" `
-        -ErrorAction SilentlyContinue |
-        Sort-Object { $_.RouteMetric + $_.InterfaceMetric }
-    foreach ($route in $defaultRoutes) {
-        $address = Get-NetIPAddress `
-            -AddressFamily IPv4 `
-            -InterfaceIndex $route.InterfaceIndex `
-            -ErrorAction SilentlyContinue |
-            Where-Object {
-                $_.IPAddress -notlike "169.254.*" -and
-                $_.IPAddress -ne "127.0.0.1"
-            } |
-            Select-Object -First 1
-        if ($address) {
-            $ApiUrl = "http://$($address.IPAddress):8080"
-            break
-        }
-    }
-    if (-not $ApiUrl) {
-        throw "Khong tim thay IPv4 LAN. Hay truyen -ApiUrl http://<IP-LAPTOP>:8080."
-    }
-}
-
 Write-Host "[PRANA] Flutter: $flutter" -ForegroundColor Cyan
 Write-Host "[PRANA] Flavor: $Flavor | Mode: $resolvedMode" -ForegroundColor Cyan
 Write-Host "[PRANA] Config: $configPath" -ForegroundColor Cyan
+if ($PhysicalDevice -and -not $ApiUrl) {
+    Write-Host "[PRANA] Physical device: su dung Cloud API trong config/$Flavor.json." -ForegroundColor Cyan
+}
 if ($ApiUrl) {
     $parsedApiUrl = $null
     if (
