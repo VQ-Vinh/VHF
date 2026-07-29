@@ -15,7 +15,7 @@ Keep new modules under the existing package boundaries and place tests in the ma
 
 ## Build, Test, and Development Commands
 
-Create the local environment with `scripts\setup\setup.bat` (Windows) or `./scripts/setup/setup.sh` (Pi/Linux). Use `enable_station_api.bat` for the Windows development Station/API stack, `run_android_emulator.bat` for Flutter development, and `scripts\dev\run-cli.bat` (or `run-cli.sh`) for batch transcription.
+Create the local environment with `scripts\setup\setup.bat` (Windows) or `./scripts/setup/setup.sh` (Pi/Linux). Use `enable_station_api.bat` to run the Windows Station against the Cloud API; this customer/remote workflow must not require Google Cloud CLI or ADC. Developers may explicitly use `enable_station_api.bat -LocalApi` when testing the backend locally, which is the only mode that may require ADC. Use `run_android_emulator.bat` for Flutter development, and `scripts\dev\run-cli.bat` (or `run-cli.sh`) for batch transcription.
 
 Run all tests from the repository root:
 
@@ -35,7 +35,11 @@ Tests use `pytest`; files are named `test_*.py` and test functions `test_*`. Add
 
 ## Commit & Pull Request Guidelines
 
-Use the established Conventional Commit style visible in history, such as `feat(ui): ...`, `refactor(pipeline): ...`, `test: ...`, and `docs: ...`. Keep commits focused and imperative. Pull requests should explain behavior and deployment impact, link relevant issues, list verification commands, and include screenshots or packaging evidence for UI/installer changes. Never commit secrets, credentials, signing keys, or generated release directories.
+Use the established Conventional Commit style visible in history, such as `feat(ui): ...`, `refactor(pipeline): ...`, `test: ...`, and `docs: ...`. Keep commits focused and imperative.
+
+When the user asks to commit and push, split the working changes into multiple logical commits instead of creating one broad commit. Group changes by independently reviewable concern, for example implementation, tests, documentation, infrastructure, or an unrelated bug fix. Keep tightly coupled code and its required regression test together when separating them would leave an invalid or misleading commit. Before pushing, review the staged file list and diff for each group, use a Conventional Commit message that describes that group, and push only after all intended commits have been created and verified.
+
+Pull requests should explain behavior and deployment impact, link relevant issues, list verification commands, and include screenshots or packaging evidence for UI/installer changes. Never commit secrets, credentials, signing keys, or generated release directories.
 
 ## Security & Configuration
 
