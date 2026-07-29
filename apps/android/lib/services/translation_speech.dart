@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 
 import '../models/station.dart';
+import 'source_audio.dart';
 
 abstract interface class SpeechEngine {
   Future<String?> resolveLocale(String preferredLocale);
@@ -96,7 +97,7 @@ class FlutterTtsSpeechEngine implements SpeechEngine {
 }
 
 class TranslationSpeechController extends ChangeNotifier {
-  TranslationSpeechController(this._engine);
+  TranslationSpeechController(this._engine, this._sourceAudio);
 
   static const locales = <String, String>{
     'vi': 'vi-VN',
@@ -107,6 +108,7 @@ class TranslationSpeechController extends ChangeNotifier {
   };
 
   final SpeechEngine _engine;
+  final SourceAudioEngine _sourceAudio;
   final Queue<_SpeechItem> _queue = Queue<_SpeechItem>();
   final Set<String> _seenRequestIds = <String>{};
 
@@ -120,18 +122,27 @@ class TranslationSpeechController extends ChangeNotifier {
   bool _draining = false;
   bool _disposed = false;
   int _epoch = 0;
+  Future<void> _sourceReady = Future<void>.value();
 
   void trackStation(String stationId, String sessionId) {
-    if (_stationId != stationId) {
+    if (_stationId != stationId || _sessionId != sessionId) {
+      final stationChanged = _stationId != stationId;
+      final previousSession = _sessionId;
       _stationId = stationId;
       _sessionId = sessionId;
       _seenRequestIds.clear();
       _queue.clear();
       // An idle Station has no existing results to suppress. Its first future
       // session should therefore speak the first translation it publishes.
-      _needsBaseline = sessionId.isNotEmpty;
+      _needsBaseline =
+          stationChanged
+              ? sessionId.isNotEmpty
+              : (previousSession?.isNotEmpty ?? false) && sessionId.isNotEmpty;
       _epoch++;
       _stopEngine();
+      _sourceReady = _sourceReady
+          .catchError((_) {})
+          .then((_) => _sourceAudio.clearCache());
       return;
     }
     _sessionId = sessionId;
@@ -156,6 +167,8 @@ class TranslationSpeechController extends ChangeNotifier {
         _SpeechItem(
           result: result,
           language: result.targetLanguage ?? fallbackLanguage,
+          stationId: _stationId!,
+          sessionId: _sessionId!,
         ),
       );
     }
@@ -172,6 +185,8 @@ class TranslationSpeechController extends ChangeNotifier {
       _SpeechItem(
         result: result,
         language: result.targetLanguage ?? _fallbackLanguage,
+        stationId: _stationId!,
+        sessionId: _sessionId!,
       ),
     );
     _draining = false;
@@ -213,6 +228,7 @@ class TranslationSpeechController extends ChangeNotifier {
     speakingRequestId = null;
     warningKey = null;
     await _stopSafely(reportError: false);
+    await _sourceAudio.clearCache();
     notifyListeners();
   }
 
@@ -223,8 +239,12 @@ class TranslationSpeechController extends ChangeNotifier {
   }
 
   bool _canSpeak(TranslationResult result) =>
-      result.translation.trim().isNotEmpty &&
+      (result.translation.trim().isNotEmpty ||
+          result.transcript.trim().isNotEmpty) &&
       !(result.error?.trim().isNotEmpty ?? false);
+
+  static String _languageCode(String value) =>
+      value.trim().replaceAll('_', '-').toLowerCase().split('-').first;
 
   Future<void> _drain() async {
     if (_draining || !_foreground || _queue.isEmpty) return;
@@ -233,28 +253,26 @@ class TranslationSpeechController extends ChangeNotifier {
     try {
       while (_foreground && _queue.isNotEmpty && epoch == _epoch) {
         final item = _queue.removeFirst();
-        final preferredLocale = locales[item.language];
-        String? locale;
-        try {
-          locale =
-              preferredLocale == null
-                  ? null
-                  : await _engine.resolveLocale(preferredLocale);
-        } catch (_) {
-          warningKey = 'tts_playback_error';
-          notifyListeners();
-          continue;
-        }
-        if (locale == null) {
-          warningKey = 'tts_language_unavailable';
-          notifyListeners();
-          continue;
-        }
         speakingRequestId = item.result.requestId;
         warningKey = null;
         notifyListeners();
         try {
-          await _engine.speak(item.result.translation, locale);
+          final detected = _languageCode(item.result.language);
+          final target = _languageCode(item.language);
+          if (detected.isNotEmpty && detected == target) {
+            try {
+              await _sourceReady;
+              await _sourceAudio.play(
+                item.stationId,
+                item.sessionId,
+                item.result.requestId,
+              );
+            } catch (_) {
+              await _speakText(item.result.transcript, detected);
+            }
+          } else {
+            await _speakText(item.result.translation, target);
+          }
         } catch (_) {
           if (epoch == _epoch) {
             warningKey = 'tts_playback_error';
@@ -272,9 +290,29 @@ class TranslationSpeechController extends ChangeNotifier {
     }
   }
 
+  Future<void> _speakText(String text, String language) async {
+    if (text.trim().isEmpty) throw StateError('Speech text is empty');
+    final preferredLocale = locales[language];
+    final locale =
+        preferredLocale == null
+            ? null
+            : await _engine.resolveLocale(preferredLocale);
+    if (locale == null) {
+      warningKey = 'tts_language_unavailable';
+      notifyListeners();
+      return;
+    }
+    await _engine.speak(text, locale);
+  }
+
   Future<void> _stopSafely({bool reportError = true}) async {
     try {
       await _engine.stop();
+    } catch (_) {
+      if (reportError) warningKey = 'tts_playback_error';
+    }
+    try {
+      await _sourceAudio.stop();
     } catch (_) {
       if (reportError) warningKey = 'tts_playback_error';
     }
@@ -282,6 +320,7 @@ class TranslationSpeechController extends ChangeNotifier {
 
   void _stopEngine() {
     _stopSafely(reportError: false);
+    _sourceAudio.clearCache();
     speakingRequestId = null;
     if (!_disposed) notifyListeners();
   }
@@ -296,8 +335,15 @@ class TranslationSpeechController extends ChangeNotifier {
 }
 
 class _SpeechItem {
-  const _SpeechItem({required this.result, required this.language});
+  const _SpeechItem({
+    required this.result,
+    required this.language,
+    required this.stationId,
+    required this.sessionId,
+  });
 
   final TranslationResult result;
   final String language;
+  final String stationId;
+  final String sessionId;
 }

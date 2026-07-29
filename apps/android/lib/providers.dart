@@ -8,6 +8,7 @@ import 'models/station.dart';
 import 'models/plan_entitlements.dart';
 import 'services/prana_api.dart';
 import 'services/translation_speech.dart';
+import 'services/source_audio.dart';
 import 'core/localization.dart';
 
 final authProvider = Provider<FirebaseAuth>((ref) => FirebaseAuth.instance);
@@ -23,9 +24,15 @@ final secureStorageProvider = Provider<FlutterSecureStorage>(
 final speechEngineProvider = Provider<SpeechEngine>(
   (ref) => FlutterTtsSpeechEngine(),
 );
+final sourceAudioEngineProvider = Provider<SourceAudioEngine>(
+  (ref) => CachedSourceAudioEngine(ref.watch(apiProvider)),
+);
 final translationSpeechProvider =
     ChangeNotifierProvider<TranslationSpeechController>(
-      (ref) => TranslationSpeechController(ref.watch(speechEngineProvider)),
+      (ref) => TranslationSpeechController(
+        ref.watch(speechEngineProvider),
+        ref.watch(sourceAudioEngineProvider),
+      ),
     );
 final activeSpeechStationProvider = StateProvider<String?>((ref) => null);
 

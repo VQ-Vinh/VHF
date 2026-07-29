@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:typed_data';
 
 import '../core/app_config.dart';
 import '../models/station.dart';
@@ -156,6 +157,18 @@ class PranaApi {
         )
         .toList()
       ..sort(compareTranslationChronologically);
+  }
+
+  Future<Uint8List> stationResultAudio(
+    String stationId,
+    String sessionId,
+    String requestId,
+  ) async {
+    final response = await _dio.get<List<int>>(
+      '/v1/stations/$stationId/sessions/$sessionId/results/$requestId/audio',
+      options: Options(responseType: ResponseType.bytes),
+    );
+    return Uint8List.fromList(response.data ?? const <int>[]);
   }
 
   Future<List<StationHistoryDay>> stationHistoryDays(

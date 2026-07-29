@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:prana_mobile/models/station.dart';
+import 'package:prana_mobile/services/source_audio.dart';
 import 'package:prana_mobile/services/translation_speech.dart';
 
 class FakeSpeechEngine implements SpeechEngine {
@@ -27,6 +28,33 @@ class FakeSpeechEngine implements SpeechEngine {
   }
 }
 
+class FakeSourceAudioEngine implements SourceAudioEngine {
+  final List<(String, String, String)> played = [];
+  final Set<String> failures = {};
+  int stopCalls = 0;
+  int clearCalls = 0;
+
+  @override
+  Future<void> play(
+    String stationId,
+    String sessionId,
+    String requestId,
+  ) async {
+    if (failures.contains(requestId)) throw StateError('missing source audio');
+    played.add((stationId, sessionId, requestId));
+  }
+
+  @override
+  Future<void> stop() async {
+    stopCalls++;
+  }
+
+  @override
+  Future<void> clearCache() async {
+    clearCalls++;
+  }
+}
+
 TranslationResult result(
   String id,
   int sequence, {
@@ -49,12 +77,74 @@ Future<void> settleSpeech() async {
   }
 }
 
+TranslationResult sameLanguageResult(String id, {String language = 'vi-VN'}) =>
+    TranslationResult(
+      requestId: id,
+      sequence: 1,
+      transcript: 'Xin chào.',
+      translation: 'Xin chào.',
+      language: language,
+      targetLanguage: 'VI',
+      confidence: 1,
+      timestamp: DateTime.utc(2026, 7, 28, 12),
+    );
+
 void main() {
+  test('same source and target language plays original audio', () async {
+    final speech = FakeSpeechEngine();
+    final source = FakeSourceAudioEngine();
+    final controller = TranslationSpeechController(speech, source);
+    controller.trackStation('station-1', '');
+    controller.trackStation('station-1', 'session-1');
+
+    controller.ingest([sameLanguageResult('source')], fallbackLanguage: 'vi');
+    await settleSpeech();
+
+    expect(source.played, [('station-1', 'session-1', 'source')]);
+    expect(speech.spoken, isEmpty);
+  });
+
+  test(
+    'source audio failure falls back to detected-language transcript',
+    () async {
+      final speech = FakeSpeechEngine();
+      final source = FakeSourceAudioEngine()..failures.add('missing');
+      final controller = TranslationSpeechController(speech, source);
+      controller.trackStation('station-1', '');
+      controller.trackStation('station-1', 'session-1');
+
+      await controller.speakNow(
+        sameLanguageResult('missing', language: 'vi_VN'),
+      );
+      await settleSpeech();
+
+      expect(speech.spoken, [('Xin chào.', 'vi-VN')]);
+    },
+  );
+
+  test('manual playback uses original audio for matching languages', () async {
+    final speech = FakeSpeechEngine();
+    final source = FakeSourceAudioEngine();
+    final controller = TranslationSpeechController(speech, source);
+    controller.trackStation('station-1', 'session-1');
+
+    await controller.speakNow(sameLanguageResult('manual-source'));
+    await settleSpeech();
+    await controller.stopCurrent();
+
+    expect(source.played, [('station-1', 'session-1', 'manual-source')]);
+    expect(source.stopCalls, greaterThanOrEqualTo(2));
+    expect(speech.spoken, isEmpty);
+  });
+
   test(
     'baselines existing results then speaks unseen results once in order',
     () async {
       final engine = FakeSpeechEngine();
-      final controller = TranslationSpeechController(engine);
+      final controller = TranslationSpeechController(
+        engine,
+        FakeSourceAudioEngine(),
+      );
       controller.trackStation('station-1', 'session-1');
       controller.ingest([result('old', 1)], fallbackLanguage: 'en');
 
@@ -76,7 +166,10 @@ void main() {
 
   test('background clears queue and resume baselines missed results', () async {
     final engine = FakeSpeechEngine();
-    final controller = TranslationSpeechController(engine);
+    final controller = TranslationSpeechController(
+      engine,
+      FakeSourceAudioEngine(),
+    );
     controller.trackStation('station-1', 'session-1');
     controller.ingest([result('old', 1)], fallbackLanguage: 'vi');
 
@@ -99,7 +192,10 @@ void main() {
 
   test('idle station speaks the first result of its future session', () async {
     final engine = FakeSpeechEngine();
-    final controller = TranslationSpeechController(engine);
+    final controller = TranslationSpeechController(
+      engine,
+      FakeSourceAudioEngine(),
+    );
     controller.trackStation('station-1', '');
     controller.trackStation('station-1', 'session-1');
     controller.ingest([result('first', 1)], fallbackLanguage: 'vi');
@@ -110,7 +206,10 @@ void main() {
 
   test('manual playback uses fallback language and can be stopped', () async {
     final engine = FakeSpeechEngine();
-    final controller = TranslationSpeechController(engine);
+    final controller = TranslationSpeechController(
+      engine,
+      FakeSourceAudioEngine(),
+    );
     controller.trackStation('station-1', 'session-1');
     controller.ingest(const [], fallbackLanguage: 'ja');
 
@@ -125,7 +224,10 @@ void main() {
 
   test('unavailable voice is skipped with a warning', () async {
     final engine = FakeSpeechEngine()..unavailable.add('ko-KR');
-    final controller = TranslationSpeechController(engine);
+    final controller = TranslationSpeechController(
+      engine,
+      FakeSourceAudioEngine(),
+    );
     controller.trackStation('station-1', 'session-1');
     controller.ingest(const [], fallbackLanguage: 'en');
     controller.ingest([
@@ -141,7 +243,10 @@ void main() {
     'compatible locale returned by the engine is used for playback',
     () async {
       final engine = FakeSpeechEngine()..resolvedLocales['vi-VN'] = 'vi_VN';
-      final controller = TranslationSpeechController(engine);
+      final controller = TranslationSpeechController(
+        engine,
+        FakeSourceAudioEngine(),
+      );
       controller.trackStation('station-1', '');
       controller.trackStation('station-1', 'session-1');
       controller.ingest([result('new', 1)], fallbackLanguage: 'vi');
@@ -154,7 +259,10 @@ void main() {
 
   test('TTS engine failure is reported without escaping the queue', () async {
     final engine = FakeSpeechEngine()..failAvailabilityCheck = true;
-    final controller = TranslationSpeechController(engine);
+    final controller = TranslationSpeechController(
+      engine,
+      FakeSourceAudioEngine(),
+    );
     controller.trackStation('station-1', '');
     controller.trackStation('station-1', 'session-1');
     controller.ingest([result('new', 1)], fallbackLanguage: 'vi');

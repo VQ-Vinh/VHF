@@ -4,24 +4,22 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/localization.dart';
+import '../../core/languages.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
 import '../../models/station.dart';
 import '../../providers.dart';
 import '../history/history_screen.dart';
+import '../tx/application/fake_tx_repository.dart';
+import '../tx/application/tx_controller.dart';
+import '../tx/domain/tx_phase.dart';
+import '../tx/presentation/widgets/tx_live_dock.dart';
+import '../tx/presentation/widgets/tx_review_card.dart';
 import 'live_controller.dart';
 
 class LiveScreen extends ConsumerStatefulWidget {
   const LiveScreen({super.key, required this.stationId});
   final String stationId;
-
-  static const languages = {
-    'vi': 'Tiếng Việt',
-    'en': 'English',
-    'zh': '中文',
-    'ja': '日本語',
-    'ko': '한국어',
-  };
 
   @override
   ConsumerState<LiveScreen> createState() => _LiveScreenState();
@@ -29,14 +27,68 @@ class LiveScreen extends ConsumerStatefulWidget {
 
 class _LiveScreenState extends ConsumerState<LiveScreen> {
   String? _dismissedProcessingError;
+  late final TxController _txController;
+  bool _requiresDiscardConfirmation = false;
+  bool _reviewOpen = false;
 
   @override
   void initState() {
     super.initState();
+    _txController = TxController(
+      stationId: widget.stationId,
+      repository: FakeTxRepository(),
+    );
+    _txController.addListener(_onTxChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(activeSpeechStationProvider.notifier).state = widget.stationId;
     });
+  }
+
+  void _onTxChanged() {
+    final requiresDiscard = _txController.state.requiresLeaveConfirmation;
+    if (requiresDiscard != _requiresDiscardConfirmation && mounted) {
+      setState(() => _requiresDiscardConfirmation = requiresDiscard);
+    }
+    if (_txController.state.phase == TxPhase.reviewReady && !_reviewOpen) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _showTxReview();
+      });
+    }
+  }
+
+  Future<void> _showTxReview() async {
+    final draft = _txController.state.draft;
+    if (_reviewOpen ||
+        draft == null ||
+        _txController.state.phase != TxPhase.reviewReady) {
+      return;
+    }
+    _reviewOpen = true;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder:
+          (sheetContext) => FractionallySizedBox(
+            heightFactor: .72,
+            child: TxReviewCard(
+              draft: draft,
+              languageLabel:
+                  supportedLanguages[draft.targetLanguage] ??
+                  draft.targetLanguage.toUpperCase(),
+              onTransmit: () {
+                Navigator.pop(sheetContext);
+                _txController.confirmTransmission();
+              },
+              onCancel: () {
+                Navigator.pop(sheetContext);
+                _txController.cancelDraft();
+              },
+            ),
+          ),
+    );
+    _reviewOpen = false;
   }
 
   Future<void> _showHistory() async {
@@ -97,7 +149,9 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
           liveUxControllerProvider(widget.stationId),
         );
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) controller.synchronize(station, online: online);
+          if (!mounted) return;
+          controller.synchronize(station, online: online);
+          _txController.setStationOnline(online);
         });
         final ux = controller.state;
         final entitlements = ref.watch(planEntitlementsProvider);
@@ -121,65 +175,106 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
             (station.lastError?.isNotEmpty ?? false) &&
             _dismissedProcessingError != processingErrorKey;
 
-        return Scaffold(
-          appBar: LiveHeader(
-            station: station,
-            online: online,
-            ux: ux,
-            onToggle:
-                online && !ux.busy && !station.commandPending
-                    ? () =>
-                        controller.setRunning(station, !station.desired.running)
-                    : null,
-            onSettings:
-                () => context.push('/stations/${widget.stationId}/settings'),
-          ),
-          body: Column(
-            children: [
-              LanguageStrip(
-                detectedLanguage: detectedLanguage,
-                targetLanguage: targetLanguage,
-                enabled: online && !ux.busy,
-                onChanged: (value) => controller.setLanguage(station, value),
+        final body = Column(
+          children: [
+            LanguageStrip(
+              detectedLanguage: detectedLanguage,
+              targetLanguage: targetLanguage,
+              enabled: online && !ux.busy,
+              onChanged: (value) => controller.setLanguage(station, value),
+            ),
+            _QuotaBanner(account: ref.watch(accountProvider)),
+            if (station.retrying)
+              _RetryingBanner(attempt: station.retryAttempt),
+            if (ux.error != null)
+              _CommandErrorBanner(
+                error: AppText.of(context, ux.error!),
+                onDismiss: controller.dismissError,
               ),
-              _QuotaBanner(account: ref.watch(accountProvider)),
-              if (station.retrying)
-                _RetryingBanner(attempt: station.retryAttempt),
-              if (ux.error != null)
-                _CommandErrorBanner(
-                  error: AppText.of(context, ux.error!),
-                  onDismiss: controller.dismissError,
-                ),
-              if (showProcessingError)
-                _CommandErrorBanner(
-                  error: AppText.of(context, station.lastError!),
-                  onDismiss:
-                      () => setState(
-                        () => _dismissedProcessingError = processingErrorKey,
+            if (showProcessingError)
+              _CommandErrorBanner(
+                error: AppText.of(context, station.lastError!),
+                onDismiss:
+                    () => setState(
+                      () => _dismissedProcessingError = processingErrorKey,
+                    ),
+                actionLabel: AppText.of(context, 'retry'),
+                onAction:
+                    online && !ux.busy && !station.retrying
+                        ? () => controller.retry(station)
+                        : null,
+              ),
+            _FeedHeader(
+              onHistory: _showHistory,
+              count: items.length,
+              limit: entitlements.liveLogLimit,
+            ),
+            Expanded(child: _TranslationFeed(value: results)),
+            TxLiveDock(
+              controller: _txController,
+              stationState:
+                  online ? station.captureState.toUpperCase() : 'OFFLINE',
+              stationOnline: online,
+              apiOnline: apiOnline,
+              onReview: _showTxReview,
+            ),
+          ],
+        );
+        return PopScope(
+          canPop: !_requiresDiscardConfirmation,
+          onPopInvokedWithResult: (didPop, _) async {
+            if (didPop) return;
+            final discard = await showDialog<bool>(
+              context: context,
+              builder:
+                  (context) => AlertDialog(
+                    title: Text(AppText.of(context, 'tx_discard_title')),
+                    content: Text(AppText.of(context, 'tx_discard_body')),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: Text(AppText.of(context, 'close')),
                       ),
-                  actionLabel: AppText.of(context, 'retry'),
-                  onAction:
-                      online && !ux.busy && !station.retrying
-                          ? () => controller.retry(station)
-                          : null,
-                ),
-              _FeedHeader(
-                onHistory: _showHistory,
-                count: items.length,
-                limit: entitlements.liveLogLimit,
-              ),
-              Expanded(child: _TranslationFeed(value: results)),
-              _BottomStatus(
-                station: station,
-                online: online,
-                apiOnline: apiOnline,
-                ux: ux,
-              ),
-            ],
+                      FilledButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        child: Text(AppText.of(context, 'tx_discard')),
+                      ),
+                    ],
+                  ),
+            );
+            if (discard == true && context.mounted) {
+              await _txController.cancelDraft();
+              if (context.mounted) context.pop();
+            }
+          },
+          child: Scaffold(
+            appBar: LiveHeader(
+              station: station,
+              online: online,
+              ux: ux,
+              txController: _txController,
+              onToggle:
+                  online && !ux.busy && !station.commandPending
+                      ? () => controller.setRunning(
+                        station,
+                        !station.desired.running,
+                      )
+                      : null,
+              onSettings:
+                  () => context.push('/stations/${widget.stationId}/settings'),
+            ),
+            body: body,
           ),
         );
       },
     );
+  }
+
+  @override
+  void dispose() {
+    _txController.removeListener(_onTxChanged);
+    _txController.dispose();
+    super.dispose();
   }
 }
 
@@ -191,6 +286,7 @@ class LiveHeader extends StatelessWidget implements PreferredSizeWidget {
     required this.ux,
     required this.onToggle,
     required this.onSettings,
+    this.txController,
   });
 
   final StationModel station;
@@ -198,9 +294,10 @@ class LiveHeader extends StatelessWidget implements PreferredSizeWidget {
   final LiveUxState ux;
   final VoidCallback? onToggle;
   final VoidCallback onSettings;
+  final TxController? txController;
 
   @override
-  Size get preferredSize => const Size.fromHeight(76);
+  Size get preferredSize => const Size.fromHeight(64);
 
   @override
   Widget build(BuildContext context) {
@@ -208,8 +305,8 @@ class LiveHeader extends StatelessWidget implements PreferredSizeWidget {
     final waiting = ux.busy || station.commandPending;
     return AppBar(
       key: const ValueKey('live-header'),
-      toolbarHeight: 76,
-      leadingWidth: 48,
+      toolbarHeight: 64,
+      leadingWidth: 44,
       titleSpacing: 0,
       title: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -221,8 +318,21 @@ class LiveHeader extends StatelessWidget implements PreferredSizeWidget {
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontWeight: FontWeight.w800),
           ),
-          const SizedBox(height: 4),
-          _RxBadge(station: station, online: online),
+          const SizedBox(height: 2),
+          if (txController == null)
+            _RxBadge(station: station, online: online)
+          else
+            AnimatedBuilder(
+              animation: txController!,
+              builder:
+                  (context, _) => _RxBadge(
+                    station: station,
+                    online: online,
+                    txActive:
+                        txController!.state.phase == TxPhase.recording ||
+                        txController!.state.phase == TxPhase.transmitting,
+                  ),
+            ),
         ],
       ),
       actions: [
@@ -234,7 +344,7 @@ class LiveHeader extends StatelessWidget implements PreferredSizeWidget {
           icon: const Icon(Icons.settings_outlined),
         ),
         Padding(
-          padding: const EdgeInsets.symmetric(vertical: 16),
+          padding: const EdgeInsets.symmetric(vertical: 10),
           child: FilledButton.icon(
             style: FilledButton.styleFrom(
               minimumSize: const Size(88, 40),
@@ -267,21 +377,41 @@ class LiveHeader extends StatelessWidget implements PreferredSizeWidget {
 }
 
 class _RxBadge extends StatelessWidget {
-  const _RxBadge({required this.station, required this.online});
+  const _RxBadge({
+    required this.station,
+    required this.online,
+    this.txActive = false,
+  });
   final StationModel station;
   final bool online;
+  final bool txActive;
 
   @override
   Widget build(BuildContext context) {
-    final state = online ? station.captureState.toUpperCase() : 'OFF';
-    final active = online && station.captureState != 'idle';
+    final state =
+        txActive
+            ? 'TX'
+            : online
+            ? station.captureState.toUpperCase()
+            : 'OFF';
+    final active = txActive || online && station.captureState != 'idle';
     return Container(
       constraints: const BoxConstraints(minWidth: 62),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: active ? PranaTheme.brandBlue : const Color(0xFF173B63),
+        color:
+            txActive
+                ? const Color(0xFF9E2637)
+                : active
+                ? PranaTheme.brandBlue
+                : const Color(0xFF173B63),
         border: Border.all(
-          color: active ? PranaTheme.brandBlueBright : const Color(0xFF52769B),
+          color:
+              txActive
+                  ? const Color(0xFFFF9BA7)
+                  : active
+                  ? PranaTheme.brandBlueBright
+                  : const Color(0xFF52769B),
         ),
         borderRadius: BorderRadius.circular(7),
       ),
@@ -291,11 +421,16 @@ class _RxBadge extends StatelessWidget {
           Icon(
             Icons.circle,
             size: 7,
-            color: online ? const Color(0xFF6DE2D1) : const Color(0xFFA9C5CC),
+            color:
+                txActive
+                    ? const Color(0xFFFFC0C8)
+                    : online
+                    ? const Color(0xFF6DE2D1)
+                    : const Color(0xFFA9C5CC),
           ),
           const SizedBox(width: 5),
           Text(
-            'RX $state',
+            txActive ? state : 'RX $state',
             style: const TextStyle(
               color: Colors.white,
               fontSize: 10,
@@ -324,8 +459,9 @@ class LanguageStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
+    key: const ValueKey('rx-language-strip'),
     color: PranaTheme.brandBlueSoft,
-    padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+    padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
@@ -336,13 +472,14 @@ class LanguageStrip extends StatelessWidget {
             value:
                 detectedLanguage == null
                     ? AppText.of(context, 'detecting')
-                    : LiveScreen.languages[detectedLanguage] ??
+                    : supportedLanguages[detectedLanguage] ??
                         detectedLanguage!.toUpperCase(),
           ),
         ),
         const SizedBox(
-          width: 36,
-          height: 50,
+          key: ValueKey('rx-language-arrow'),
+          width: 32,
+          height: 40,
           child: Icon(Icons.arrow_forward, color: PranaTheme.brandBlue),
         ),
         Expanded(
@@ -352,25 +489,25 @@ class LanguageStrip extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               _LanguageLabel(label: AppText.of(context, 'output')),
-              const SizedBox(height: 6),
+              const SizedBox(height: 1),
               SizedBox(
-                height: 50,
+                height: 40,
                 child: DropdownButtonFormField<String>(
                   key: ValueKey(targetLanguage),
                   initialValue:
-                      LiveScreen.languages.containsKey(targetLanguage)
+                      supportedLanguages.containsKey(targetLanguage)
                           ? targetLanguage
                           : 'en',
                   isExpanded: true,
                   decoration: const InputDecoration(
                     isDense: true,
                     contentPadding: EdgeInsets.symmetric(
-                      horizontal: 13,
-                      vertical: 12,
+                      horizontal: 11,
+                      vertical: 8,
                     ),
                   ),
                   items:
-                      LiveScreen.languages.entries
+                      supportedLanguages.entries
                           .map(
                             (entry) => DropdownMenuItem(
                               value: entry.key,
@@ -427,12 +564,12 @@ class _LanguageValue extends StatelessWidget {
     mainAxisSize: MainAxisSize.min,
     children: [
       _LanguageLabel(label: label),
-      const SizedBox(height: 6),
+      const SizedBox(height: 1),
       Container(
-        height: 50,
+        height: 40,
         width: double.infinity,
         alignment: Alignment.centerLeft,
-        padding: const EdgeInsets.symmetric(horizontal: 13),
+        padding: const EdgeInsets.symmetric(horizontal: 11),
         decoration: BoxDecoration(
           color: PranaTheme.surface,
           border: Border.all(color: const Color(0xFFB9CDD2)),
@@ -444,7 +581,7 @@ class _LanguageValue extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             color: PranaTheme.navy,
-            fontSize: 16,
+            fontSize: 15,
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -597,7 +734,8 @@ class _ResultCard extends ConsumerWidget {
     final speech = ref.watch(translationSpeechProvider);
     final speaking = speech.speakingRequestId == result.requestId;
     final canSpeak =
-        result.translation.trim().isNotEmpty &&
+        (result.translation.trim().isNotEmpty ||
+            result.transcript.trim().isNotEmpty) &&
         !(result.error?.trim().isNotEmpty ?? false);
     return Card(
       child: Padding(
@@ -605,15 +743,50 @@ class _ResultCard extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              '${DateFormat.Hms().format(result.timestamp)}  ·  '
-              '${result.language.toUpperCase().isEmpty ? '?' : result.language.toUpperCase()}  ·  '
-              '${(result.confidence * 100).round()}%',
-              style: const TextStyle(
-                color: PranaTheme.muted,
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${DateFormat.Hms().format(result.timestamp)}  ·  '
+                    '${result.language.toUpperCase().isEmpty ? '?' : result.language.toUpperCase()}  ·  '
+                    '${(result.confidence * 100).round()}%',
+                    style: const TextStyle(
+                      color: PranaTheme.muted,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  key: ValueKey('speak-${result.requestId}'),
+                  tooltip: AppText.of(
+                    context,
+                    speaking ? 'stop_speaking' : 'speak_translation',
+                  ),
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
+                  padding: EdgeInsets.zero,
+                  onPressed:
+                      canSpeak
+                          ? () {
+                            if (speaking) {
+                              speech.stopCurrent();
+                            } else {
+                              speech.speakNow(result);
+                            }
+                          }
+                          : null,
+                  iconSize: 20,
+                  icon: Icon(
+                    speaking
+                        ? Icons.stop_circle_outlined
+                        : Icons.volume_up_outlined,
+                  ),
+                ),
+              ],
             ),
             if (result.error != null) ...[
               const SizedBox(height: 10),
@@ -631,42 +804,12 @@ class _ResultCard extends ConsumerWidget {
             ],
             if (result.translation.isNotEmpty) ...[
               const SizedBox(height: 8),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Text(
-                      result.translation,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: PranaTheme.navy,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    key: ValueKey('speak-${result.requestId}'),
-                    tooltip: AppText.of(
-                      context,
-                      speaking ? 'stop_speaking' : 'speak_translation',
-                    ),
-                    onPressed:
-                        canSpeak
-                            ? () {
-                              if (speaking) {
-                                speech.stopCurrent();
-                              } else {
-                                speech.speakNow(result);
-                              }
-                            }
-                            : null,
-                    icon: Icon(
-                      speaking
-                          ? Icons.stop_circle_outlined
-                          : Icons.volume_up_outlined,
-                    ),
-                  ),
-                ],
+              Text(
+                result.translation,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: PranaTheme.navy,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ],
           ],
@@ -674,66 +817,6 @@ class _ResultCard extends ConsumerWidget {
       ),
     );
   }
-}
-
-class _BottomStatus extends StatelessWidget {
-  const _BottomStatus({
-    required this.station,
-    required this.online,
-    required this.apiOnline,
-    required this.ux,
-  });
-  final StationModel station;
-  final bool online;
-  final bool apiOnline;
-  final LiveUxState ux;
-
-  @override
-  Widget build(BuildContext context) {
-    final pipeline = online ? station.captureState.toUpperCase() : 'OFFLINE';
-    final apiOk = apiOnline;
-    return Container(
-      height: 36,
-      color: const Color(0xFFDCE9ED),
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        children: [
-          _StatusDot(label: pipeline, ok: online),
-          const Spacer(),
-          _StatusDot(
-            label: apiOk ? AppText.of(context, 'api_ready') : 'API OFFLINE',
-            ok: apiOk,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StatusDot extends StatelessWidget {
-  const _StatusDot({required this.label, required this.ok});
-  final String label;
-  final bool ok;
-  @override
-  Widget build(BuildContext context) => Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      Icon(
-        Icons.circle,
-        size: 7,
-        color: ok ? const Color(0xFF21835A) : const Color(0xFFC34655),
-      ),
-      const SizedBox(width: 6),
-      Text(
-        label,
-        style: const TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w800,
-          color: Color(0xFF355762),
-        ),
-      ),
-    ],
-  );
 }
 
 class _QuotaBanner extends StatelessWidget {

@@ -79,6 +79,10 @@ void main() {
     expect(find.text('LIVE TRANSLATION'), findsNothing);
     expect(find.textContaining('RX LISTENING'), findsOneWidget);
     expect(find.byIcon(Icons.settings_outlined), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('live-header'))).height,
+      64,
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -114,7 +118,12 @@ void main() {
 
     expect(input.width, output.width);
     expect(input.height, output.height);
-    expect(input.height, greaterThanOrEqualTo(68));
+    expect(input.height, lessThanOrEqualTo(60));
+    final stripCenter =
+        tester.getCenter(find.byKey(const ValueKey('rx-language-strip'))).dx;
+    final arrowCenter =
+        tester.getCenter(find.byKey(const ValueKey('rx-language-arrow'))).dx;
+    expect(arrowCenter, closeTo(stripCenter, .1));
     expect(tester.takeException(), isNull);
   });
 }
