@@ -36,6 +36,7 @@ class ProcessingResult(BaseModel):
     transcript_raw: str = ""
     transcript_restored: str = ""
     translation: str = ""
+    target_language: str = ""
     confidence: float = 0.0
     uncertain_segments: list[str] = Field(default_factory=list)
     processing_notes: list[str] = Field(default_factory=list)

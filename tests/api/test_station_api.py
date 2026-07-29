@@ -51,8 +51,17 @@ class Processor:
 
 
 class Archive:
+    def __init__(self):
+        self.audio = {}
+
     def archive(self, *_args):
-        pass
+        uid, session_id, request_id, audio, _response = _args
+        object_name = f"customers/{uid}/{session_id}/{request_id}.wav"
+        self.audio[object_name] = audio
+        return object_name
+
+    def download_audio(self, object_name):
+        return self.audio.get(object_name)
 
 
 class StationApiTests(unittest.TestCase):
@@ -606,8 +615,9 @@ class StationApiTests(unittest.TestCase):
         signature = base64.b64encode(self.private.sign(canonical_request(
             request_id, timestamp, digest, "vi", "session-1", 1,
         ))).decode("ascii")
+        archive = Archive()
         with patch("services.prana_api.main.get_processor", return_value=Processor()), patch(
-            "services.prana_api.main.get_archive", return_value=Archive()
+            "services.prana_api.main.get_archive", return_value=archive
         ):
             response = self.client.post(
                 f"/v1/stations/{self.station_id}/audio/process",
@@ -639,14 +649,41 @@ class StationApiTests(unittest.TestCase):
                 },
                 files={"audio": ("segment.wav", audio, "audio/wav")},
             )
+            source = self.client.get(
+                f"/v1/stations/{self.station_id}/sessions/session-1/"
+                f"results/{request_id}/audio"
+            )
+            missing = self.client.get(
+                f"/v1/stations/{self.station_id}/sessions/session-1/"
+                f"results/{uuid.uuid4()}/audio"
+            )
+            app.dependency_overrides[require_identity] = lambda: Identity(
+                "other-owner",
+                "other@example.com",
+                True,
+            )
+            forbidden = self.client.get(
+                f"/v1/stations/{self.station_id}/sessions/session-1/"
+                f"results/{request_id}/audio"
+            )
+            app.dependency_overrides[require_identity] = lambda: self.identity
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(repeated.status_code, 200, repeated.text)
+        self.assertEqual(source.status_code, 200, source.text)
+        self.assertEqual(source.content, audio)
+        self.assertEqual(source.headers["content-type"], "audio/wav")
+        self.assertEqual(source.headers["cache-control"], "private, max-age=3600")
+        self.assertEqual(missing.status_code, 404, missing.text)
+        self.assertEqual(missing.json()["detail"]["code"], "SOURCE_AUDIO_UNAVAILABLE")
+        self.assertEqual(forbidden.status_code, 404, forbidden.text)
         self.assertEqual(Processor.calls, 1)
         self.assertEqual(response.json()["station_id"], self.station_id)
         self.assertEqual(response.json()["target_language"], "vi")
+        self.assertNotIn("_source_audio_object", response.json())
         key = (self.identity.uid, self.station_id, "session-1", request_id)
         self.assertIn(key, self.repo.station_results)
         self.assertEqual(self.repo.station_results[key]["target_language"], "vi")
+        self.assertIn("_source_audio_object", self.repo.station_results[key])
         usage = self.repo.get_usage(self.identity.uid, self.repo.plans["free"])
         self.assertEqual(usage.used_audio_seconds, 1)
 

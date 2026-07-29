@@ -14,15 +14,44 @@ from services.prana_api.config import Settings
 from services.prana_api.models import ProcessingResponse
 
 
+LANGUAGE_NAMES = {
+    "vi": "Vietnamese",
+    "en": "English",
+    "zh": "Chinese",
+    "ja": "Japanese",
+    "ko": "Korean",
+}
+
+
 SYSTEM_PROMPT = """You are a VHF marine radio transcription AI.
 The audio may contain static, narrow bandwidth, accents and maritime jargon.
 Detect the language and use an ISO 639-1 code. Transcribe verbatim, then restore
 punctuation and capitalization. Never invent content: use [UNCERTAIN] or
 [INAUDIBLE]. Preserve numbers, coordinates, frequencies, callsigns and channel
-numbers. Translate all detected speech into {target_language}.
+numbers. The required output language is {target_language}. Always write the
+translation in exactly that language; never choose an alternative output language.
+If the detected language already matches the required output language, copy the
+restored transcript into translation without translating it to another language.
 Return only JSON with detected_language, transcript_raw, transcript_restored,
 translation. If there is no speech, return an error field.
 """
+
+
+def normalize_language_code(value: str) -> str:
+    return value.strip().lower().replace("_", "-").split("-", 1)[0]
+
+
+def normalize_same_language_translation(data: dict, target_language: str) -> dict:
+    normalized = dict(data)
+    detected = normalize_language_code(str(normalized.get("detected_language", "")))
+    target = normalize_language_code(target_language)
+    if detected and detected == target:
+        normalized["translation"] = (
+            normalized.get("transcript_restored")
+            or normalized.get("transcript_raw")
+            or ""
+        )
+    return normalized
 
 
 @dataclass(frozen=True)
@@ -56,7 +85,12 @@ class GeminiProcessor:
                 types.Part.from_bytes(data=audio, mime_type="audio/wav"),
             ],
             config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT.format(target_language=target_language),
+                system_instruction=SYSTEM_PROMPT.format(
+                    target_language=(
+                        f"{LANGUAGE_NAMES.get(target_language, target_language)} "
+                        f"({target_language})"
+                    )
+                ),
                 temperature=0.1,
                 max_output_tokens=2048,
                 response_mime_type="application/json",
@@ -74,7 +108,10 @@ class GeminiProcessor:
             ),
         )
         latency_ms = (time.perf_counter() - started) * 1000
-        data = json.loads(response.text)
+        data = normalize_same_language_translation(
+            json.loads(response.text),
+            target_language,
+        )
         candidate = response.candidates[0] if response.candidates else None
         avg_logprobs = getattr(candidate, "avg_logprobs", None)
         confidence = math.exp(avg_logprobs) if avg_logprobs is not None and avg_logprobs <= 0 else 0.0
@@ -110,10 +147,28 @@ class CloudStorageArchive:
     def __init__(self, settings: Settings):
         self.bucket = storage.Client(project=settings.google_cloud_project or None).bucket(settings.storage_bucket)
 
-    def archive(self, uid: str, session_id: str, request_id: str, audio: bytes, response: dict) -> None:
+    def archive(
+        self,
+        uid: str,
+        session_id: str,
+        request_id: str,
+        audio: bytes,
+        response: dict,
+    ) -> str:
         date = datetime.now(timezone.utc)
         prefix = f"customers/{uid}/{date:%Y/%m/%d}/{session_id}/{request_id}"
-        self.bucket.blob(f"{prefix}.wav").upload_from_string(audio, content_type="audio/wav")
+        audio_object = f"{prefix}.wav"
+        self.bucket.blob(audio_object).upload_from_string(
+            audio,
+            content_type="audio/wav",
+        )
         self.bucket.blob(f"{prefix}.json").upload_from_string(
             json.dumps(response, ensure_ascii=False), content_type="application/json"
         )
+        return audio_object
+
+    def download_audio(self, object_name: str) -> bytes | None:
+        blob = self.bucket.blob(object_name)
+        if not blob.exists():
+            return None
+        return blob.download_as_bytes()

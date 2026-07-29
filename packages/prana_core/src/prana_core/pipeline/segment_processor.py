@@ -48,6 +48,7 @@ class SegmentJob:
     session_id: str
     sequence: int
     sample_rate: int
+    target_language: str
     timestamp: float = field(default_factory=time.time)
 
 
@@ -60,7 +61,7 @@ class SegmentProcessor:
         self._storage = storage
         self.backend_error: str | None = None
         self.last_backend_ok: bool | None = None
-        self._failed_audio: dict[tuple[str, int], Path] = {}
+        self._failed_audio: dict[tuple[str, int], tuple[Path, str]] = {}
         self._status_lock = threading.Lock()
         self._retrying: dict[tuple[str, int], dict] = {}
 
@@ -97,6 +98,7 @@ class SegmentProcessor:
         audio_path: Path,
         session_id: str,
         sequence: int,
+        target_language: str,
         *,
         audio_bytes: bytes | None = None,
     ) -> ProcessingResult:
@@ -107,9 +109,11 @@ class SegmentProcessor:
                     audio_path,
                     session_id,
                     sequence,
-                    self._config.translation.target_language,
+                    target_language,
                     audio_bytes=audio_bytes,
                 )
+                if not result.target_language:
+                    result.target_language = target_language
                 with self._status_lock:
                     self._retrying.pop(key, None)
                     self.backend_error = None
@@ -179,6 +183,7 @@ class SegmentProcessor:
                 audio_path,
                 sid,
                 seq,
+                job.target_language,
                 audio_bytes=buffer.getvalue(),
             )
             self._failed_audio.pop((sid, seq), None)
@@ -189,10 +194,11 @@ class SegmentProcessor:
                 session_id=sid,
                 sequence=seq,
                 audio_file=audio_path.name,
+                target_language=job.target_language,
                 error=exc.code,
                 processing_notes=[str(exc)],
             )
-            self._failed_audio[(sid, seq)] = audio_path
+            self._failed_audio[(sid, seq)] = (audio_path, job.target_language)
         tracker.mark("backend_done")
 
         process_ms = tracker.total_ms()
@@ -214,6 +220,7 @@ class SegmentProcessor:
                 "process_ms": round(process_ms, 1),
                 "confidence": result.confidence,
                 "language": result.detected_language,
+                "target_language": result.target_language or job.target_language,
                 "error": result.error,
             },
         )
@@ -252,12 +259,15 @@ class SegmentProcessor:
         tracker = LatencyTracker()
         tracker.mark("start")
         tracker.mark("backend_start")
+        target_language = self._config.translation.target_language
         result = self._backend.process_audio(
             audio_path,
             session_id,
             sequence,
-            self._config.translation.target_language,
+            target_language,
         )
+        if not result.target_language:
+            result.target_language = target_language
         tracker.mark("backend_done")
         result.latency_ms = tracker.total_ms()
         self.print_result(result)
@@ -271,6 +281,7 @@ class SegmentProcessor:
                 "latency_ms": round(result.latency_ms, 1),
                 "confidence": result.confidence,
                 "language": result.detected_language,
+                "target_language": result.target_language,
                 "error": result.error,
             },
         )
@@ -279,20 +290,28 @@ class SegmentProcessor:
     def retry_last_failed(self) -> bool:
         if not self._failed_audio:
             return False
-        (session_id, sequence), audio_path = next(reversed(self._failed_audio.items()))
+        (session_id, sequence), failed = next(reversed(self._failed_audio.items()))
+        audio_path, target_language = failed
         threading.Thread(
             target=self._retry_failed,
-            args=(audio_path, session_id, sequence),
+            args=(audio_path, session_id, sequence, target_language),
             daemon=True,
         ).start()
         return True
 
-    def _retry_failed(self, audio_path: Path, session_id: str, sequence: int) -> None:
+    def _retry_failed(
+        self,
+        audio_path: Path,
+        session_id: str,
+        sequence: int,
+        target_language: str,
+    ) -> None:
         try:
             result = self._process_with_retry(
                 audio_path,
                 session_id,
                 sequence,
+                target_language,
             )
             self._storage.save_result(result)
             self._failed_audio.pop((session_id, sequence), None)

@@ -617,6 +617,43 @@ def list_station_results(
     )
 
 
+@app.get(
+    "/v1/stations/{station_id}/sessions/{session_id}/results/{request_id}/audio"
+)
+def get_station_result_audio(
+    station_id: str,
+    session_id: str,
+    request_id: str,
+    identity: Identity = Depends(require_identity),
+    repo: Repository = Depends(get_repository),
+):
+    result = repo.get_station_result(
+        identity.uid,
+        station_id,
+        session_id,
+        request_id,
+    )
+    object_name = (result or {}).get("_source_audio_object")
+    if not object_name:
+        raise api_error(
+            404,
+            "SOURCE_AUDIO_UNAVAILABLE",
+            "Source audio is not available for this result",
+        )
+    audio = get_archive().download_audio(str(object_name))
+    if audio is None:
+        raise api_error(
+            404,
+            "SOURCE_AUDIO_UNAVAILABLE",
+            "Source audio is not available for this result",
+        )
+    return Response(
+        content=audio,
+        media_type="audio/wav",
+        headers={"Cache-Control": "private, max-age=3600"},
+    )
+
+
 @app.delete("/v1/stations/{station_id}", status_code=204)
 def revoke_station(
     station_id: str,
@@ -940,7 +977,15 @@ def process_station_audio(
         }
     )
     try:
-        get_archive().archive(owner_uid, session_id, request_id, data, response)
+        audio_object = get_archive().archive(
+            owner_uid,
+            session_id,
+            request_id,
+            data,
+            response,
+        )
+        if audio_object:
+            response["_source_audio_object"] = audio_object
     except Exception:
         metrics["archive_failed"] = True
         repo.settle_success(owner_uid, request_id, response, metrics)

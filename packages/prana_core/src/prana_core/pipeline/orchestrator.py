@@ -372,6 +372,7 @@ class PipelineOrchestrator:
             session_id=self._session.session_id,
             sequence=self._session.next_sequence(),
             sample_rate=sample_rate,
+            target_language=self._config.translation.target_language,
         )
         try:
             self._job_queue.put_nowait(job)

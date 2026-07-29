@@ -123,6 +123,13 @@ class Repository(Protocol):
         uid: str,
         station_id: str,
     ) -> list[dict]: ...
+    def get_station_result(
+        self,
+        uid: str,
+        station_id: str,
+        session_id: str,
+        request_id: str,
+    ) -> dict | None: ...
     def consume_station_request(self, station_id: str, request_id: str, expires_at: datetime) -> None: ...
     def publish_station_result(self, uid: str, station_id: str, response: dict) -> None: ...
     def reserve(
@@ -831,6 +838,26 @@ class FirestoreRepository:
             for result in session.reference.collection("results").stream():
                 values.append(result.to_dict())
         return values
+
+    def get_station_result(
+        self,
+        uid: str,
+        station_id: str,
+        session_id: str,
+        request_id: str,
+    ) -> dict | None:
+        station_ref = self._user_ref(uid).collection("stations").document(station_id)
+        station = station_ref.get()
+        if not station.exists or not station.to_dict().get("active", True):
+            raise api_error(404, "STATION_NOT_FOUND", "Station was not found")
+        result = (
+            station_ref.collection("sessions")
+            .document(session_id)
+            .collection("results")
+            .document(request_id)
+            .get()
+        )
+        return result.to_dict() if result.exists else None
 
     def consume_station_request(
         self, station_id: str, request_id: str, expires_at: datetime

@@ -507,6 +507,21 @@ class MemoryRepository:
             if owner == uid and station_key == station_id
         ]
 
+    def get_station_result(
+        self,
+        uid: str,
+        station_id: str,
+        session_id: str,
+        request_id: str,
+    ) -> dict | None:
+        station = self.station_projections.get(uid, {}).get(station_id)
+        if not station or not station.get("active", True):
+            raise api_error(404, "STATION_NOT_FOUND", "Station was not found")
+        value = self.station_results.get(
+            (uid, station_id, session_id, request_id)
+        )
+        return dict(value) if value is not None else None
+
     def consume_station_request(self, station_id: str, request_id: str, expires_at: datetime) -> None:
         del expires_at
         with self.lock:

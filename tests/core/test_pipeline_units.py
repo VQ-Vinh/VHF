@@ -80,7 +80,8 @@ class AudioUtilsTests(unittest.TestCase):
 
         orchestrator = PipelineOrchestrator.__new__(PipelineOrchestrator)
         orchestrator._config = SimpleNamespace(
-            vad=SimpleNamespace(max_segment_duration_ms=15000)
+            vad=SimpleNamespace(max_segment_duration_ms=15000),
+            translation=SimpleNamespace(target_language="vi"),
         )
         orchestrator._session = FakeSession()
         orchestrator._job_queue = queue.Queue()
@@ -94,6 +95,7 @@ class AudioUtilsTests(unittest.TestCase):
         first = orchestrator._job_queue.get_nowait()
         second = orchestrator._job_queue.get_nowait()
         self.assertEqual((first.sequence, second.sequence), (1, 2))
+        self.assertEqual((first.target_language, second.target_language), ("vi", "vi"))
         self.assertEqual((len(first.audio_data), len(second.audio_data)), (150, 150))
         self.assertEqual(orchestrator._vad_sample_count, 10)
         np.testing.assert_array_equal(
@@ -109,6 +111,51 @@ class PipelineStructureTests(unittest.TestCase):
         self.assertEqual(SegmentJob.__module__, "prana_core.pipeline.segment_processor")
         self.assertTrue(callable(getattr(SegmentProcessor, "process")))
         self.assertTrue(callable(getattr(SegmentProcessor, "retry_last_failed")))
+
+    def test_processing_result_serializes_target_language(self) -> None:
+        result = ProcessingResult(
+            session_id="session",
+            sequence=1,
+            audio_file="segment.wav",
+            target_language="vi",
+        )
+
+        self.assertEqual(result.model_dump()["target_language"], "vi")
+        self.assertEqual(
+            ProcessingResult.model_validate(
+                {
+                    "session_id": "legacy",
+                    "sequence": 1,
+                    "audio_file": "legacy.wav",
+                }
+            ).target_language,
+            "",
+        )
+
+    def test_queued_segments_snapshot_target_language(self) -> None:
+        class FakeSession:
+            session_id = "session-test"
+            sequence = 0
+
+            def next_sequence(self) -> int:
+                self.sequence += 1
+                return self.sequence
+
+        orchestrator = PipelineOrchestrator.__new__(PipelineOrchestrator)
+        orchestrator._config = SimpleNamespace(
+            translation=SimpleNamespace(target_language="vi")
+        )
+        orchestrator._session = FakeSession()
+        orchestrator._job_queue = queue.Queue()
+
+        orchestrator._enqueue_audio_data(np.ones(200, dtype=np.int16), 16000)
+        orchestrator._config.translation.target_language = "en"
+        orchestrator._enqueue_audio_data(np.ones(200, dtype=np.int16), 16000)
+
+        first = orchestrator._job_queue.get_nowait()
+        second = orchestrator._job_queue.get_nowait()
+        self.assertEqual(first.target_language, "vi")
+        self.assertEqual(second.target_language, "en")
 
     def test_restart_clears_worker_stop_event_before_start(self) -> None:
         orchestrator = PipelineOrchestrator.__new__(PipelineOrchestrator)
@@ -193,6 +240,7 @@ class PipelineStructureTests(unittest.TestCase):
                 SimpleNamespace(),
                 "session",
                 1,
+                "vi",
                 audio_bytes=b"wav",
             )
 
@@ -204,6 +252,29 @@ class PipelineStructureTests(unittest.TestCase):
         )
         self.assertFalse(processor.retry_status["retrying"])
         self.assertIsNone(processor.backend_error)
+        self.assertEqual(result.target_language, "vi")
+
+    def test_manual_retry_keeps_failed_segment_target(self) -> None:
+        processor = SegmentProcessor.__new__(SegmentProcessor)
+        processor._failed_audio = {("session", 7): (SimpleNamespace(), "vi")}
+        processor._storage = SimpleNamespace(save_result=lambda _result: None)
+        processor._publish_result = lambda _result: None
+        observed = []
+
+        def process(_path, _session, _sequence, target_language):
+            observed.append(target_language)
+            return ProcessingResult(
+                session_id="session",
+                sequence=7,
+                audio_file="segment.wav",
+                target_language=target_language,
+            )
+
+        processor._process_with_retry = process
+        processor._retry_failed(SimpleNamespace(), "session", 7, "vi")
+
+        self.assertEqual(observed, ["vi"])
+        self.assertEqual(processor._failed_audio, {})
 
     def test_non_transient_backend_failure_is_not_retried(self) -> None:
         class Backend:
@@ -235,6 +306,7 @@ class PipelineStructureTests(unittest.TestCase):
                     SimpleNamespace(),
                     "session",
                     1,
+                    "vi",
                 )
 
         sleep.assert_not_called()
