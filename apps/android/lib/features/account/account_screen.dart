@@ -7,6 +7,7 @@ import '../../core/app_config.dart';
 import '../../core/localization.dart';
 import '../../core/widgets.dart';
 import '../../providers.dart';
+import '../../services/prana_api.dart';
 
 class AccountScreen extends ConsumerStatefulWidget {
   const AccountScreen({super.key});
@@ -66,7 +67,15 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
         });
       }
     } catch (error) {
-      if (mounted) setState(() => message = '$error');
+      if (mounted) {
+        setState(
+          () =>
+              message =
+                  error is PranaApiFailure
+                      ? AppText.of(context, error.messageKey)
+                      : '$error',
+        );
+      }
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -85,13 +94,28 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     });
   }
 
-  Future<bool> _confirm(String name) async =>
+  Future<bool> _confirm(String name, {bool removingStation = false}) async =>
       await showDialog<bool>(
         context: context,
         builder:
             (context) => AlertDialog(
-              title: Text(AppText.of(context, 'confirm_revoke')),
-              content: Text(name),
+              title: Text(
+                AppText.of(
+                  context,
+                  removingStation
+                      ? 'confirm_remove_station'
+                      : 'confirm_revoke',
+                ),
+              ),
+              content: Text(
+                removingStation
+                    ? AppText.format(
+                      context,
+                      'remove_station_body',
+                      {'name': name},
+                    )
+                    : name,
+              ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context, false),
@@ -99,7 +123,12 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                 ),
                 FilledButton(
                   onPressed: () => Navigator.pop(context, true),
-                  child: Text(AppText.of(context, 'revoke')),
+                  child: Text(
+                    AppText.of(
+                      context,
+                      removingStation ? 'remove_station' : 'revoke',
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -425,11 +454,12 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                                   : () async {
                                     if (await _confirm(
                                       station['name']?.toString() ?? 'Station',
+                                      removingStation: true,
                                     )) {
                                       await _action(
                                         () => ref
                                             .read(apiProvider)
-                                            .revokeStation(
+                                            .removeStation(
                                               station['station_id'].toString(),
                                             ),
                                         refreshData: true,

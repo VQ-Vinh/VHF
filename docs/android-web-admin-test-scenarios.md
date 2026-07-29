@@ -176,7 +176,7 @@ Xác nhận màn hình Station báo `API READY` và `ONLINE` trước các case 
 
 **Các bước**
 
-1. Quét QR sai, QR bị sửa hoặc QR đã thu hồi.
+1. Quét QR sai, QR bị sửa hoặc Station đang thuộc tài khoản khác.
 2. Đăng nhập User B và quét QR Station đang thuộc User A.
 
 **Kết quả mong đợi**
@@ -449,13 +449,16 @@ Case này cần người quản trị hoặc công cụ test gửi lại cùng m
 1. Mở Account Center.
 2. Đối chiếu email, plan, usage và quota.
 3. Hủy rồi xác nhận revoke một device test.
-4. Hủy rồi xác nhận revoke một Station test.
+4. Hủy rồi xác nhận gỡ một Station test.
+5. Đăng nhập User B và claim lại Station bằng tem QR cũ.
 
 **Kết quả mong đợi**
 
 - Thông tin tài khoản khớp dữ liệu staging.
 - Hủy dialog không thay đổi dữ liệu.
-- Xác nhận chỉ thu hồi đúng device/Station đã chọn.
+- Device được thu hồi và không thể tự đăng ký lại.
+- Station được gỡ khỏi User A, dừng xử lý và không còn tính vào quota của A.
+- User B claim lại cùng QR thành công nhưng không xem được lịch sử của User A.
 
 ### AND-ACC-02 — Cho phép device đăng ký lại
 

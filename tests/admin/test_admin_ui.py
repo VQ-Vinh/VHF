@@ -14,6 +14,7 @@ from services.prana_admin.main import (
     _operator,
     _render,
     _csrf_token,
+    _station_release_data,
     _station_stop_transition,
     _station_transfer_data,
     app,
@@ -454,6 +455,36 @@ class AdminUiTests(unittest.TestCase):
         self.assertEqual(registry_update["desired_state"]["generation"], 8)
         self.assertEqual(projection["station_id"], "station-1")
         self.assertFalse(projection["online"])
+
+        release_update, released_projection = _station_release_data(
+            {
+                "owner_uid": "owner-1",
+                "active": False,
+                "desired_state": {
+                    "running": True,
+                    "generation": 8,
+                    "target_language": "vi",
+                },
+                "capabilities": {"audio_devices": [{"id": "usb"}]},
+            }
+        )
+        self.assertTrue(release_update["active"])
+        self.assertIsNone(release_update["owner_uid"])
+        self.assertFalse(release_update["desired_state"]["running"])
+        self.assertEqual(release_update["desired_state"]["generation"], 9)
+        self.assertFalse(released_projection["active"])
+
+        import services.prana_admin.main as admin
+
+        release_source = inspect.getsource(admin.release_station_for_pairing)
+        self.assertIn("_write_audit", release_source)
+        self.assertIn('"station.release"', release_source)
+        template = (
+            Path("services/prana_admin/templates/user_detail.html")
+            .read_text(encoding="utf-8")
+        )
+        self.assertIn("/release", template)
+        self.assertIn("user.station_release_confirm", template)
 
 
 if __name__ == "__main__":

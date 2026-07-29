@@ -49,27 +49,35 @@ class PranaApi {
   final Dio _dio;
 
   Future<void> claimStation(String pairingId, String code) async {
-    await _dio.post<void>(
-      '/v1/station-pairings/$pairingId/claim',
-      data: {'pairing_code': code.trim().toUpperCase()},
-    );
+    try {
+      await _dio.post<void>(
+        '/v1/station-pairings/$pairingId/claim',
+        data: {'pairing_code': code.trim().toUpperCase()},
+      );
+    } on DioException catch (error) {
+      throw PranaApiFailure.fromDio(error);
+    }
   }
 
   Future<void> claimStationActivation(
     String setupId,
     String activationCode,
   ) async {
-    await _dio.post<void>(
-      '/v1/station-activations/claim',
-      data: {
-        'setup_id':
-            setupId.replaceAll(RegExp(r'[^A-Za-z0-9]'), '').toUpperCase(),
-        'activation_code':
-            activationCode
-                .replaceAll(RegExp(r'[^A-Za-z0-9]'), '')
-                .toUpperCase(),
-      },
-    );
+    try {
+      await _dio.post<void>(
+        '/v1/station-activations/claim',
+        data: {
+          'setup_id':
+              setupId.replaceAll(RegExp(r'[^A-Za-z0-9]'), '').toUpperCase(),
+          'activation_code':
+              activationCode
+                  .replaceAll(RegExp(r'[^A-Za-z0-9]'), '')
+                  .toUpperCase(),
+        },
+      );
+    } on DioException catch (error) {
+      throw PranaApiFailure.fromDio(error);
+    }
   }
 
   Future<void> setDesiredState(
@@ -215,8 +223,12 @@ class PranaApi {
     return unique.values.toList()..sort(compareTranslationChronologically);
   }
 
-  Future<void> revokeStation(String stationId) async {
-    await _dio.delete<void>('/v1/stations/$stationId');
+  Future<void> removeStation(String stationId) async {
+    try {
+      await _dio.delete<void>('/v1/stations/$stationId');
+    } on DioException catch (error) {
+      throw PranaApiFailure.fromDio(error);
+    }
   }
 }
 
@@ -238,8 +250,19 @@ class PranaApiFailure implements Exception {
         final data = error.response?.data;
         if (data is Map) {
           final detail = data['detail'];
-          if (detail is Map && detail['message'] is String) {
-            return PranaApiFailure(detail['message'] as String);
+          if (detail is Map) {
+            const codeKeys = {
+              'STATION_NOT_PAIRED': 'error_station_not_paired',
+              'STATION_REVOKED': 'error_station_revoked',
+              'STATION_LIMIT_REACHED': 'error_station_limit_reached',
+              'ACTIVATION_INVALID': 'error_activation_invalid',
+              'STATION_ALREADY_CLAIMED': 'error_station_already_claimed',
+            };
+            final key = codeKeys[detail['code']?.toString()];
+            if (key != null) return PranaApiFailure(key);
+            if (detail['message'] is String) {
+              return PranaApiFailure(detail['message'] as String);
+            }
           }
         }
         return const PranaApiFailure('error_request_failed');

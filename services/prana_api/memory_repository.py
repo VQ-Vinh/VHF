@@ -220,7 +220,13 @@ class MemoryRepository:
             if registry.get("owner_uid") and registry["owner_uid"] != uid:
                 raise api_error(409, "STATION_ALREADY_CLAIMED", "Station already has an owner")
             stations = self.station_projections.setdefault(uid, {})
-            if station_id not in stations and sum(item.get("active", True) for item in stations.values()) >= max_stations:
+            existing_projection = stations.get(station_id)
+            if (
+                not existing_projection
+                or not existing_projection.get("active", True)
+            ) and sum(
+                item.get("active", True) for item in stations.values()
+            ) >= max_stations:
                 raise api_error(403, "STATION_LIMIT_REACHED", f"Maximum {max_stations} active stations")
             registry["owner_uid"] = uid
             pairing["claimed_at"] = datetime.now(timezone.utc)
@@ -305,7 +311,11 @@ class MemoryRepository:
             if owner_uid and owner_uid != uid:
                 raise api_error(409, "STATION_ALREADY_CLAIMED", "Station already has an owner")
             stations = self.station_projections.setdefault(uid, {})
-            if station_id not in stations and sum(
+            existing_projection = stations.get(station_id)
+            if (
+                not existing_projection
+                or not existing_projection.get("active", True)
+            ) and sum(
                 item.get("active", True) for item in stations.values()
             ) >= max_stations:
                 raise api_error(403, "STATION_LIMIT_REACHED", f"Maximum {max_stations} active stations")
@@ -346,18 +356,57 @@ class MemoryRepository:
                 self.station_activation_attempts[key] = self.station_activation_attempts.get(key, 0) + 1
 
     def list_stations(self, uid: str) -> list[Station]:
-        return [self._station(key, value) for key, value in self.station_projections.get(uid, {}).items()]
+        return [
+            self._station(key, value)
+            for key, value in self.station_projections.get(uid, {}).items()
+            if value.get("active", True)
+        ]
 
     def get_station_registry(self, station_id: str) -> dict | None:
         return self.station_registry.get(station_id)
 
-    def revoke_station(self, uid: str, station_id: str) -> None:
+    def release_station(self, uid: str, station_id: str) -> None:
         with self.lock:
             registry = self.station_registry.get(station_id)
             if not registry or registry.get("owner_uid") != uid:
                 raise api_error(404, "STATION_NOT_FOUND", "Station was not found")
-            registry["active"] = False
-            self.station_projections[uid][station_id].update({"active": False, "online": False})
+            current = StationDesiredState.model_validate(
+                registry.get("desired_state") or {}
+            )
+            desired = StationDesiredState(
+                generation=current.generation + 1
+            ).model_dump()
+            registry.update(
+                {
+                    "owner_uid": None,
+                    "active": True,
+                    "online": False,
+                    "capture_state": "idle",
+                    "desired_state": desired,
+                    "observed_generation": 0,
+                    "session_id": "",
+                    "sequence": 0,
+                    "active_capture_mode": "device",
+                    "active_audio_device_id": "",
+                    "last_error": None,
+                    "retrying": False,
+                    "retry_code": None,
+                    "retry_attempt": 0,
+                    "released_at": datetime.now(timezone.utc),
+                }
+            )
+            registry.pop("capabilities", None)
+            registry.pop("last_seen_at", None)
+            registry.pop("revoked_at", None)
+            self.station_projections[uid][station_id].update(
+                {
+                    "active": False,
+                    "online": False,
+                    "capture_state": "idle",
+                    "desired_state": desired,
+                    "released_at": datetime.now(timezone.utc),
+                }
+            )
 
     def update_station_desired_state(self, uid: str, station_id: str, updates: dict) -> StationDesiredState:
         with self.lock:

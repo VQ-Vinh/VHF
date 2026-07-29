@@ -106,7 +106,7 @@ class Repository(Protocol):
     def check_activation_claim_rate(self, uid: str, setup_id: str, client_ip: str, limit: int = 5) -> None: ...
     def list_stations(self, uid: str) -> list[Station]: ...
     def get_station_registry(self, station_id: str) -> dict | None: ...
-    def revoke_station(self, uid: str, station_id: str) -> None: ...
+    def release_station(self, uid: str, station_id: str) -> None: ...
     def update_station_desired_state(self, uid: str, station_id: str, updates: dict) -> StationDesiredState: ...
     def heartbeat_station(self, station_id: str, heartbeat: StationHeartbeat) -> None: ...
     def update_station_capabilities(self, station_id: str, capabilities: StationCapabilities) -> None: ...
@@ -409,8 +409,16 @@ class FirestoreRepository:
             if registry.get("owner_uid") and registry.get("owner_uid") != uid:
                 raise api_error(409, "STATION_ALREADY_CLAIMED", "Station already has an owner")
             projections = self._user_ref(uid).collection("stations")
+            projection_ref = projections.document(station_id)
+            projection_snap = projection_ref.get(transaction=tx)
+            projection_data = (
+                projection_snap.to_dict() if projection_snap.exists else {}
+            )
             active = list(projections.where("active", "==", True).stream(transaction=tx))
-            if len(active) >= max_stations and not projections.document(station_id).get(transaction=tx).exists:
+            if (
+                not projection_snap.exists
+                or not projection_data.get("active", True)
+            ) and len(active) >= max_stations:
                 raise api_error(403, "STATION_LIMIT_REACHED", f"Maximum {max_stations} active stations")
             desired = registry.get("desired_state") or StationDesiredState().model_dump()
             projection = {
@@ -429,7 +437,7 @@ class FirestoreRepository:
             }
             tx.update(pairing_ref, {"claimed_at": firestore.SERVER_TIMESTAMP, "owner_uid": uid})
             tx.update(station_ref, {"owner_uid": uid, "updated_at": firestore.SERVER_TIMESTAMP})
-            tx.set(projections.document(station_id), projection)
+            tx.set(projection_ref, projection)
             return self._station_from_projection(station_id, projection)
 
         return run(self.db.transaction())
@@ -541,7 +549,13 @@ class FirestoreRepository:
             projection_ref = projections.document(station_id)
             projection_snap = projection_ref.get(transaction=tx)
             active = list(projections.where("active", "==", True).stream(transaction=tx))
-            if not projection_snap.exists and len(active) >= max_stations:
+            projection_data = (
+                projection_snap.to_dict() if projection_snap.exists else {}
+            )
+            if (
+                not projection_snap.exists
+                or not projection_data.get("active", True)
+            ) and len(active) >= max_stations:
                 raise api_error(403, "STATION_LIMIT_REACHED", f"Maximum {max_stations} active stations")
             if owner_uid == uid and projection_snap.exists:
                 return self._station_from_projection(station_id, projection_snap.to_dict())
@@ -612,7 +626,12 @@ class FirestoreRepository:
         run(self.db.transaction())
 
     def list_stations(self, uid: str) -> list[Station]:
-        docs = self._user_ref(uid).collection("stations").stream()
+        docs = (
+            self._user_ref(uid)
+            .collection("stations")
+            .where("active", "==", True)
+            .stream()
+        )
         return [self._station_from_projection(doc.id, doc.to_dict()) for doc in docs]
 
     def get_station_registry(self, station_id: str) -> dict | None:
@@ -621,7 +640,7 @@ class FirestoreRepository:
             return None
         return {"station_id": station_id, **snap.to_dict()}
 
-    def revoke_station(self, uid: str, station_id: str) -> None:
+    def release_station(self, uid: str, station_id: str) -> None:
         registry_ref = self.db.collection("station_registry").document(station_id)
         projection_ref = self._user_ref(uid).collection("stations").document(station_id)
 
@@ -630,8 +649,47 @@ class FirestoreRepository:
             snap = registry_ref.get(transaction=tx)
             if not snap.exists or snap.to_dict().get("owner_uid") != uid:
                 raise api_error(404, "STATION_NOT_FOUND", "Station was not found")
-            tx.update(registry_ref, {"active": False, "revoked_at": firestore.SERVER_TIMESTAMP})
-            tx.set(projection_ref, {"active": False, "online": False, "updated_at": firestore.SERVER_TIMESTAMP}, merge=True)
+            registry = snap.to_dict()
+            current_desired = StationDesiredState.model_validate(
+                registry.get("desired_state") or {}
+            )
+            desired = StationDesiredState(
+                generation=current_desired.generation + 1
+            ).model_dump()
+            released = {
+                "owner_uid": None,
+                "active": True,
+                "online": False,
+                "capture_state": "idle",
+                "desired_state": desired,
+                "observed_generation": 0,
+                "session_id": "",
+                "sequence": 0,
+                "active_capture_mode": "device",
+                "active_audio_device_id": "",
+                "last_error": None,
+                "retrying": False,
+                "retry_code": None,
+                "retry_attempt": 0,
+                "capabilities": firestore.DELETE_FIELD,
+                "last_seen_at": firestore.DELETE_FIELD,
+                "revoked_at": firestore.DELETE_FIELD,
+                "released_at": firestore.SERVER_TIMESTAMP,
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            }
+            tx.update(registry_ref, released)
+            tx.set(
+                projection_ref,
+                {
+                    "active": False,
+                    "online": False,
+                    "capture_state": "idle",
+                    "desired_state": desired,
+                    "released_at": firestore.SERVER_TIMESTAMP,
+                    "updated_at": firestore.SERVER_TIMESTAMP,
+                },
+                merge=True,
+            )
 
         run(self.db.transaction())
 

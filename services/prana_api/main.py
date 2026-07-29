@@ -655,13 +655,13 @@ def get_station_result_audio(
 
 
 @app.delete("/v1/stations/{station_id}", status_code=204)
-def revoke_station(
+def release_station(
     station_id: str,
     identity: Identity = Depends(require_identity),
     repo: Repository = Depends(get_repository),
 ):
     verified_account(identity, repo)
-    repo.revoke_station(identity.uid, station_id)
+    repo.release_station(identity.uid, station_id)
     return Response(status_code=204)
 
 
