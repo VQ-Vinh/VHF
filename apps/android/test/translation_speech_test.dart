@@ -5,13 +5,15 @@ import 'package:prana_mobile/services/translation_speech.dart';
 class FakeSpeechEngine implements SpeechEngine {
   final List<(String, String)> spoken = [];
   final List<String> unavailable = [];
+  final Map<String, String> resolvedLocales = {};
   bool failAvailabilityCheck = false;
   int stopCalls = 0;
 
   @override
-  Future<bool> isLanguageAvailable(String locale) async {
+  Future<String?> resolveLocale(String locale) async {
     if (failAvailabilityCheck) throw StateError('TTS engine unavailable');
-    return !unavailable.contains(locale);
+    if (unavailable.contains(locale)) return null;
+    return resolvedLocales[locale] ?? locale;
   }
 
   @override
@@ -134,6 +136,21 @@ void main() {
     expect(engine.spoken, isEmpty);
     expect(controller.warningKey, 'tts_language_unavailable');
   });
+
+  test(
+    'compatible locale returned by the engine is used for playback',
+    () async {
+      final engine = FakeSpeechEngine()..resolvedLocales['vi-VN'] = 'vi_VN';
+      final controller = TranslationSpeechController(engine);
+      controller.trackStation('station-1', '');
+      controller.trackStation('station-1', 'session-1');
+      controller.ingest([result('new', 1)], fallbackLanguage: 'vi');
+      await settleSpeech();
+
+      expect(engine.spoken, [('Bản dịch', 'vi_VN')]);
+      expect(controller.warningKey, isNull);
+    },
+  );
 
   test('TTS engine failure is reported without escaping the queue', () async {
     final engine = FakeSpeechEngine()..failAvailabilityCheck = true;

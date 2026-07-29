@@ -6,7 +6,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import '../models/station.dart';
 
 abstract interface class SpeechEngine {
-  Future<bool> isLanguageAvailable(String locale);
+  Future<String?> resolveLocale(String preferredLocale);
   Future<void> speak(String text, String locale);
   Future<void> stop();
 }
@@ -18,6 +18,7 @@ class FlutterTtsSpeechEngine implements SpeechEngine {
 
   final FlutterTts _tts;
   late final Future<void> _ready;
+  final Map<String, String> _resolvedLocales = <String, String>{};
 
   Future<void> _configure() async {
     await _tts.awaitSpeakCompletion(true);
@@ -27,9 +28,51 @@ class FlutterTtsSpeechEngine implements SpeechEngine {
   }
 
   @override
-  Future<bool> isLanguageAvailable(String locale) async {
+  Future<String?> resolveLocale(String preferredLocale) async {
     await _ready;
-    return await _tts.isLanguageAvailable(locale) == true;
+    final cached = _resolvedLocales[preferredLocale];
+    if (cached != null) return cached;
+
+    var resolved = await _findCompatibleLocale(preferredLocale);
+    if (resolved == null && defaultTargetPlatform == TargetPlatform.android) {
+      final engines =
+          (await _tts.getEngines as List<dynamic>? ?? const [])
+              .map((engine) => engine.toString())
+              .toSet();
+      const googleEngine = 'com.google.android.tts';
+      final defaultEngine = (await _tts.getDefaultEngine)?.toString();
+      if (engines.contains(googleEngine) && defaultEngine != googleEngine) {
+        await _tts.setEngine(googleEngine);
+        await _configure();
+        resolved = await _findCompatibleLocale(preferredLocale);
+      }
+    }
+    if (resolved != null) _resolvedLocales[preferredLocale] = resolved;
+    return resolved;
+  }
+
+  Future<String?> _findCompatibleLocale(String preferredLocale) async {
+    if (await _tts.isLanguageAvailable(preferredLocale) == true) {
+      return preferredLocale;
+    }
+
+    final languageCode = _languageCode(preferredLocale);
+    final languages =
+        (await _tts.getLanguages as List<dynamic>? ?? const [])
+            .map((locale) => locale.toString())
+            .where((locale) => _languageCode(locale) == languageCode)
+            .toList();
+    languages.sort((left, right) {
+      final leftExact =
+          _normalizeLocale(left) == _normalizeLocale(preferredLocale);
+      final rightExact =
+          _normalizeLocale(right) == _normalizeLocale(preferredLocale);
+      return rightExact.toString().compareTo(leftExact.toString());
+    });
+    for (final locale in languages) {
+      if (await _tts.isLanguageAvailable(locale) == true) return locale;
+    }
+    return null;
   }
 
   @override
@@ -44,6 +87,12 @@ class FlutterTtsSpeechEngine implements SpeechEngine {
     await _ready;
     await _tts.stop();
   }
+
+  static String _normalizeLocale(String locale) =>
+      locale.trim().replaceAll('_', '-').toLowerCase();
+
+  static String _languageCode(String locale) =>
+      _normalizeLocale(locale).split('-').first;
 }
 
 class TranslationSpeechController extends ChangeNotifier {
@@ -184,17 +233,19 @@ class TranslationSpeechController extends ChangeNotifier {
     try {
       while (_foreground && _queue.isNotEmpty && epoch == _epoch) {
         final item = _queue.removeFirst();
-        final locale = locales[item.language];
-        var available = false;
+        final preferredLocale = locales[item.language];
+        String? locale;
         try {
-          available =
-              locale != null && await _engine.isLanguageAvailable(locale);
+          locale =
+              preferredLocale == null
+                  ? null
+                  : await _engine.resolveLocale(preferredLocale);
         } catch (_) {
           warningKey = 'tts_playback_error';
           notifyListeners();
           continue;
         }
-        if (!available) {
+        if (locale == null) {
           warningKey = 'tts_language_unavailable';
           notifyListeners();
           continue;
