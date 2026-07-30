@@ -100,15 +100,22 @@ Xác nhận màn hình Station báo `API READY` và `ONLINE` trước các case 
 **Các bước**
 
 1. Xóa dữ liệu App hoặc đăng xuất.
-2. Chọn đăng ký tài khoản.
-3. Lần lượt nhập email sai định dạng, mật khẩu yếu và form hợp lệ.
-4. Gửi form hợp lệ.
+2. Xác nhận mặc định là tab Sign in, sau đó chuyển sang tab Sign up.
+3. Bấm Create account khi cả ba trường đang trống.
+4. Lần lượt nhập email sai định dạng; mật khẩu dưới 6 ký tự, thiếu chữ hoa,
+   thiếu chữ số; mật khẩu xác nhận không khớp và form hợp lệ.
+5. Chuyển qua lại hai tab rồi gửi form hợp lệ.
 
 **Kết quả mong đợi**
 
 - App báo lỗi ngay tại trường sai và không bị crash.
+- App không gọi Firebase khi form sai và không hiển thị exception dạng
+  `dev.flutter.pigeon...`.
+- Email/Password được giữ khi đổi tab; lỗi không còn liên quan được xóa.
+- Tab Sign up hiển thị nút **Sign up with Google** thay cho
+  **Continue with Google**.
 - Tài khoản hợp lệ được tạo một lần.
-- App yêu cầu xác minh email và chưa cho sử dụng tính năng Station.
+- App chuyển đến màn hình xác minh email và chưa cho sử dụng tính năng Station.
 
 ### AND-AUTH-02 — Xác minh email
 
@@ -117,11 +124,13 @@ Xác nhận màn hình Station báo `API READY` và `ONLINE` trước các case 
 1. Đăng nhập bằng User Unverified.
 2. Thử mở danh sách Station.
 3. Mở email xác minh và bấm liên kết.
-4. Quay lại App, refresh hoặc đăng nhập lại.
+4. Quay lại App và bấm **Tôi đã xác minh**.
+5. Kiểm tra nút gửi lại bị cooldown 60 giây và Sign out vẫn hoạt động.
 
 **Kết quả mong đợi**
 
 - Trước khi xác minh, chức năng nghiệp vụ bị khóa với hướng dẫn rõ ràng.
+- Route Station luôn chuyển về màn hình xác minh khi email chưa xác minh.
 - Sau khi xác minh, tài khoản được dùng App và nhận plan mặc định.
 
 ### AND-AUTH-03 — Đăng nhập Google
@@ -129,12 +138,14 @@ Xác nhận màn hình Station báo `API READY` và `ONLINE` trước các case 
 **Các bước**
 
 1. Đăng nhập bằng một Google account mới.
-2. Đăng xuất và đăng nhập lại bằng cùng account.
-3. Nếu có account Email/Password cùng email, thử liên kết Google.
+2. Lặp lại từ cả tab Sign in và Sign up; hủy hộp chọn tài khoản một lần.
+3. Đăng xuất và đăng nhập lại bằng cùng account.
+4. Nếu có account Email/Password cùng email, thử liên kết Google.
 
 **Kết quả mong đợi**
 
 - Không tạo hai người dùng cho cùng một danh tính.
+- Hủy Google Sign-in không hiển thị lỗi.
 - Đăng nhập lại mở đúng dữ liệu của người dùng đó.
 - Không hiển thị token hoặc thông tin lỗi nội bộ.
 
@@ -142,16 +153,17 @@ Xác nhận màn hình Station báo `API READY` và `ONLINE` trước các case 
 
 **Các bước**
 
-1. Yêu cầu đặt lại mật khẩu.
-2. Dùng email nhận được để đặt mật khẩu mới.
-3. Thử mật khẩu cũ và mật khẩu mới.
-4. Đóng/mở App, sau đó đăng xuất.
+1. Bấm Sign in khi Email/Password trống và xác nhận chỉ có lỗi tại trường.
+2. Yêu cầu đặt lại mật khẩu khi Email trống/sai, sau đó dùng Email hợp lệ.
+3. Dùng email nhận được để đặt mật khẩu mới.
+4. Thử mật khẩu cũ và mật khẩu mới.
+5. Đóng/mở App; bấm Sign out, chọn Cancel rồi thực hiện lại và xác nhận.
 
 **Kết quả mong đợi**
 
 - Mật khẩu cũ không còn dùng được; mật khẩu mới đăng nhập thành công.
 - App ghi nhớ phiên khi đóng/mở.
-- Đăng xuất xóa phiên và đưa về màn hình đăng nhập.
+- Cancel giữ nguyên phiên; xác nhận Sign out xóa phiên và đưa về Sign in.
 
 ---
 
