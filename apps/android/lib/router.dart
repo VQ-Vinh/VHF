@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import 'features/account/account_screen.dart';
 import 'features/auth/sign_in_screen.dart';
+import 'features/auth/verify_email_screen.dart';
 import 'features/history/history_screen.dart';
 import 'features/live/live_screen.dart';
 import 'features/pairing/pairing_screen.dart';
@@ -18,12 +19,20 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (auth.isLoading) return null;
       final signedIn = auth.value != null;
       final signingIn = state.matchedLocation == '/sign-in';
+      final verifying = state.matchedLocation == '/verify-email';
+      final verified = auth.value?.emailVerified == true;
       if (!signedIn && !signingIn) return '/sign-in';
-      if (signedIn && signingIn) return '/stations';
+      if (!signedIn) return null;
+      if (!verified && !verifying) return '/verify-email';
+      if (verified && (signingIn || verifying)) return '/stations';
       return null;
     },
     routes: [
       GoRoute(path: '/sign-in', builder: (_, _) => const SignInScreen()),
+      GoRoute(
+        path: '/verify-email',
+        builder: (_, _) => const VerifyEmailScreen(),
+      ),
       GoRoute(path: '/stations', builder: (_, _) => const StationListScreen()),
       GoRoute(
         path: '/pair',

@@ -8,6 +8,7 @@ import '../../core/localization.dart';
 import '../../core/widgets.dart';
 import '../../providers.dart';
 import '../../services/prana_api.dart';
+import '../../services/authentication_service.dart';
 
 class AccountScreen extends ConsumerStatefulWidget {
   const AccountScreen({super.key});
@@ -94,6 +95,45 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     });
   }
 
+  Future<void> _signOut() async {
+    final confirmed =
+        await showDialog<bool>(
+          context: context,
+          builder:
+              (context) => AlertDialog(
+                title: Text(AppText.of(context, 'confirm_sign_out')),
+                content: Text(AppText.of(context, 'confirm_sign_out_body')),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: Text(AppText.of(context, 'close')),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: Text(AppText.of(context, 'sign_out')),
+                  ),
+                ],
+              ),
+        ) ??
+        false;
+    if (!confirmed || !mounted) return;
+    setState(() {
+      busy = true;
+      message = null;
+    });
+    try {
+      await ref.read(authenticationServiceProvider).signOut();
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          message = AppText.of(context, authenticationErrorKey(error));
+        });
+      }
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
   Future<bool> _confirm(String name, {bool removingStation = false}) async =>
       await showDialog<bool>(
         context: context,
@@ -102,18 +142,14 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
               title: Text(
                 AppText.of(
                   context,
-                  removingStation
-                      ? 'confirm_remove_station'
-                      : 'confirm_revoke',
+                  removingStation ? 'confirm_remove_station' : 'confirm_revoke',
                 ),
               ),
               content: Text(
                 removingStation
-                    ? AppText.format(
-                      context,
-                      'remove_station_body',
-                      {'name': name},
-                    )
+                    ? AppText.format(context, 'remove_station_body', {
+                      'name': name,
+                    })
                     : name,
               ),
               actions: [
@@ -506,8 +542,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                     child: Text(message!),
                   ),
                 OutlinedButton.icon(
-                  onPressed:
-                      busy ? null : () => ref.read(authProvider).signOut(),
+                  onPressed: busy ? null : _signOut,
                   icon: const Icon(Icons.logout),
                   label: Text(AppText.of(context, 'sign_out')),
                 ),

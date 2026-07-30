@@ -1,105 +1,160 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 
 import '../../core/localization.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
 import '../../providers.dart';
+import '../../services/authentication_service.dart';
+import 'auth_validation.dart';
+
+enum _AuthMode { signIn, signUp }
 
 class SignInScreen extends ConsumerStatefulWidget {
   const SignInScreen({super.key});
+
   @override
   ConsumerState<SignInScreen> createState() => _SignInScreenState();
 }
 
-class _SignInScreenState extends ConsumerState<SignInScreen> {
+class _SignInScreenState extends ConsumerState<SignInScreen>
+    with SingleTickerProviderStateMixin {
   final email = TextEditingController();
   final password = TextEditingController();
+  final confirmation = TextEditingController();
+  final _emailFieldKey = GlobalKey<FormFieldState<String>>();
+  late final TabController _tabs;
+  var _formKey = GlobalKey<FormState>();
+  var mode = _AuthMode.signIn;
   bool loading = false;
-  String? error;
+  bool submitted = false;
+  bool obscurePassword = true;
+  bool obscureConfirmation = true;
+  String? errorKey;
 
-  Future<void> submit({required bool create}) async {
+  @override
+  void initState() {
+    super.initState();
+    _tabs = TabController(length: 2, vsync: this);
+    _tabs.addListener(_handleTabChange);
+  }
+
+  void _handleTabChange() {
+    if (_tabs.indexIsChanging) return;
+    final next = _tabs.index == 0 ? _AuthMode.signIn : _AuthMode.signUp;
+    if (next == mode) return;
     setState(() {
-      loading = true;
-      error = null;
+      mode = next;
+      errorKey = null;
+      submitted = false;
+      _formKey = GlobalKey<FormState>();
     });
-    try {
-      final auth = ref.read(authProvider);
-      if (create) {
-        await auth.createUserWithEmailAndPassword(
-          email: email.text.trim(),
-          password: password.text,
-        );
-        await auth.currentUser?.sendEmailVerification();
+  }
+
+  Future<void> _submit() async {
+    setState(() {
+      submitted = true;
+      errorKey = null;
+    });
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+
+    await _run(() async {
+      final service = ref.read(authenticationServiceProvider);
+      if (mode == _AuthMode.signUp) {
+        await service.signUp(email: email.text.trim(), password: password.text);
       } else {
-        await auth.signInWithEmailAndPassword(
-          email: email.text.trim(),
-          password: password.text,
-        );
+        await service.signIn(email: email.text.trim(), password: password.text);
       }
-    } on FirebaseAuthException catch (exception) {
-      if (mounted) setState(() => error = exception.message ?? exception.code);
-    } finally {
-      if (mounted) setState(() => loading = false);
+    });
+  }
+
+  Future<void> _google() async {
+    await _run(
+      () => ref.read(authenticationServiceProvider).signInWithGoogle(),
+    );
+  }
+
+  Future<void> _resetPassword() async {
+    setState(() {
+      errorKey = null;
+    });
+    if (!isValidEmail(email.text)) {
+      _emailFieldKey.currentState?.validate();
+      return;
+    }
+    var sent = false;
+    await _run(() async {
+      await ref
+          .read(authenticationServiceProvider)
+          .sendPasswordReset(email.text.trim());
+      sent = true;
+    });
+    if (sent && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppText.of(context, 'reset_sent'))),
+      );
     }
   }
 
-  Future<void> google() async {
+  Future<void> _run(Future<dynamic> Function() action) async {
     setState(() {
       loading = true;
-      error = null;
+      errorKey = null;
     });
     try {
-      final googleUser = await GoogleSignIn.instance.authenticate();
-      final googleAuth = googleUser.authentication;
-      await ref
-          .read(authProvider)
-          .signInWithCredential(
-            GoogleAuthProvider.credential(idToken: googleAuth.idToken),
-          );
-    } on GoogleSignInException catch (exception) {
-      if (exception.code != GoogleSignInExceptionCode.canceled && mounted) {
-        setState(() => error = exception.description ?? exception.code.name);
-      }
-    } on FirebaseAuthException catch (exception) {
-      if (mounted) setState(() => error = exception.message ?? exception.code);
-    } finally {
-      if (mounted) setState(() => loading = false);
-    }
-  }
-
-  Future<void> resetPassword() async {
-    if (email.text.trim().isEmpty) return;
-    setState(() {
-      loading = true;
-      error = null;
-    });
-    try {
-      await ref
-          .read(authProvider)
-          .sendPasswordResetEmail(email: email.text.trim());
+      await action();
+    } catch (error) {
       if (mounted) {
-        setState(() => error = AppText.of(context, 'reset_sent'));
+        final key = authenticationErrorKey(error);
+        if (key.isNotEmpty) setState(() => errorKey = key);
       }
-    } on FirebaseAuthException catch (exception) {
-      if (mounted) setState(() => error = exception.message ?? exception.code);
     } finally {
       if (mounted) setState(() => loading = false);
     }
+  }
+
+  String? _validateEmail(String? value) {
+    final text = value?.trim() ?? '';
+    if (text.isEmpty) return AppText.of(context, 'auth_email_required');
+    if (!isValidEmail(text)) {
+      return AppText.of(context, 'auth_invalid_email');
+    }
+    return null;
+  }
+
+  String? _validatePassword(String? value) {
+    final text = value ?? '';
+    if (text.isEmpty) return AppText.of(context, 'auth_password_required');
+    if (mode == _AuthMode.signUp && !isValidPassword(text)) {
+      return AppText.of(context, 'auth_password_requirements');
+    }
+    return null;
+  }
+
+  String? _validateConfirmation(String? value) {
+    final text = value ?? '';
+    if (text.isEmpty) return AppText.of(context, 'auth_confirm_required');
+    if (!passwordsMatch(password.text, text)) {
+      return AppText.of(context, 'auth_password_mismatch');
+    }
+    return null;
   }
 
   @override
   void dispose() {
+    _tabs
+      ..removeListener(_handleTabChange)
+      ..dispose();
     email.dispose();
     password.dispose();
+    confirmation.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final localeController = ref.watch(appLocaleProvider);
+    final signUp = mode == _AuthMode.signUp;
     return Scaffold(
       body: SafeArea(
         child: Stack(
@@ -116,7 +171,9 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                   ],
                   selected: {Localizations.localeOf(context).languageCode},
                   onSelectionChanged:
-                      (value) => localeController.setLocale(value.first),
+                      loading
+                          ? null
+                          : (value) => localeController.setLocale(value.first),
                 ),
               ),
             ),
@@ -139,88 +196,188 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                         child: Padding(
                           padding: const EdgeInsets.all(20),
                           child: AutofillGroup(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Text(
-                                  AppText.of(context, 'sign_in').toUpperCase(),
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    letterSpacing: 1,
-                                    fontWeight: FontWeight.w800,
-                                    color: PranaTheme.brandBlue,
-                                  ),
-                                ),
-                                const SizedBox(height: 16),
-                                TextField(
-                                  controller: email,
-                                  autofillHints: const [AutofillHints.email],
-                                  keyboardType: TextInputType.emailAddress,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Email',
-                                    prefixIcon: Icon(Icons.mail_outline),
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                TextField(
-                                  controller: password,
-                                  obscureText: true,
-                                  autofillHints: const [AutofillHints.password],
-                                  decoration: InputDecoration(
-                                    labelText: AppText.of(context, 'password'),
-                                    prefixIcon: const Icon(Icons.lock_outline),
-                                  ),
-                                ),
-                                if (error != null)
-                                  Container(
-                                    margin: const EdgeInsets.only(top: 14),
-                                    padding: const EdgeInsets.all(11),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFF9E1E5),
-                                      borderRadius: BorderRadius.circular(9),
+                            child: Form(
+                              key: _formKey,
+                              autovalidateMode:
+                                  submitted
+                                      ? AutovalidateMode.onUserInteraction
+                                      : AutovalidateMode.disabled,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  AbsorbPointer(
+                                    absorbing: loading,
+                                    child: TabBar(
+                                      controller: _tabs,
+                                      tabs: [
+                                        Tab(
+                                          text: AppText.of(context, 'sign_in'),
+                                        ),
+                                        Tab(
+                                          text: AppText.of(context, 'sign_up'),
+                                        ),
+                                      ],
                                     ),
-                                    child: Text(
-                                      error!,
-                                      style: const TextStyle(
-                                        color: Color(0xFFA42A3A),
+                                  ),
+                                  const SizedBox(height: 18),
+                                  TextFormField(
+                                    key: _emailFieldKey,
+                                    controller: email,
+                                    enabled: !loading,
+                                    autofillHints: const [AutofillHints.email],
+                                    keyboardType: TextInputType.emailAddress,
+                                    textInputAction: TextInputAction.next,
+                                    validator: _validateEmail,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Email',
+                                      prefixIcon: Icon(Icons.mail_outline),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  TextFormField(
+                                    controller: password,
+                                    enabled: !loading,
+                                    obscureText: obscurePassword,
+                                    autofillHints: [
+                                      signUp
+                                          ? AutofillHints.newPassword
+                                          : AutofillHints.password,
+                                    ],
+                                    textInputAction:
+                                        signUp
+                                            ? TextInputAction.next
+                                            : TextInputAction.done,
+                                    onFieldSubmitted:
+                                        signUp || loading
+                                            ? null
+                                            : (_) => _submit(),
+                                    validator: _validatePassword,
+                                    decoration: InputDecoration(
+                                      labelText: AppText.of(
+                                        context,
+                                        'password',
+                                      ),
+                                      prefixIcon: const Icon(
+                                        Icons.lock_outline,
+                                      ),
+                                      suffixIcon: IconButton(
+                                        tooltip: AppText.of(
+                                          context,
+                                          obscurePassword
+                                              ? 'show_password'
+                                              : 'hide_password',
+                                        ),
+                                        onPressed:
+                                            loading
+                                                ? null
+                                                : () => setState(
+                                                  () =>
+                                                      obscurePassword =
+                                                          !obscurePassword,
+                                                ),
+                                        icon: Icon(
+                                          obscurePassword
+                                              ? Icons.visibility_outlined
+                                              : Icons.visibility_off_outlined,
+                                        ),
                                       ),
                                     ),
                                   ),
-                                const SizedBox(height: 18),
-                                FilledButton(
-                                  onPressed:
-                                      loading
-                                          ? null
-                                          : () => submit(create: false),
-                                  child: Text(
-                                    AppText.of(
-                                      context,
-                                      loading ? 'signing_in' : 'sign_in',
+                                  if (signUp) ...[
+                                    const SizedBox(height: 12),
+                                    TextFormField(
+                                      controller: confirmation,
+                                      enabled: !loading,
+                                      obscureText: obscureConfirmation,
+                                      autofillHints: const [
+                                        AutofillHints.newPassword,
+                                      ],
+                                      textInputAction: TextInputAction.done,
+                                      onFieldSubmitted:
+                                          loading ? null : (_) => _submit(),
+                                      validator: _validateConfirmation,
+                                      decoration: InputDecoration(
+                                        labelText: AppText.of(
+                                          context,
+                                          'confirm_password',
+                                        ),
+                                        prefixIcon: const Icon(
+                                          Icons.lock_reset_outlined,
+                                        ),
+                                        suffixIcon: IconButton(
+                                          tooltip: AppText.of(
+                                            context,
+                                            obscureConfirmation
+                                                ? 'show_password'
+                                                : 'hide_password',
+                                          ),
+                                          onPressed:
+                                              loading
+                                                  ? null
+                                                  : () => setState(
+                                                    () =>
+                                                        obscureConfirmation =
+                                                            !obscureConfirmation,
+                                                  ),
+                                          icon: Icon(
+                                            obscureConfirmation
+                                                ? Icons.visibility_outlined
+                                                : Icons.visibility_off_outlined,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                  if (errorKey != null)
+                                    Container(
+                                      margin: const EdgeInsets.only(top: 14),
+                                      padding: const EdgeInsets.all(11),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFF9E1E5),
+                                        borderRadius: BorderRadius.circular(9),
+                                      ),
+                                      child: Text(
+                                        AppText.of(context, errorKey!),
+                                        style: const TextStyle(
+                                          color: Color(0xFFA42A3A),
+                                        ),
+                                      ),
+                                    ),
+                                  const SizedBox(height: 18),
+                                  FilledButton(
+                                    onPressed: loading ? null : _submit,
+                                    child: Text(
+                                      AppText.of(
+                                        context,
+                                        loading
+                                            ? 'signing_in'
+                                            : signUp
+                                            ? 'create_account'
+                                            : 'sign_in',
+                                      ),
                                     ),
                                   ),
-                                ),
-                                TextButton(
-                                  onPressed: loading ? null : resetPassword,
-                                  child: Text(
-                                    AppText.of(context, 'forgot_password'),
+                                  if (!signUp)
+                                    TextButton(
+                                      onPressed:
+                                          loading ? null : _resetPassword,
+                                      child: Text(
+                                        AppText.of(context, 'forgot_password'),
+                                      ),
+                                    ),
+                                  const SizedBox(height: 10),
+                                  OutlinedButton.icon(
+                                    onPressed: loading ? null : _google,
+                                    icon: const Icon(Icons.login),
+                                    label: Text(
+                                      AppText.of(
+                                        context,
+                                        signUp ? 'google_sign_up' : 'google',
+                                      ),
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(height: 10),
-                                OutlinedButton.icon(
-                                  onPressed: loading ? null : google,
-                                  icon: const Icon(Icons.login),
-                                  label: Text(AppText.of(context, 'google')),
-                                ),
-                                TextButton(
-                                  onPressed:
-                                      loading
-                                          ? null
-                                          : () => submit(create: true),
-                                  child: Text(
-                                    AppText.of(context, 'create_account'),
-                                  ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
                         ),

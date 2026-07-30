@@ -3,15 +3,23 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 import 'models/station.dart';
 import 'models/plan_entitlements.dart';
 import 'services/prana_api.dart';
+import 'services/authentication_service.dart';
 import 'services/translation_speech.dart';
 import 'services/source_audio.dart';
 import 'core/localization.dart';
 
 final authProvider = Provider<FirebaseAuth>((ref) => FirebaseAuth.instance);
+final authenticationServiceProvider = Provider<AuthenticationService>(
+  (ref) => FirebaseAuthenticationService(
+    ref.watch(authProvider),
+    GoogleSignIn.instance,
+  ),
+);
 final firestoreProvider = Provider<FirebaseFirestore>(
   (ref) => FirebaseFirestore.instance,
 );
@@ -41,7 +49,7 @@ final appLocaleProvider = ChangeNotifierProvider<AppLocaleController>(
 );
 
 final authStateProvider = StreamProvider<User?>((ref) {
-  return ref.watch(authProvider).authStateChanges();
+  return ref.watch(authProvider).userChanges();
 });
 
 final stationClockProvider = StreamProvider<DateTime>((ref) {
