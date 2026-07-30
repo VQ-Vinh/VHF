@@ -8,6 +8,7 @@ import '../../core/localization.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
 import '../../providers.dart';
+import '../../services/prana_api.dart';
 
 enum PairingMode { label, temporary }
 
@@ -135,7 +136,15 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
       }
       if (mounted) context.go('/stations');
     } catch (exception) {
-      if (mounted) setState(() => error = exception.toString());
+      if (mounted) {
+        setState(
+          () =>
+              error =
+                  exception is PranaApiFailure
+                      ? AppText.of(context, exception.messageKey)
+                      : AppText.of(context, 'error_request_failed'),
+        );
+      }
     } finally {
       if (mounted) setState(() => loading = false);
     }

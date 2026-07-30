@@ -92,6 +92,11 @@ class StationRuntime:
             return self.client.desired_state()
         except BackendApiError as exc:
             if exc.code == "STATION_NOT_PAIRED":
+                if self.orchestrator.state not in {
+                    PipelineState.IDLE,
+                    PipelineState.STOPPING,
+                }:
+                    self.orchestrator.stop()
                 if self.client.identity.store.get("station_provisioned") == "1":
                     if not self._provisioning_notice_shown:
                         logger.info("Station is provisioned. Scan the printed device label in PRANA ELEX Mobile.")

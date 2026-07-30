@@ -58,7 +58,8 @@ vào mọi request người dùng tới PRANA API.
 
 Account Center tổng hợp account, quota ngày, plan catalog, devices và Stations.
 Người dùng chỉ tự chọn plan có `availability=available`; Plus/Pro không thể
-chọn nếu backend chưa phát hành. Revoke device/Station luôn yêu cầu xác nhận.
+chọn nếu backend chưa phát hành. Revoke device và gỡ Station luôn yêu cầu xác
+nhận; gỡ Station không khóa vĩnh viễn danh tính thiết bị.
 
 ### Pairing và activation
 
@@ -69,7 +70,7 @@ Luồng nhãn thiết bị cố định:
    private key.
 3. Android gọi `POST /v1/station-activations/claim`.
 4. Claim đầu tiên gán owner; cùng owner scan lại là idempotent; owner khác,
-   mã sai, Station revoke hoặc vượt `max_stations` bị từ chối.
+   mã sai, Station bị Admin khóa hoặc vượt `max_stations` bị từ chối.
 
 Luồng pairing tạm thời vẫn được giữ để tương thích:
 
@@ -78,8 +79,12 @@ Luồng pairing tạm thời vẫn được giữ để tương thích:
 3. Android nhận deep link `prana-elex:///pair` hoặc nhập code.
 4. Transaction kiểm tra code, owner và giới hạn Station của plan.
 
-Activation code không dùng để chuyển chủ. Transfer chỉ thực hiện trong Web
-Admin và phải được audit.
+Người dùng có thể gỡ Station khỏi Account Center. API dừng desired state, giữ
+projection và lịch sử cũ ở trạng thái inactive, bỏ owner khỏi registry, rồi cho
+phép tem QR cố định được tài khoản khác claim. Lịch sử của chủ cũ không được
+chuyển sang chủ mới. Với record inactive từ phiên bản cũ, Web Admin cung cấp
+hành động release có audit. Transfer trực tiếp giữa hai owner vẫn chỉ thực hiện
+trong Web Admin.
 
 ## Điều khiển và xử lý bản dịch
 

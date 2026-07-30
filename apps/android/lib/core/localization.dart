@@ -127,6 +127,20 @@ abstract final class AppText {
       'devices': 'Thiết bị và trạm',
       'confirm_revoke': 'Xác nhận thu hồi',
       'revoke': 'Thu hồi',
+      'confirm_remove_station': 'Gỡ Station?',
+      'remove_station': 'Gỡ Station',
+      'remove_station_body':
+          'Gỡ {name} khỏi tài khoản này? Station sẽ dừng và tem QR có thể được tài khoản khác quét để ghép lại.',
+      'error_station_not_paired':
+          'Station chưa được ghép với tài khoản. Hãy quét tem QR.',
+      'error_station_revoked':
+          'Station đã bị khóa. Quản trị viên cần gỡ Station để cho phép ghép lại.',
+      'error_station_limit_reached':
+          'Tài khoản đã đạt giới hạn số Station của gói hiện tại.',
+      'error_activation_invalid':
+          'Setup ID hoặc Activation Code không hợp lệ.',
+      'error_station_already_claimed':
+          'Station đang thuộc một tài khoản khác.',
       'done': 'Đã hoàn tất',
       'live_log_usage': 'Đang hiển thị {count}/{limit} log theo gói',
       'history_restricted':
@@ -282,6 +296,20 @@ abstract final class AppText {
       'devices': 'Devices and stations',
       'confirm_revoke': 'Confirm revoke',
       'revoke': 'Revoke',
+      'confirm_remove_station': 'Remove Station?',
+      'remove_station': 'Remove Station',
+      'remove_station_body':
+          'Remove {name} from this account? The Station will stop and its QR label can be scanned by another account.',
+      'error_station_not_paired':
+          'The Station is not paired with an account. Scan its QR label.',
+      'error_station_revoked':
+          'The Station is locked. An administrator must release it before it can be paired again.',
+      'error_station_limit_reached':
+          'This account has reached its Station limit for the current plan.',
+      'error_activation_invalid':
+          'The Setup ID or Activation Code is invalid.',
+      'error_station_already_claimed':
+          'The Station already belongs to another account.',
       'done': 'Completed',
       'live_log_usage': 'Showing {count}/{limit} plan logs',
       'history_restricted':

@@ -199,6 +199,49 @@ def _station_transfer_data(station_id: str, registry: dict) -> tuple[dict, dict]
     return registry_update, projection
 
 
+def _station_release_data(registry: dict) -> tuple[dict, dict]:
+    current_desired = dict(registry.get("desired_state") or {})
+    desired = {
+        "running": False,
+        "target_language": "en",
+        "capture_mode": "device",
+        "audio_device_id": "",
+        "capability_refresh_generation": 0,
+        "retry_generation": 0,
+        "generation": int(current_desired.get("generation", 0)) + 1,
+    }
+    registry_update = {
+        "owner_uid": None,
+        "active": True,
+        "online": False,
+        "capture_state": "idle",
+        "desired_state": desired,
+        "observed_generation": 0,
+        "session_id": "",
+        "sequence": 0,
+        "active_capture_mode": "device",
+        "active_audio_device_id": "",
+        "last_error": None,
+        "retrying": False,
+        "retry_code": None,
+        "retry_attempt": 0,
+        "capabilities": firestore.DELETE_FIELD,
+        "last_seen_at": firestore.DELETE_FIELD,
+        "revoked_at": firestore.DELETE_FIELD,
+        "released_at": firestore.SERVER_TIMESTAMP,
+        "updated_at": firestore.SERVER_TIMESTAMP,
+    }
+    projection_update = {
+        "active": False,
+        "online": False,
+        "capture_state": "idle",
+        "desired_state": desired,
+        "released_at": firestore.SERVER_TIMESTAMP,
+        "updated_at": firestore.SERVER_TIMESTAMP,
+    }
+    return registry_update, projection_update
+
+
 def _locale(request: Request) -> str:
     value = request.cookies.get("prana_admin_locale", "en")
     return value if value in {"en", "vi"} else "en"
@@ -874,6 +917,72 @@ def transfer_station(
     if outcome == "stopping":
         return _redirect(f"/users/{uid}", "station_stopping")
     return _redirect(f"/users/{uid}", "station_transferred")
+
+
+@app.post("/users/{uid}/stations/{station_id}/release")
+def release_station_for_pairing(
+    request: Request,
+    uid: str,
+    station_id: str,
+    csrf_token: str = Form(),
+    operator: str = Header(
+        default=None,
+        alias="X-Goog-Authenticated-User-Email",
+    ),
+):
+    email = _operator(operator)
+    _verify_csrf(request, email, csrf_token)
+    db = _db()
+    registry_ref = db.collection("station_registry").document(station_id)
+    projection_ref = (
+        db.collection("users")
+        .document(uid)
+        .collection("stations")
+        .document(station_id)
+    )
+
+    @firestore.transactional
+    def run(tx):
+        registry_snap = registry_ref.get(transaction=tx)
+        if (
+            not registry_snap.exists
+            or registry_snap.to_dict().get("owner_uid") != uid
+        ):
+            raise HTTPException(
+                404,
+                "Station was not found for the source account",
+            )
+        registry = registry_snap.to_dict()
+        if registry.get("active", True):
+            raise HTTPException(
+                409,
+                "Only an inactive station can be released for pairing",
+            )
+        registry_update, projection_update = _station_release_data(registry)
+        tx.update(registry_ref, registry_update)
+        tx.set(projection_ref, projection_update, merge=True)
+        _write_audit(
+            tx,
+            db,
+            email,
+            "station.release",
+            uid,
+            {
+                "station_id": station_id,
+                "before": registry,
+                "after": {
+                    "owner_uid": None,
+                    "active": True,
+                    "online": False,
+                    "capture_state": "idle",
+                    "desired_state": registry_update["desired_state"],
+                },
+            },
+            _request_id(request),
+        )
+
+    run(db.transaction())
+    return _redirect(f"/users/{uid}", "station_released")
 
 
 @app.get("/plans", response_class=HTMLResponse)

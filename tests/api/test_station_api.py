@@ -179,7 +179,7 @@ class StationApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 409)
 
-    def test_static_activation_rejects_wrong_code_other_owner_and_revoked_station(self):
+    def test_static_activation_rejects_wrong_code_and_active_other_owner(self):
         provisioned, code = self.provision()
         path = "/v1/station-activations/claim"
         self.assertEqual(
@@ -203,7 +203,24 @@ class StationApiTests(unittest.TestCase):
         self.assertEqual(self.client.post(path, json=payload).status_code, 409)
         app.dependency_overrides[require_identity] = lambda: self.identity
         self.assertEqual(self.client.delete(f"/v1/stations/{self.station_id}").status_code, 204)
-        self.assertEqual(self.client.post(path, json=payload).status_code, 403)
+        self.assertEqual(self.client.get("/v1/stations").json(), [])
+        registry = self.repo.station_registry[self.station_id]
+        self.assertTrue(registry["active"])
+        self.assertIsNone(registry["owner_uid"])
+
+        app.dependency_overrides[require_identity] = lambda: other
+        reclaimed = self.client.post(path, json=payload)
+        self.assertEqual(reclaimed.status_code, 200, reclaimed.text)
+        self.assertEqual(reclaimed.json()["station_id"], self.station_id)
+        self.assertEqual(
+            self.repo.station_registry[self.station_id]["owner_uid"],
+            other.uid,
+        )
+        self.assertFalse(
+            self.repo.station_projections[self.identity.uid][self.station_id][
+                "active"
+            ]
+        )
 
     def test_static_activation_attempts_are_rate_limited(self):
         provisioned, code = self.provision()
@@ -221,6 +238,97 @@ class StationApiTests(unittest.TestCase):
             json={"setup_id": provisioned["setup_id"], "activation_code": code},
         )
         self.assertEqual(limited.status_code, 429)
+
+    def test_released_station_keeps_old_results_isolated_from_new_owner(self):
+        provisioned, code = self.provision()
+        payload = {
+            "setup_id": provisioned["setup_id"],
+            "activation_code": code,
+        }
+        self.assertEqual(
+            self.client.post(
+                "/v1/station-activations/claim",
+                json=payload,
+            ).status_code,
+            200,
+        )
+        old_result = {
+            "request_id": str(uuid.uuid4()),
+            "session_id": "session-old",
+            "sequence": 1,
+            "audio_file": "segment.wav",
+            "translation": "Old owner result",
+            "timestamp": datetime.now(timezone.utc),
+        }
+        self.repo.publish_station_result(
+            self.identity.uid,
+            self.station_id,
+            old_result,
+        )
+        self.assertEqual(
+            self.client.delete(
+                f"/v1/stations/{self.station_id}",
+            ).status_code,
+            204,
+        )
+        self.assertIn(
+            (
+                self.identity.uid,
+                self.station_id,
+                "session-old",
+                old_result["request_id"],
+            ),
+            self.repo.station_results,
+        )
+
+        other = Identity("owner-2", "other@example.com", True)
+        self.repo.users[other.uid] = UserAccount(
+            uid=other.uid,
+            email=other.email,
+            email_verified=True,
+            status="active",
+            plan_id="free",
+        )
+        app.dependency_overrides[require_identity] = lambda: other
+        self.assertEqual(
+            self.client.post(
+                "/v1/station-activations/claim",
+                json=payload,
+            ).status_code,
+            200,
+        )
+        results = self.client.get(
+            f"/v1/stations/{self.station_id}/sessions/session-old/results"
+        )
+        self.assertEqual(results.status_code, 200, results.text)
+        self.assertEqual(results.json(), [])
+
+    def test_activation_still_enforces_target_owner_station_limit(self):
+        provisioned, code = self.provision()
+        self.repo.station_projections[self.identity.uid] = {
+            "existing-1": {
+                "name": "One",
+                "platform": "test",
+                "active": True,
+            },
+            "existing-2": {
+                "name": "Two",
+                "platform": "test",
+                "active": True,
+            },
+        }
+        response = self.client.post(
+            "/v1/station-activations/claim",
+            json={
+                "setup_id": provisioned["setup_id"],
+                "activation_code": code,
+            },
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(
+            response.json()["detail"]["code"],
+            "STATION_LIMIT_REACHED",
+        )
 
     def test_pairing_is_one_time_and_wrong_code_does_not_claim(self):
         path = "/v1/station-pairings"
@@ -269,7 +377,7 @@ class StationApiTests(unittest.TestCase):
         limited = self.client.post(claim_path, json={"pairing_code": pairing["pairing_code"]})
         self.assertEqual(limited.status_code, 429)
 
-    def test_desired_state_generation_heartbeat_replay_and_revoke(self):
+    def test_desired_state_generation_heartbeat_replay_and_release(self):
         self.create_and_claim()
         desired_path = f"/v1/stations/{self.station_id}/desired-state"
         changed = self.client.patch(
@@ -313,8 +421,9 @@ class StationApiTests(unittest.TestCase):
             headers=self.signed_headers("GET", desired_path, {}),
         )
         self.assertEqual(denied.status_code, 403)
+        self.assertEqual(denied.json()["detail"]["code"], "STATION_NOT_PAIRED")
 
-    def test_other_user_cannot_revoke_station(self):
+    def test_other_user_cannot_release_station(self):
         self.create_and_claim()
         other = Identity("owner-2", "other@example.com", True)
         self.repo.users[other.uid] = UserAccount(

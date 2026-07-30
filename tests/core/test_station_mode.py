@@ -12,6 +12,7 @@ from prana_core.station.client import (
     canonical_station_request,
     payload_hash,
 )
+from prana_core.backend.client import BackendApiError
 from prana_core.station.identity import StationIdentity
 from prana_core.station.runtime import StationRuntime
 from prana_core.audio.capabilities import normalize_audio_devices
@@ -177,6 +178,38 @@ class StationModeTests(unittest.TestCase):
         })
         self.assertEqual(runtime.orchestrator.state, PipelineState.IDLE)
         self.assertEqual(runtime.observed_generation, 5)
+
+    def test_unpaired_station_stops_a_running_pipeline(self) -> None:
+        class Store:
+            def get(self, key):
+                return "1" if key == "station_provisioned" else None
+
+        class Client:
+            identity = SimpleNamespace(store=Store())
+
+            def desired_state(self):
+                raise BackendApiError(
+                    "STATION_NOT_PAIRED",
+                    "Station has not been paired",
+                    403,
+                )
+
+        class Orchestrator:
+            state = PipelineState.RUNNING
+            stops = 0
+
+            def stop(self):
+                self.stops += 1
+                self.state = PipelineState.STOPPING
+
+        runtime = StationRuntime.__new__(StationRuntime)
+        runtime.client = Client()
+        runtime.orchestrator = Orchestrator()
+        runtime._provisioning_notice_shown = False
+        runtime._pairing_expires_at = 0
+
+        self.assertIsNone(runtime._desired())
+        self.assertEqual(runtime.orchestrator.stops, 1)
 
     def test_audio_change_restarts_running_pipeline_and_applies_generation(self) -> None:
         class Orchestrator:
