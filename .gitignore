@@ -69,6 +69,7 @@ installers/*
 !build_android_apk.bat
 *.spec
 !apps/windows/packaging/PRANA_ELEX.spec
+!apps/windows/packaging/PRANA_Station.spec
 !apps/linux/packaging/PRANA_ELEX.spec
 *.egg-info/
 *.egg-info
