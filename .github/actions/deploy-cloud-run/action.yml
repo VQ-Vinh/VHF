@@ -1,0 +1,72 @@
+name: Deploy and verify Cloud Run
+description: Deploy an immutable image, verify readiness, and roll back on failure.
+inputs:
+  service:
+    required: true
+  image:
+    required: true
+  project_id:
+    required: true
+  region:
+    required: true
+  require_health:
+    required: false
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - name: Deploy immutable image and verify
+      shell: bash
+      env:
+        SERVICE: ${{ inputs.service }}
+        IMAGE: ${{ inputs.image }}
+        PROJECT_ID: ${{ inputs.project_id }}
+        REGION: ${{ inputs.region }}
+        REQUIRE_HEALTH: ${{ inputs.require_health }}
+      run: |
+        set -Eeuo pipefail
+        previous="$(gcloud run services describe "$SERVICE" \
+          --project "$PROJECT_ID" --region "$REGION" \
+          --format='value(status.traffic[0].revisionName)' 2>/dev/null || true)"
+        rollback() {
+          if [[ -n "$previous" ]]; then
+            echo "Deployment verification failed; rolling traffic back to $previous"
+            gcloud run services update-traffic "$SERVICE" \
+              --project "$PROJECT_ID" --region "$REGION" \
+              --to-revisions "$previous=100" --quiet || true
+          fi
+        }
+        trap rollback ERR
+
+        gcloud run deploy "$SERVICE" --image "$IMAGE" \
+          --project "$PROJECT_ID" --region "$REGION" --quiet
+
+        revision="$(gcloud run services describe "$SERVICE" \
+          --project "$PROJECT_ID" --region "$REGION" \
+          --format='value(status.latestReadyRevisionName)')"
+        [[ -n "$revision" ]]
+        ready="$(gcloud run revisions describe "$revision" \
+          --project "$PROJECT_ID" --region "$REGION" \
+          --format='value(status.conditions[?type=Ready].status)')"
+        [[ "$ready" == "True" ]]
+        traffic="$(gcloud run services describe "$SERVICE" \
+          --project "$PROJECT_ID" --region "$REGION" \
+          --format="value(status.traffic[?revisionName='$revision'].percent)")"
+        [[ "$traffic" == "100" ]]
+
+        if [[ "$REQUIRE_HEALTH" == "true" ]]; then
+          url="$(gcloud run services describe "$SERVICE" \
+            --project "$PROJECT_ID" --region "$REGION" \
+            --format='value(status.uri)')"
+          curl --fail --silent --show-error --retry 5 --retry-all-errors \
+            --retry-delay 2 "$url/health" | grep -q '"status":"ok"'
+        fi
+
+        sleep 10
+        errors="$(gcloud logging read \
+          "resource.type=cloud_run_revision AND resource.labels.revision_name=$revision AND severity>=ERROR" \
+          --project "$PROJECT_ID" --freshness=30m --limit=1 \
+          --format='value(timestamp)' || true)"
+        [[ -z "$errors" ]]
+        trap - ERR
+        echo "Cloud Run revision $revision is Ready and serves 100% traffic."

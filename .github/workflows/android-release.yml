@@ -1,0 +1,97 @@
+name: Android release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Signed APK and AAB
+    runs-on: ubuntu-latest
+    environment: android-production
+    defaults:
+      run:
+        working-directory: apps/android
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.44.8'
+          channel: stable
+          cache: true
+      - uses: actions/setup-java@d7793b545071e98d581d3bf084a51c3213318a07 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - name: Validate release tag and source versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          core_version="$(tr -d '\r\n' < ../../packages/prana_core/src/prana_core/VERSION)"
+          mobile_version="$(sed -n 's/^version: \([^+]*\).*/\1/p' pubspec.yaml)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$version" == "$core_version" ]]
+          [[ "$version" == "$mobile_version" ]]
+          echo "RELEASE_VERSION=$version" >> "$GITHUB_ENV"
+      - name: Restore protected production config and signing key
+        shell: bash
+        env:
+          ANDROID_PRODUCTION_CONFIG_B64: ${{ secrets.ANDROID_PRODUCTION_CONFIG_B64 }}
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          set -euo pipefail
+          test -n "$ANDROID_PRODUCTION_CONFIG_B64"
+          test -n "$ANDROID_KEYSTORE_B64"
+          printf '%s' "$ANDROID_PRODUCTION_CONFIG_B64" | base64 --decode > config/production.json
+          printf '%s' "$ANDROID_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/prana-release.jks"
+          chmod 600 config/production.json "$RUNNER_TEMP/prana-release.jks"
+          echo "PRANA_ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/prana-release.jks" >> "$GITHUB_ENV"
+      - name: Resolve and test locked dependencies
+        run: |
+          flutter pub get --enforce-lockfile
+          flutter analyze --no-pub
+          flutter test --no-pub
+      - name: Build signed production APK and AAB
+        env:
+          PRANA_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          PRANA_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          PRANA_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          flutter build apk --release --flavor production --build-name "$RELEASE_VERSION" --dart-define-from-file=config/production.json
+          flutter build appbundle --release --flavor production --build-name "$RELEASE_VERSION" --dart-define-from-file=config/production.json
+      - name: Verify signatures and prepare checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="build/app/outputs/flutter-apk/app-production-release.apk"
+          aab="build/app/outputs/bundle/productionRelease/app-production-release.aab"
+          test -s "$apk"
+          test -s "$aab"
+          apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          test -x "$apksigner"
+          "$apksigner" verify --verbose --print-certs "$apk"
+          jarsigner -verify -strict "$aab"
+          mkdir -p "$RUNNER_TEMP/release"
+          cp "$apk" "$RUNNER_TEMP/release/prana-elex-$RELEASE_VERSION.apk"
+          cp "$aab" "$RUNNER_TEMP/release/prana-elex-$RELEASE_VERSION.aab"
+          cd "$RUNNER_TEMP/release"
+          sha256sum "prana-elex-$RELEASE_VERSION.apk" "prana-elex-$RELEASE_VERSION.aab" > SHA256SUMS
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            ${{ runner.temp }}/release/prana-elex-${{ env.RELEASE_VERSION }}.apk
+            ${{ runner.temp }}/release/prana-elex-${{ env.RELEASE_VERSION }}.aab
+            ${{ runner.temp }}/release/SHA256SUMS

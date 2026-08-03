@@ -1,0 +1,18 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: pip
+    directory: /services/prana_api
+    schedule:
+      interval: weekly
+  - package-ecosystem: pip
+    directory: /services/prana_admin
+    schedule:
+      interval: weekly
+  - package-ecosystem: pub
+    directory: /apps/android
+    schedule:
+      interval: weekly

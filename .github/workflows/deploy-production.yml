@@ -1,0 +1,86 @@
+name: Deploy production
+
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: Immutable staging service image to promote
+        required: true
+        type: choice
+        options: [prana-api, prana-admin]
+      digest:
+        description: Staging image digest (sha256:...)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-production-${{ inputs.service }}
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Promote approved digest
+    if: vars.PRODUCTION_CD_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Validate immutable digest
+        shell: bash
+        env:
+          DIGEST: ${{ inputs.digest }}
+        run: |
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+      - id: staging-auth
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_STAGING_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_STAGING_RELEASE_READER_SERVICE_ACCOUNT }}
+          token_format: access_token
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ vars.GCP_STAGING_REGION }}-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.staging-auth.outputs.access_token }}
+      - name: Pull exact tested staging digest
+        env:
+          SOURCE: ${{ vars.GCP_STAGING_REGION }}-docker.pkg.dev/${{ vars.GCP_STAGING_PROJECT_ID }}/${{ vars.GCP_STAGING_ARTIFACT_REPOSITORY }}/${{ inputs.service }}@${{ inputs.digest }}
+        run: docker pull "$SOURCE"
+      - id: production-auth
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_PRODUCTION_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_PRODUCTION_DEPLOYER_SERVICE_ACCOUNT }}
+          token_format: access_token
+      - uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ vars.GCP_PRODUCTION_REGION }}-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.production-auth.outputs.access_token }}
+      - id: promote
+        shell: bash
+        env:
+          SOURCE: ${{ vars.GCP_STAGING_REGION }}-docker.pkg.dev/${{ vars.GCP_STAGING_PROJECT_ID }}/${{ vars.GCP_STAGING_ARTIFACT_REPOSITORY }}/${{ inputs.service }}@${{ inputs.digest }}
+          TARGET_ROOT: ${{ vars.GCP_PRODUCTION_REGION }}-docker.pkg.dev/${{ vars.GCP_PRODUCTION_PROJECT_ID }}/${{ vars.GCP_PRODUCTION_ARTIFACT_REPOSITORY }}/${{ inputs.service }}
+          DIGEST: ${{ inputs.digest }}
+        run: |
+          set -euo pipefail
+          tag="promoted-${DIGEST#sha256:}"
+          target="$TARGET_ROOT:${tag:0:21}"
+          docker tag "$SOURCE" "$target"
+          docker push "$target"
+          promoted_digest="$(docker inspect --format='{{index .RepoDigests 0}}' "$target" | sed 's/.*@//')"
+          [[ "$promoted_digest" == "$DIGEST" ]]
+          echo "image=$TARGET_ROOT@$promoted_digest" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/deploy-cloud-run
+        with:
+          service: ${{ inputs.service }}
+          image: ${{ steps.promote.outputs.image }}
+          project_id: ${{ vars.GCP_PRODUCTION_PROJECT_ID }}
+          region: ${{ vars.GCP_PRODUCTION_REGION }}
+          require_health: ${{ inputs.service == 'prana-api' && 'true' || 'false' }}

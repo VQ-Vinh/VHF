@@ -1,0 +1,134 @@
+name: Deploy staging
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  changes:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.paths.outputs.api }}
+      admin: ${{ steps.paths.outputs.admin }}
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 2
+      - id: commit
+        run: echo "sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+      - id: paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git rev-parse HEAD^ >/dev/null 2>&1; then
+            files="$(git diff --name-only HEAD^ HEAD)"
+          else
+            files="$(git ls-tree -r --name-only HEAD)"
+          fi
+          api=false
+          admin=false
+          if grep -Eq '^(services/prana_api/|\.dockerignore$|\.gcloudignore$)' <<<"$files"; then api=true; fi
+          if grep -Eq '^(services/prana_admin/|\.dockerignore$|\.gcloudignore$)' <<<"$files"; then admin=true; fi
+          echo "api=$api" >> "$GITHUB_OUTPUT"
+          echo "admin=$admin" >> "$GITHUB_OUTPUT"
+          {
+            echo '### Staging path selection'
+            echo "- API: $api"
+            echo "- Admin: $admin"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-api:
+    name: API
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-staging-api
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.changes.outputs.sha }}
+      - id: auth
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SERVICE_ACCOUNT }}
+          token_format: access_token
+      - uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ vars.GCP_REGION }}-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+      - id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: services/prana_api/Dockerfile
+          push: true
+          tags: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_STAGING_PROJECT_ID }}/${{ vars.GCP_ARTIFACT_REPOSITORY }}/prana-api:${{ needs.changes.outputs.sha }}
+          cache-from: type=gha,scope=prana-api
+          cache-to: type=gha,mode=max,scope=prana-api
+      - uses: ./.github/actions/deploy-cloud-run
+        with:
+          service: prana-api
+          image: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_STAGING_PROJECT_ID }}/${{ vars.GCP_ARTIFACT_REPOSITORY }}/prana-api@${{ steps.build.outputs.digest }}
+          project_id: ${{ vars.GCP_STAGING_PROJECT_ID }}
+          region: ${{ vars.GCP_REGION }}
+          require_health: 'true'
+
+  deploy-admin:
+    name: Admin
+    needs: changes
+    if: needs.changes.outputs.admin == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-staging-admin
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.changes.outputs.sha }}
+      - id: auth
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SERVICE_ACCOUNT }}
+          token_format: access_token
+      - uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ vars.GCP_REGION }}-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+      - id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: services/prana_admin/Dockerfile
+          push: true
+          tags: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_STAGING_PROJECT_ID }}/${{ vars.GCP_ARTIFACT_REPOSITORY }}/prana-admin:${{ needs.changes.outputs.sha }}
+          cache-from: type=gha,scope=prana-admin
+          cache-to: type=gha,mode=max,scope=prana-admin
+      - uses: ./.github/actions/deploy-cloud-run
+        with:
+          service: prana-admin
+          image: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_STAGING_PROJECT_ID }}/${{ vars.GCP_ARTIFACT_REPOSITORY }}/prana-admin@${{ steps.build.outputs.digest }}
+          project_id: ${{ vars.GCP_STAGING_PROJECT_ID }}
+          region: ${{ vars.GCP_REGION }}
+          require_health: 'false'

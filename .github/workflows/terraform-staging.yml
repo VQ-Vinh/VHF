@@ -1,0 +1,96 @@
+name: Terraform staging
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: terraform-staging
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Plan
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: staging-infra-plan
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_TERRAFORM_SERVICE_ACCOUNT }}
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: '1.8.5'
+          terraform_wrapper: false
+      - name: Restore protected staging variables
+        shell: bash
+        env:
+          TFVARS_STAGING_B64: ${{ secrets.TFVARS_STAGING_B64 }}
+        run: |
+          set -euo pipefail
+          test -n "$TFVARS_STAGING_B64"
+          printf '%s' "$TFVARS_STAGING_B64" | base64 --decode > ci.auto.tfvars
+          chmod 600 ci.auto.tfvars
+      - run: terraform init -input=false
+      - run: terraform plan -input=false -lock-timeout=5m -out=staging.tfplan
+      - name: Summarize actions without exposing values
+        shell: bash
+        run: |
+          set -euo pipefail
+          terraform show -json staging.tfplan > "$RUNNER_TEMP/plan.json"
+          add="$(jq '[.resource_changes[]? | select(.change.actions == ["create"])] | length' "$RUNNER_TEMP/plan.json")"
+          change="$(jq '[.resource_changes[]? | select(.change.actions == ["update"])] | length' "$RUNNER_TEMP/plan.json")"
+          destroy="$(jq '[.resource_changes[]? | select(.change.actions | index("delete"))] | length' "$RUNNER_TEMP/plan.json")"
+          {
+            echo '### Terraform staging plan'
+            echo "- Create: $add"
+            echo "- Update: $change"
+            echo "- Delete/replace: $destroy"
+            if [[ "$destroy" != 0 ]]; then
+              echo ''
+              echo '**Destructive or replacement actions require careful approval:**'
+              jq -r '.resource_changes[]? | select(.change.actions | index("delete")) | "- `\(.address)`: \(.change.actions | join(" → "))"' "$RUNNER_TEMP/plan.json"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove plaintext variables before artifact upload
+        if: always()
+        run: rm -f ci.auto.tfvars
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: terraform-staging-${{ github.sha }}
+          path: infra/terraform/staging.tfplan
+          retention-days: 1
+          if-no-files-found: error
+
+  apply:
+    name: Apply approved plan
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: staging-infra
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_TERRAFORM_SERVICE_ACCOUNT }}
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: '1.8.5'
+      - run: terraform init -input=false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: terraform-staging-${{ github.sha }}
+          path: infra/terraform
+      - name: Apply the exact approved plan
+        run: terraform apply -input=false -lock-timeout=5m -auto-approve staging.tfplan
