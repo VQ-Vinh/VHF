@@ -31,9 +31,10 @@ void main() {
     required Size size,
     required Widget child,
     double textScale = 1,
+    Locale locale = const Locale('en'),
   }) => MaterialApp(
     theme: PranaTheme.light(),
-    locale: const Locale('en'),
+    locale: locale,
     supportedLocales: AppText.supportedLocales,
     localizationsDelegates: const [
       GlobalMaterialLocalizations.delegate,
@@ -84,6 +85,105 @@ void main() {
       64,
     );
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('live header clearly presents a pending start command', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      harness(
+        size: const Size(360, 800),
+        locale: const Locale('vi'),
+        child: Scaffold(
+          appBar: LiveHeader(
+            station: station(running: false),
+            online: true,
+            ux: const LiveUxState(
+              phase: LiveCommandPhase.awaitingStation,
+              pendingRunning: true,
+            ),
+            onToggle: null,
+            onSettings: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('live-toggle-progress')), findsOneWidget);
+    expect(find.text('Đang bật…'), findsOneWidget);
+    expect(find.text('RX STARTING'), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('live-toggle-button'))),
+      const Size(118, 40),
+    );
+    expect(
+      tester.getRect(find.byKey(const ValueKey('live-toggle-label'))).right,
+      lessThanOrEqualTo(
+        tester.getRect(find.byKey(const ValueKey('live-toggle-button'))).right,
+      ),
+    );
+    final progress = tester.widget<CircularProgressIndicator>(
+      find.byType(CircularProgressIndicator),
+    );
+    expect(progress.strokeWidth, 2.6);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('live header clearly presents a pending stop command', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      harness(
+        size: const Size(412, 915),
+        child: Scaffold(
+          appBar: LiveHeader(
+            station: station(),
+            online: true,
+            ux: const LiveUxState(
+              phase: LiveCommandPhase.awaitingStation,
+              pendingRunning: false,
+            ),
+            onToggle: null,
+            onSettings: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Stopping…'), findsOneWidget);
+    expect(find.text('RX STOPPING'), findsOneWidget);
+    expect(find.byKey(const ValueKey('live-toggle-progress')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  test('header and dock share the transition state until command applies', () {
+    final listeningStation = station(running: true);
+    const starting = LiveUxState(
+      phase: LiveCommandPhase.awaitingStation,
+      pendingRunning: true,
+    );
+
+    expect(
+      liveStationDisplayState(
+        station: listeningStation,
+        online: true,
+        ux: starting,
+      ),
+      'STARTING',
+    );
+    expect(
+      liveStationDisplayState(
+        station: listeningStation,
+        online: true,
+        ux: const LiveUxState(),
+      ),
+      'LISTENING',
+    );
   });
 
   testWidgets('input and output language fields have equal geometry', (

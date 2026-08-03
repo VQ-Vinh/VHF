@@ -60,8 +60,10 @@ TranslationResult result(
   int sequence, {
   String translation = 'Bản dịch',
   String? targetLanguage = 'vi',
+  String sessionId = 'session-1',
 }) => TranslationResult(
   requestId: id,
+  sessionId: sessionId,
   sequence: sequence,
   transcript: 'Source',
   translation: translation,
@@ -80,6 +82,7 @@ Future<void> settleSpeech() async {
 TranslationResult sameLanguageResult(String id, {String language = 'vi-VN'}) =>
     TranslationResult(
       requestId: id,
+      sessionId: 'session-1',
       sequence: 1,
       transcript: 'Xin chào.',
       translation: 'Xin chào.',
@@ -94,8 +97,8 @@ void main() {
     final speech = FakeSpeechEngine();
     final source = FakeSourceAudioEngine();
     final controller = TranslationSpeechController(speech, source);
-    controller.trackStation('station-1', '');
-    controller.trackStation('station-1', 'session-1');
+    controller.trackStation('station-1', '2026-07-28');
+    controller.ingest(const [], fallbackLanguage: 'vi');
 
     controller.ingest([sameLanguageResult('source')], fallbackLanguage: 'vi');
     await settleSpeech();
@@ -110,8 +113,7 @@ void main() {
       final speech = FakeSpeechEngine();
       final source = FakeSourceAudioEngine()..failures.add('missing');
       final controller = TranslationSpeechController(speech, source);
-      controller.trackStation('station-1', '');
-      controller.trackStation('station-1', 'session-1');
+      controller.trackStation('station-1', '2026-07-28');
 
       await controller.speakNow(
         sameLanguageResult('missing', language: 'vi_VN'),
@@ -126,7 +128,7 @@ void main() {
     final speech = FakeSpeechEngine();
     final source = FakeSourceAudioEngine();
     final controller = TranslationSpeechController(speech, source);
-    controller.trackStation('station-1', 'session-1');
+    controller.trackStation('station-1', '2026-07-28');
 
     await controller.speakNow(sameLanguageResult('manual-source'));
     await settleSpeech();
@@ -145,7 +147,7 @@ void main() {
         engine,
         FakeSourceAudioEngine(),
       );
-      controller.trackStation('station-1', 'session-1');
+      controller.trackStation('station-1', '2026-07-28');
       controller.ingest([result('old', 1)], fallbackLanguage: 'en');
 
       controller.ingest([
@@ -170,7 +172,7 @@ void main() {
       engine,
       FakeSourceAudioEngine(),
     );
-    controller.trackStation('station-1', 'session-1');
+    controller.trackStation('station-1', '2026-07-28');
     controller.ingest([result('old', 1)], fallbackLanguage: 'vi');
 
     await controller.setForeground(false);
@@ -190,14 +192,48 @@ void main() {
     expect(engine.spoken, [('Bản dịch', 'vi-VN')]);
   });
 
+  test('new session does not replay the existing daily feed', () async {
+    final engine = FakeSpeechEngine();
+    final controller = TranslationSpeechController(
+      engine,
+      FakeSourceAudioEngine(),
+    );
+    controller.trackStation(
+      'station-1',
+      '2026-07-28',
+      fallbackSessionId: 'session-1',
+    );
+    final existing = List.generate(
+      10,
+      (index) => result(
+        'old-$index',
+        index,
+        sessionId: index < 5 ? 'session-1' : 'session-2',
+      ),
+    );
+    controller.ingest(existing, fallbackLanguage: 'vi');
+
+    controller.trackStation(
+      'station-1',
+      '2026-07-28',
+      fallbackSessionId: 'session-3',
+    );
+    final next = result('new', 11, sessionId: 'session-3');
+    controller.ingest([...existing, next], fallbackLanguage: 'vi');
+    controller.ingest([...existing, next], fallbackLanguage: 'vi');
+    await settleSpeech();
+
+    expect(engine.spoken, [('Bản dịch', 'vi-VN')]);
+  });
+
   test('idle station speaks the first result of its future session', () async {
     final engine = FakeSpeechEngine();
     final controller = TranslationSpeechController(
       engine,
       FakeSourceAudioEngine(),
     );
-    controller.trackStation('station-1', '');
-    controller.trackStation('station-1', 'session-1');
+    controller.trackStation('station-1', '2026-07-28');
+    controller.ingest(const [], fallbackLanguage: 'vi');
     controller.ingest([result('first', 1)], fallbackLanguage: 'vi');
     await settleSpeech();
 
@@ -210,7 +246,7 @@ void main() {
       engine,
       FakeSourceAudioEngine(),
     );
-    controller.trackStation('station-1', 'session-1');
+    controller.trackStation('station-1', '2026-07-28');
     controller.ingest(const [], fallbackLanguage: 'ja');
 
     await controller.speakNow(result('manual', 1, targetLanguage: null));
@@ -228,7 +264,7 @@ void main() {
       engine,
       FakeSourceAudioEngine(),
     );
-    controller.trackStation('station-1', 'session-1');
+    controller.trackStation('station-1', '2026-07-28');
     controller.ingest(const [], fallbackLanguage: 'en');
     controller.ingest([
       result('new', 1, targetLanguage: 'ko'),
@@ -247,8 +283,8 @@ void main() {
         engine,
         FakeSourceAudioEngine(),
       );
-      controller.trackStation('station-1', '');
-      controller.trackStation('station-1', 'session-1');
+      controller.trackStation('station-1', '2026-07-28');
+      controller.ingest(const [], fallbackLanguage: 'vi');
       controller.ingest([result('new', 1)], fallbackLanguage: 'vi');
       await settleSpeech();
 
@@ -263,8 +299,8 @@ void main() {
       engine,
       FakeSourceAudioEngine(),
     );
-    controller.trackStation('station-1', '');
-    controller.trackStation('station-1', 'session-1');
+    controller.trackStation('station-1', '2026-07-28');
+    controller.ingest(const [], fallbackLanguage: 'vi');
     controller.ingest([result('new', 1)], fallbackLanguage: 'vi');
     await settleSpeech();
 

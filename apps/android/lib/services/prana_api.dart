@@ -167,6 +167,27 @@ class PranaApi {
       ..sort(compareTranslationChronologically);
   }
 
+  Future<List<TranslationResult>> stationLiveResults(
+    String stationId, {
+    required int timezoneOffsetMinutes,
+    int limit = 1000,
+  }) async {
+    final response = await _dio.get<List<dynamic>>(
+      '/v1/stations/$stationId/live/results',
+      queryParameters: {
+        'timezone_offset_minutes': timezoneOffsetMinutes,
+        'limit': limit,
+      },
+    );
+    return (response.data ?? const [])
+        .map(
+          (item) =>
+              TranslationResult.fromMap(Map<String, dynamic>.from(item as Map)),
+        )
+        .toList()
+      ..sort(compareTranslationChronologically);
+  }
+
   Future<Uint8List> stationResultAudio(
     String stationId,
     String sessionId,

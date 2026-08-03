@@ -22,6 +22,7 @@ class _TranslationSpeechHostState extends ConsumerState<TranslationSpeechHost>
   bool _identityReady = false;
   String? _warningShown;
   bool _missingStationHandled = false;
+  String? _scheduledTrackingKey;
 
   @override
   void initState() {
@@ -97,18 +98,28 @@ class _TranslationSpeechHostState extends ConsumerState<TranslationSpeechHost>
     TranslationSpeechController controller,
     StationModel station,
   ) {
-    final sessionId = station.sessionId;
+    final now = ref.watch(stationClockProvider).value ?? DateTime.now();
+    final dayKey = localDateKey(now);
+    final trackingKey = '${station.id}|$dayKey';
+    _scheduledTrackingKey = trackingKey;
     List<TranslationResult>? values;
-    if (sessionId.isNotEmpty) {
-      final results = ref.watch(
-        liveResultsProvider((stationId: station.id, sessionId: sessionId)),
-      );
-      if (results.hasValue) {
-        values = results.value ?? const <TranslationResult>[];
-      }
+    final results = ref.watch(
+      liveResultsProvider((
+        stationId: station.id,
+        localDate: dayKey,
+        timezoneOffsetMinutes: now.timeZoneOffset.inMinutes,
+      )),
+    );
+    if (results.hasValue) {
+      values = results.value ?? const <TranslationResult>[];
     }
     _afterFrame(() {
-      controller.trackStation(station.id, sessionId);
+      if (_scheduledTrackingKey != trackingKey) return;
+      controller.trackStation(
+        station.id,
+        dayKey,
+        fallbackSessionId: station.sessionId,
+      );
       if (values != null) {
         controller.ingest(
           values,

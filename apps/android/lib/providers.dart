@@ -100,33 +100,32 @@ final stationProvider = StreamProvider.family<StationModel?, String>((
       .map((doc) => doc.exists ? StationModel.fromDocument(doc) : null);
 });
 
-final liveResultsProvider = StreamProvider.autoDispose
-    .family<List<TranslationResult>, ({String stationId, String sessionId})>((
-      ref,
-      key,
-    ) {
-      final user = ref.watch(authStateProvider).value;
-      if (user == null || key.sessionId.isEmpty) return Stream.value(const []);
-      final api = ref.watch(apiProvider);
-      final limit = ref.watch(planEntitlementsProvider).liveLogLimit;
-      return _pollStationResults(
-        api,
-        key.stationId,
-        key.sessionId,
-        limit: limit <= 0 ? 1000 : limit,
-      );
-    });
+final liveResultsProvider = StreamProvider.autoDispose.family<
+  List<TranslationResult>,
+  ({String stationId, String localDate, int timezoneOffsetMinutes})
+>((ref, key) {
+  final user = ref.watch(authStateProvider).value;
+  if (user == null) return Stream.value(const []);
+  final api = ref.watch(apiProvider);
+  final limit = ref.watch(planEntitlementsProvider).liveLogLimit;
+  return _pollStationLiveResults(
+    api,
+    key.stationId,
+    timezoneOffsetMinutes: key.timezoneOffsetMinutes,
+    limit: limit <= 0 ? 1000 : limit,
+  );
+});
 
-Stream<List<TranslationResult>> _pollStationResults(
+Stream<List<TranslationResult>> _pollStationLiveResults(
   PranaApi api,
-  String stationId,
-  String sessionId, {
+  String stationId, {
+  required int timezoneOffsetMinutes,
   required int limit,
 }) async* {
   while (true) {
-    final results = await api.stationResults(
+    final results = await api.stationLiveResults(
       stationId,
-      sessionId,
+      timezoneOffsetMinutes: timezoneOffsetMinutes,
       limit: limit,
     );
     yield liveTranslationsForLocalDay(results, DateTime.now());

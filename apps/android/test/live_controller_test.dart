@@ -39,6 +39,7 @@ void main() {
 
       await controller.setRunning(initial, true);
       expect(controller.state.phase, LiveCommandPhase.awaitingStation);
+      expect(controller.state.pendingRunning, isTrue);
 
       controller.synchronize(
         station(desiredGeneration: 2, observedGeneration: 1, running: true),
@@ -51,8 +52,21 @@ void main() {
         online: true,
       );
       expect(controller.state.phase, LiveCommandPhase.applied);
+      expect(controller.state.pendingRunning, isNull);
     },
   );
+
+  test('stop command exposes its pending direction', () async {
+    final controller = LiveUxController(
+      stationId: 'station-1',
+      send: ({running, targetLanguage, retry = false}) async {},
+    );
+
+    await controller.setRunning(station(running: true), false);
+
+    expect(controller.state.phase, LiveCommandPhase.awaitingStation);
+    expect(controller.state.pendingRunning, isFalse);
+  });
 
   test('language rolls back when API request fails', () async {
     final controller = LiveUxController(

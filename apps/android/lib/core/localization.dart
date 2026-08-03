@@ -34,6 +34,8 @@ abstract final class AppText {
     'vi': {
       'start': 'Bắt đầu',
       'stop': 'Dừng',
+      'starting': 'Đang bật…',
+      'stopping': 'Đang dừng…',
       'waiting': 'Đang chờ trạm',
       'history': 'Lịch sử',
       'input': 'Đầu vào',
@@ -227,6 +229,8 @@ abstract final class AppText {
     'en': {
       'start': 'Start',
       'stop': 'Stop',
+      'starting': 'Starting…',
+      'stopping': 'Stopping…',
       'waiting': 'Waiting for station',
       'history': 'History',
       'input': 'Input',

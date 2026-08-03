@@ -24,6 +24,7 @@ class LiveUxState {
     this.previousLanguage,
     this.error,
     this.baselineGeneration,
+    this.pendingRunning,
   });
 
   final LiveCommandPhase phase;
@@ -31,6 +32,7 @@ class LiveUxState {
   final String? previousLanguage;
   final String? error;
   final int? baselineGeneration;
+  final bool? pendingRunning;
 
   bool get busy =>
       phase == LiveCommandPhase.sending ||
@@ -44,6 +46,8 @@ class LiveUxState {
     int? baselineGeneration,
     bool clearOptimisticLanguage = false,
     bool clearError = false,
+    bool? pendingRunning,
+    bool clearPendingRunning = false,
   }) => LiveUxState(
     phase: phase ?? this.phase,
     optimisticLanguage:
@@ -53,6 +57,8 @@ class LiveUxState {
     previousLanguage: previousLanguage ?? this.previousLanguage,
     error: clearError ? null : error ?? this.error,
     baselineGeneration: baselineGeneration ?? this.baselineGeneration,
+    pendingRunning:
+        clearPendingRunning ? null : pendingRunning ?? this.pendingRunning,
   );
 }
 
@@ -75,11 +81,16 @@ class LiveUxController extends ChangeNotifier {
         phase: LiveCommandPhase.applied,
         clearOptimisticLanguage: true,
         clearError: true,
+        clearPendingRunning: true,
       );
     } else if (online &&
         (state.phase == LiveCommandPhase.offline ||
             state.phase == LiveCommandPhase.applied)) {
-      next = next.copyWith(phase: LiveCommandPhase.idle, clearError: true);
+      next = next.copyWith(
+        phase: LiveCommandPhase.idle,
+        clearError: true,
+        clearPendingRunning: true,
+      );
     }
     if (next != state) {
       state = next;
@@ -91,6 +102,7 @@ class LiveUxController extends ChangeNotifier {
     await _send(
       station,
       () => _sendDesiredState(running: running, retry: false),
+      pendingRunning: running,
     );
   }
 
@@ -127,18 +139,21 @@ class LiveUxController extends ChangeNotifier {
       phase: LiveCommandPhase.idle,
       clearError: true,
       clearOptimisticLanguage: true,
+      clearPendingRunning: true,
     );
     notifyListeners();
   }
 
   Future<void> _send(
     StationModel station,
-    Future<void> Function() request,
-  ) async {
+    Future<void> Function() request, {
+    bool? pendingRunning,
+  }) async {
     state = state.copyWith(
       phase: LiveCommandPhase.sending,
       baselineGeneration: station.desired.generation,
       clearError: true,
+      pendingRunning: pendingRunning,
     );
     notifyListeners();
     try {
@@ -148,6 +163,7 @@ class LiveUxController extends ChangeNotifier {
       state = state.copyWith(
         phase: LiveCommandPhase.failed,
         error: error.toString(),
+        clearPendingRunning: true,
       );
     }
     notifyListeners();

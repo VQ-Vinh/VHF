@@ -184,6 +184,7 @@ class StationModel {
 class TranslationResult {
   const TranslationResult({
     required this.requestId,
+    this.sessionId = '',
     required this.sequence,
     required this.transcript,
     required this.translation,
@@ -195,6 +196,7 @@ class TranslationResult {
   });
 
   final String requestId;
+  final String sessionId;
   final int sequence;
   final String transcript;
   final String translation;
@@ -217,6 +219,7 @@ class TranslationResult {
   }) {
     return TranslationResult(
       requestId: map['request_id'] as String? ?? fallbackId,
+      sessionId: map['session_id'] as String? ?? '',
       sequence: map['sequence'] as int? ?? 0,
       transcript: map['transcript_restored'] as String? ?? '',
       translation: map['translation'] as String? ?? '',
@@ -233,6 +236,13 @@ class TranslationResult {
     if (value is String) return DateTime.tryParse(value);
     return null;
   }
+}
+
+String localDateKey(DateTime value) {
+  final local = value.toLocal();
+  return '${local.year.toString().padLeft(4, '0')}-'
+      '${local.month.toString().padLeft(2, '0')}-'
+      '${local.day.toString().padLeft(2, '0')}';
 }
 
 class StationHistoryDay {

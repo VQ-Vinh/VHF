@@ -113,7 +113,8 @@ class TranslationSpeechController extends ChangeNotifier {
   final Set<String> _seenRequestIds = <String>{};
 
   String? _stationId;
-  String? _sessionId;
+  String? _dayKey;
+  String _fallbackSessionId = '';
   String _fallbackLanguage = 'en';
   String? speakingRequestId;
   String? warningKey;
@@ -124,20 +125,18 @@ class TranslationSpeechController extends ChangeNotifier {
   int _epoch = 0;
   Future<void> _sourceReady = Future<void>.value();
 
-  void trackStation(String stationId, String sessionId) {
-    if (_stationId != stationId || _sessionId != sessionId) {
-      final stationChanged = _stationId != stationId;
-      final previousSession = _sessionId;
+  void trackStation(
+    String stationId,
+    String dayKey, {
+    String fallbackSessionId = '',
+  }) {
+    _fallbackSessionId = fallbackSessionId;
+    if (_stationId != stationId || _dayKey != dayKey) {
       _stationId = stationId;
-      _sessionId = sessionId;
+      _dayKey = dayKey;
       _seenRequestIds.clear();
       _queue.clear();
-      // An idle Station has no existing results to suppress. Its first future
-      // session should therefore speak the first translation it publishes.
-      _needsBaseline =
-          stationChanged
-              ? sessionId.isNotEmpty
-              : (previousSession?.isNotEmpty ?? false) && sessionId.isNotEmpty;
+      _needsBaseline = true;
       _epoch++;
       _stopEngine();
       _sourceReady = _sourceReady
@@ -145,14 +144,13 @@ class TranslationSpeechController extends ChangeNotifier {
           .then((_) => _sourceAudio.clearCache());
       return;
     }
-    _sessionId = sessionId;
   }
 
   void ingest(
     Iterable<TranslationResult> results, {
     required String fallbackLanguage,
   }) {
-    if (!_foreground || _stationId == null || _sessionId == null) return;
+    if (!_foreground || _stationId == null || _dayKey == null) return;
     _fallbackLanguage = fallbackLanguage;
     final ordered = results.toList()..sort(compareTranslationChronologically);
     if (_needsBaseline) {
@@ -168,7 +166,10 @@ class TranslationSpeechController extends ChangeNotifier {
           result: result,
           language: result.targetLanguage ?? fallbackLanguage,
           stationId: _stationId!,
-          sessionId: _sessionId!,
+          sessionId:
+              result.sessionId.isNotEmpty
+                  ? result.sessionId
+                  : _fallbackSessionId,
         ),
       );
     }
@@ -186,7 +187,8 @@ class TranslationSpeechController extends ChangeNotifier {
         result: result,
         language: result.targetLanguage ?? _fallbackLanguage,
         stationId: _stationId!,
-        sessionId: _sessionId!,
+        sessionId:
+            result.sessionId.isNotEmpty ? result.sessionId : _fallbackSessionId,
       ),
     );
     _draining = false;
@@ -219,7 +221,8 @@ class TranslationSpeechController extends ChangeNotifier {
 
   Future<void> reset() async {
     _stationId = null;
-    _sessionId = null;
+    _dayKey = null;
+    _fallbackSessionId = '';
     _fallbackLanguage = 'en';
     _seenRequestIds.clear();
     _queue.clear();

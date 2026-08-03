@@ -154,11 +154,17 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
           _txController.setStationOnline(online);
         });
         final ux = controller.state;
+        final stationDisplayState = liveStationDisplayState(
+          station: station,
+          online: online,
+          ux: ux,
+        );
         final entitlements = ref.watch(planEntitlementsProvider);
         final results = ref.watch(
           liveResultsProvider((
             stationId: widget.stationId,
-            sessionId: station.sessionId,
+            localDate: localDateKey(now),
+            timezoneOffsetMinutes: now.timeZoneOffset.inMinutes,
           )),
         );
         final items = results.value ?? const <TranslationResult>[];
@@ -212,8 +218,7 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
             Expanded(child: _TranslationFeed(value: results)),
             TxLiveDock(
               controller: _txController,
-              stationState:
-                  online ? station.captureState.toUpperCase() : 'OFFLINE',
+              stationState: stationDisplayState,
               stationOnline: online,
               apiOnline: apiOnline,
               onReview: _showTxReview,
@@ -303,6 +308,13 @@ class LiveHeader extends StatelessWidget implements PreferredSizeWidget {
   Widget build(BuildContext context) {
     final running = station.desired.running;
     final waiting = ux.busy || station.commandPending;
+    final transitionRunning = ux.pendingRunning ?? station.desired.running;
+    final buttonRunning = waiting ? transitionRunning : running;
+    final stationDisplayState = liveStationDisplayState(
+      station: station,
+      online: online,
+      ux: ux,
+    );
     return AppBar(
       key: const ValueKey('live-header'),
       toolbarHeight: 64,
@@ -320,13 +332,13 @@ class LiveHeader extends StatelessWidget implements PreferredSizeWidget {
           ),
           const SizedBox(height: 2),
           if (txController == null)
-            _RxBadge(station: station, online: online)
+            _RxBadge(stationState: stationDisplayState, online: online)
           else
             AnimatedBuilder(
               animation: txController!,
               builder:
                   (context, _) => _RxBadge(
-                    station: station,
+                    stationState: stationDisplayState,
                     online: online,
                     txActive:
                         txController!.state.phase == TxPhase.recording ||
@@ -345,28 +357,81 @@ class LiveHeader extends StatelessWidget implements PreferredSizeWidget {
         ),
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 10),
-          child: FilledButton.icon(
-            style: FilledButton.styleFrom(
-              minimumSize: const Size(88, 40),
-              backgroundColor:
-                  running ? const Color(0xFFF4B942) : PranaTheme.brandBlue,
-              foregroundColor: running ? const Color(0xFF2D2106) : Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-            ),
-            onPressed: onToggle,
-            icon:
+          child: Semantics(
+            liveRegion: waiting,
+            button: true,
+            enabled: !waiting && onToggle != null,
+            label:
                 waiting
-                    ? const SizedBox(
-                      width: 15,
-                      height: 15,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ? AppText.of(
+                      context,
+                      transitionRunning ? 'starting' : 'stopping',
                     )
-                    : Icon(running ? Icons.stop : Icons.play_arrow, size: 17),
-            label: Text(
-              waiting
-                  ? AppText.of(context, 'waiting')
-                  : AppText.of(context, running ? 'stop' : 'start'),
-              maxLines: 1,
+                    : AppText.of(context, running ? 'stop' : 'start'),
+            child: Material(
+              key: const ValueKey('live-toggle-button'),
+              color:
+                  buttonRunning
+                      ? const Color(0xFFF4B942)
+                      : PranaTheme.brandBlue,
+              borderRadius: BorderRadius.circular(12),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: waiting ? null : onToggle,
+                child: SizedBox(
+                  width: 118,
+                  height: 40,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (waiting)
+                        SizedBox(
+                          key: const ValueKey('live-toggle-progress'),
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.6,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              buttonRunning
+                                  ? const Color(0xFF2D2106)
+                                  : Colors.white,
+                            ),
+                          ),
+                        )
+                      else
+                        Icon(
+                          running ? Icons.stop : Icons.play_arrow,
+                          size: 17,
+                          color:
+                              buttonRunning
+                                  ? const Color(0xFF2D2106)
+                                  : Colors.white,
+                        ),
+                      const SizedBox(width: 7),
+                      Flexible(
+                        child: Text(
+                          waiting
+                              ? AppText.of(
+                                context,
+                                transitionRunning ? 'starting' : 'stopping',
+                              )
+                              : AppText.of(context, running ? 'stop' : 'start'),
+                          key: const ValueKey('live-toggle-label'),
+                          maxLines: 1,
+                          style: TextStyle(
+                            color:
+                                buttonRunning
+                                    ? const Color(0xFF2D2106)
+                                    : Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
         ),
@@ -376,25 +441,37 @@ class LiveHeader extends StatelessWidget implements PreferredSizeWidget {
   }
 }
 
+String liveStationDisplayState({
+  required StationModel station,
+  required bool online,
+  required LiveUxState ux,
+}) {
+  if (!online) return 'OFF';
+  if (ux.busy || station.commandPending) {
+    final pendingRunning = ux.pendingRunning ?? station.desired.running;
+    return pendingRunning ? 'STARTING' : 'STOPPING';
+  }
+  return station.captureState.toUpperCase();
+}
+
 class _RxBadge extends StatelessWidget {
   const _RxBadge({
-    required this.station,
+    required this.stationState,
     required this.online,
     this.txActive = false,
   });
-  final StationModel station;
+  final String stationState;
   final bool online;
   final bool txActive;
 
   @override
   Widget build(BuildContext context) {
-    final state =
-        txActive
-            ? 'TX'
-            : online
-            ? station.captureState.toUpperCase()
-            : 'OFF';
-    final active = txActive || online && station.captureState != 'idle';
+    final state = txActive ? 'TX' : stationState;
+    final active =
+        txActive ||
+        state == 'STARTING' ||
+        state == 'STOPPING' ||
+        online && state != 'IDLE';
     return Container(
       constraints: const BoxConstraints(minWidth: 62),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),

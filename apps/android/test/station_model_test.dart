@@ -80,6 +80,7 @@ void main() {
   test('translation result decodes its target speech language', () {
     final value = TranslationResult.fromMap({
       'request_id': 'request-1',
+      'session_id': 'session-2',
       'sequence': 1,
       'translation': 'Xin chào',
       'target_language': 'vi',
@@ -87,5 +88,6 @@ void main() {
     });
 
     expect(value.targetLanguage, 'vi');
+    expect(value.sessionId, 'session-2');
   });
 }
