@@ -50,6 +50,7 @@ Repository variables dùng cho staging tự động:
 | `GCP_ARTIFACT_REPOSITORY` | `prana-elex` |
 | `GCP_WIF_PROVIDER` | Terraform output `github_workload_identity_provider` |
 | `GCP_DEPLOYER_SERVICE_ACCOUNT` | Terraform output `github_deployer_service_account` |
+| `STAGING_CD_ENABLED` | Đặt `true` sau khi đã cấu hình đủ các variable ở trên |
 
 Tạo environment `staging-infra-plan` không có reviewer, chứa variables
 `GCP_WIF_PROVIDER`, `GCP_TERRAFORM_SERVICE_ACCOUNT` và secret
