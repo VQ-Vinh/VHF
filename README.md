@@ -87,6 +87,13 @@ run_android_emulator.bat
 
 ## Test
 
+Pull Request và mỗi commit trên `main` được GitHub Actions kiểm tra bằng required
+check `CI / gate`. Merge vào `main` chỉ deploy API/Admin staging khi source của
+service tương ứng thay đổi. Terraform, Android release và production luôn cần
+approval riêng; CI không sử dụng service-account JSON.
+
+Thiết lập, vận hành và rollback pipeline: [docs/cicd.md](docs/cicd.md).
+
 Windows PowerShell:
 
 ```powershell

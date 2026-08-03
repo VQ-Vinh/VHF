@@ -23,6 +23,14 @@ Run all tests from the repository root:
 python -m pytest
 ```
 
+GitHub Actions owns the required `CI / gate` check. A merge to `main` may
+automatically deploy only the changed API/Admin service to staging after that
+check succeeds. Do not bypass the gate or manually deploy a different image
+over a CI-managed staging revision unless performing a documented rollback.
+Terraform apply, Android release, and production promotion require their
+protected GitHub Environment approvals. CI/CD authentication must use GitHub
+OIDC Workload Identity Federation; never add a service-account JSON key.
+
 Build an Android APK for a physical phone with `build_android_apk.bat`, or a Linux artifact with `./buildlinux`. Platform-specific Windows build logic remains under `apps/windows/` but has no root wrapper while Android is the active development target. Packaging validation tests exercise the generated layouts; backend development can be started with `uvicorn services.prana_api.main:app --reload --port 8080` after installing that service's requirements.
 
 Do not automatically build an APK after routine Android source or UI changes. During normal iteration, run formatting, static analysis, and targeted tests only. Build an APK only when the user explicitly requests it, when APK/release packaging is the task itself, or when a Gradle/package/device-only issue cannot be validated by lighter checks. Do not rebuild merely to provide a fresh artifact after every edit.
