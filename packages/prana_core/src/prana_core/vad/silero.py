@@ -25,6 +25,7 @@ class SileroVAD(VADBackend):
         try:
             import silero_vad
             self._model = silero_vad.load_silero_vad()
+            self._warm_up()
             logger.info("Silero VAD model loaded")
         except ImportError:
             logger.warning("silero-vad not installed, attempting torch hub fallback")
@@ -36,6 +37,7 @@ class SileroVAD(VADBackend):
                     onnx=False,
                     trust_repo=True,
                 )
+                self._warm_up()
             except Exception as e:
                 logger.error(f"Failed to load Silero VAD model: {e}")
                 self._model = None
@@ -139,11 +141,19 @@ class SileroVAD(VADBackend):
         return segments
 
     def reset(self) -> None:
-        pass
+        if self._model is not None and hasattr(self._model, "reset_states"):
+            self._model.reset_states()
 
     @property
     def name(self) -> str:
         return "silero"
+
+    def _warm_up(self) -> None:
+        if self._model is None:
+            return
+        with torch.no_grad():
+            self._model(torch.zeros(1, 512), 16000)
+        self.reset()
 
     @staticmethod
     def _resample(audio: np.ndarray, orig_sr: int, target_sr: int) -> np.ndarray:

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import queue
 import threading
+import time
 from typing import Callable
 
 import numpy as np
@@ -14,6 +16,7 @@ logger = get_logger(__name__)
 
 
 class PulseBackend(AudioBackend):
+    _QUEUE_CAPACITY = 128
     _pa = None
     _pa_lock = threading.Lock()
 
@@ -21,6 +24,12 @@ class PulseBackend(AudioBackend):
         self._stream = None
         self._running = False
         self._sample_rate = 0
+        self._audio_queue: queue.Queue[bytes | None] | None = None
+        self._capture_worker: threading.Thread | None = None
+        self._worker: threading.Thread | None = None
+        self._callback: Callable[[np.ndarray], None] | None = None
+        self._channels = 1
+        self._dropped_frames = 0
 
     @property
     def name(self) -> str:
@@ -59,6 +68,10 @@ class PulseBackend(AudioBackend):
             channels = device_info["maxInputChannels"]
 
         frames_per_buffer = config.frame_size
+        self._audio_queue = queue.Queue(maxsize=self._QUEUE_CAPACITY)
+        self._callback = callback
+        self._channels = channels
+        self._dropped_frames = 0
 
         logger.info(
             "Starting audio capture",
@@ -70,17 +83,6 @@ class PulseBackend(AudioBackend):
             },
         )
 
-        def pa_callback(in_data, frame_count, time_info, status):
-            try:
-                audio = np.frombuffer(in_data, dtype=np.int16).reshape(-1, channels)
-                if channels > 1 and config.channels == 1:
-                    audio = audio.mean(axis=1)
-                if self._running and callback:
-                    callback(audio)
-            except Exception:
-                logger.exception("Audio callback error")
-            return (None, pyaudio.paContinue)
-
         try:
             self._stream = pa.open(
                 format=pyaudio.paInt16,
@@ -89,12 +91,27 @@ class PulseBackend(AudioBackend):
                 input=True,
                 input_device_index=dev_index,
                 frames_per_buffer=frames_per_buffer,
-                stream_callback=pa_callback,
             )
             self._stream.start_stream()
-            self._running = True
             self._sample_rate = sr
+            self._running = True
+            self._worker = threading.Thread(
+                target=self._process_audio,
+                args=(config.channels,),
+                name="prana-audio-processing",
+                daemon=True,
+            )
+            self._capture_worker = threading.Thread(
+                target=self._capture_audio,
+                args=(frames_per_buffer,),
+                name="prana-audio-capture",
+                daemon=True,
+            )
+            self._worker.start()
+            self._capture_worker.start()
         except Exception as e:
+            self._running = False
+            self._stop_worker()
             raise AudioStreamError(f"Failed to open audio stream: {e}") from e
 
     def close_stream(self) -> None:
@@ -107,11 +124,97 @@ class PulseBackend(AudioBackend):
             except Exception as e:
                 logger.warning("Error closing audio stream", exc_info=e)
             self._stream = None
+        self._stop_worker()
         logger.info("Audio capture stopped")
 
     @property
     def is_running(self) -> bool:
         return self._running
+
+    def _capture_audio(self, frame_count: int) -> None:
+        while self._running:
+            stream = self._stream
+            audio_queue = self._audio_queue
+            if stream is None or audio_queue is None:
+                return
+            try:
+                item = stream.read(frame_count, exception_on_overflow=False)
+            except Exception:
+                if self._running:
+                    logger.exception("Audio input read failed")
+                return
+            try:
+                audio_queue.put_nowait(item)
+            except queue.Full:
+                # Preserve the live edge instead of allowing delayed audio to
+                # accumulate when processing is temporarily slower than capture.
+                try:
+                    audio_queue.get_nowait()
+                except queue.Empty:
+                    pass
+                try:
+                    audio_queue.put_nowait(item)
+                except queue.Full:
+                    pass
+                self._dropped_frames += frame_count
+
+    def _process_audio(self, requested_channels: int) -> None:
+        reported_drops = 0
+        last_drop_log = 0.0
+        while True:
+            audio_queue = self._audio_queue
+            if audio_queue is None:
+                return
+            item = audio_queue.get()
+            if item is None:
+                return
+            try:
+                audio = np.frombuffer(item, dtype=np.int16).reshape(
+                    -1, self._channels
+                )
+                if self._channels > 1 and requested_channels == 1:
+                    audio = audio.mean(axis=1)
+                callback = self._callback
+                if self._running and callback is not None:
+                    callback(audio)
+            except Exception:
+                logger.exception("Audio processing error")
+            now = time.monotonic()
+            if self._dropped_frames != reported_drops and now - last_drop_log >= 5:
+                reported_drops = self._dropped_frames
+                last_drop_log = now
+                logger.warning(
+                    "Audio processing queue dropped %d frames",
+                    reported_drops,
+                )
+
+    def _stop_worker(self) -> None:
+        audio_queue = self._audio_queue
+        capture_worker = self._capture_worker
+        worker = self._worker
+        if (
+            capture_worker is not None
+            and capture_worker is not threading.current_thread()
+        ):
+            capture_worker.join(timeout=2)
+        if audio_queue is not None:
+            try:
+                audio_queue.put_nowait(None)
+            except queue.Full:
+                try:
+                    audio_queue.get_nowait()
+                except queue.Empty:
+                    pass
+                try:
+                    audio_queue.put_nowait(None)
+                except queue.Full:
+                    pass
+        if worker is not None and worker is not threading.current_thread():
+            worker.join(timeout=2)
+        self._capture_worker = None
+        self._worker = None
+        self._audio_queue = None
+        self._callback = None
 
     def _resolve_device(self, config: AudioConfig, pa) -> dict:
         idx = config.device_index
