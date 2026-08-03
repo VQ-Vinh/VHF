@@ -2,8 +2,11 @@
 .venv/
 .Python
 
-# Runtime data (audio, results, logs)
+# Local recordings and generated processing results
 VHF_Storage/
+
+# Local process metadata, logs and diagnostic artifacts
+.prana/
 
 # Station activation labels contain private activation codes
 stations/
@@ -26,6 +29,7 @@ credentials.json
 .terraform/
 *.tfstate
 *.tfstate.*
+*.tfplan
 *.tfvars
 !*.tfvars.example
 

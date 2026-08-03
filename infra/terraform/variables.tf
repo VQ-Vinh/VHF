@@ -1,4 +1,13 @@
 variable "project_id" { type = string }
+variable "github_repository" {
+  type        = string
+  default     = "VQ-Vinh/VHF"
+  description = "Exact GitHub owner/repository accepted by the Workload Identity Provider."
+}
+variable "terraform_state_bucket" {
+  type        = string
+  description = "Existing GCS bucket used by the Terraform backend."
+}
 variable "environment" {
   type = string
   validation {

@@ -4,6 +4,7 @@ locals {
     "artifactregistry.googleapis.com",
     "billingbudgets.googleapis.com",
     "cloudbuild.googleapis.com",
+    "cloudbilling.googleapis.com",
     "cloudresourcemanager.googleapis.com",
     "firestore.googleapis.com",
     "firebase.googleapis.com",
@@ -11,10 +12,22 @@ locals {
     "identitytoolkit.googleapis.com",
     "iap.googleapis.com",
     "iam.googleapis.com",
+    "iamcredentials.googleapis.com",
     "orgpolicy.googleapis.com",
     "run.googleapis.com",
     "secretmanager.googleapis.com",
     "storage.googleapis.com",
+    "sts.googleapis.com",
+  ])
+
+  terraform_ci_project_roles = toset([
+    "roles/editor",
+    "roles/firebase.admin",
+    "roles/iam.serviceAccountAdmin",
+    "roles/iap.admin",
+    "roles/resourcemanager.projectIamAdmin",
+    "roles/secretmanager.admin",
+    "roles/serviceusage.serviceUsageAdmin",
   ])
 }
 
@@ -297,6 +310,21 @@ resource "google_firestore_index" "stations_owner_platform" {
   }
 }
 
+resource "google_firestore_index" "station_live_results" {
+  project     = var.project_id
+  database    = google_firestore_database.production.name
+  collection  = "results"
+  query_scope = "COLLECTION_GROUP"
+  fields {
+    field_path = "station_id"
+    order      = "ASCENDING"
+  }
+  fields {
+    field_path = "timestamp"
+    order      = "DESCENDING"
+  }
+}
+
 resource "google_firebaserules_ruleset" "firestore_deny_client" {
   project = var.project_id
   source {
@@ -350,6 +378,87 @@ resource "google_service_account" "deployer" {
   display_name = "PRANA CI deployer"
 }
 
+resource "google_service_account" "terraform_ci" {
+  account_id   = "prana-terraform"
+  display_name = "PRANA approved Terraform automation"
+}
+
+resource "google_service_account" "release_reader" {
+  account_id   = "prana-release-reader"
+  display_name = "PRANA production promotion staging image reader"
+}
+
+resource "google_iam_workload_identity_pool" "github" {
+  workload_identity_pool_id = "github-actions"
+  display_name              = "GitHub Actions"
+  depends_on                = [google_project_service.apis]
+}
+
+resource "google_iam_workload_identity_pool_provider" "github" {
+  workload_identity_pool_id          = google_iam_workload_identity_pool.github.workload_identity_pool_id
+  workload_identity_pool_provider_id = "github"
+  display_name                       = "VQ-Vinh VHF GitHub OIDC"
+  attribute_mapping = {
+    "google.subject"       = "assertion.sub"
+    "attribute.repository" = "assertion.repository"
+    "attribute.ref"        = "assertion.ref"
+  }
+  attribute_condition = "assertion.repository == '${var.github_repository}'"
+  oidc {
+    issuer_uri = "https://token.actions.githubusercontent.com"
+  }
+}
+
+resource "google_service_account_iam_member" "github_deploys_main" {
+  service_account_id = google_service_account.deployer.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "principal://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/subject/repo:${var.github_repository}:ref:refs/heads/main"
+}
+
+resource "google_service_account_iam_member" "github_terraform_plan" {
+  service_account_id = google_service_account.terraform_ci.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "principal://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/subject/repo:${var.github_repository}:environment:staging-infra-plan"
+}
+
+resource "google_service_account_iam_member" "github_terraform_apply" {
+  service_account_id = google_service_account.terraform_ci.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "principal://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/subject/repo:${var.github_repository}:environment:staging-infra"
+}
+
+resource "google_service_account_iam_member" "github_release_reader" {
+  service_account_id = google_service_account.release_reader.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "principal://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/subject/repo:${var.github_repository}:environment:production"
+}
+
+resource "google_project_iam_member" "terraform_ci" {
+  for_each = local.terraform_ci_project_roles
+  project  = var.project_id
+  role     = each.value
+  member   = google_service_account.terraform_ci.member
+}
+
+resource "google_project_iam_member" "terraform_ci_org_policy" {
+  count   = var.manage_project_key_policies ? 1 : 0
+  project = var.project_id
+  role    = "roles/orgpolicy.policyAdmin"
+  member  = google_service_account.terraform_ci.member
+}
+
+resource "google_billing_account_iam_member" "terraform_ci_budget" {
+  billing_account_id = var.billing_account
+  role               = "roles/billing.costsManager"
+  member             = google_service_account.terraform_ci.member
+}
+
+resource "google_storage_bucket_iam_member" "terraform_ci_state" {
+  bucket = var.terraform_state_bucket
+  role   = "roles/storage.objectAdmin"
+  member = google_service_account.terraform_ci.member
+}
+
 resource "google_project_iam_member" "api_vertex" {
   project = var.project_id
   role    = "roles/aiplatform.user"
@@ -401,9 +510,22 @@ resource "google_artifact_registry_repository_iam_member" "deployer_images" {
   member     = google_service_account.deployer.member
 }
 
+resource "google_artifact_registry_repository_iam_member" "release_reader_images" {
+  location   = google_artifact_registry_repository.containers.location
+  repository = google_artifact_registry_repository.containers.name
+  role       = "roles/artifactregistry.reader"
+  member     = google_service_account.release_reader.member
+}
+
 resource "google_project_iam_member" "deployer_run" {
   project = var.project_id
   role    = "roles/run.admin"
+  member  = google_service_account.deployer.member
+}
+
+resource "google_project_iam_member" "deployer_logs" {
+  project = var.project_id
+  role    = "roles/logging.viewer"
   member  = google_service_account.deployer.member
 }
 
@@ -437,10 +559,6 @@ resource "google_cloud_run_v2_service" "api" {
       env {
         name  = "PRANA_API_ENVIRONMENT"
         value = var.environment
-      }
-      env {
-        name  = "PRANA_API_RUNTIME_IMAGE"
-        value = var.api_image
       }
       env {
         name  = "PRANA_API_GOOGLE_CLOUD_PROJECT"
@@ -505,6 +623,11 @@ resource "google_cloud_run_v2_service" "api" {
     google_project_service.apis,
     google_secret_manager_secret_iam_member.api_google_oauth_secret,
   ]
+  lifecycle {
+    # Application revisions are owned by GitHub CD after Terraform creates the
+    # service. Infrastructure plans must never roll a verified digest backward.
+    ignore_changes = [template[0].containers[0].image]
+  }
 }
 
 resource "google_cloud_run_v2_service" "admin" {
@@ -543,6 +666,11 @@ resource "google_cloud_run_v2_service" "admin" {
     google_project_service.apis,
     google_secret_manager_secret_iam_member.admin_csrf_secret,
   ]
+  lifecycle {
+    # Keep Terraform responsible for service configuration while GitHub CD owns
+    # the immutable application image deployed to each revision.
+    ignore_changes = [template[0].containers[0].image]
+  }
 }
 
 resource "google_cloud_run_v2_service_iam_member" "iap_invoker" {

@@ -1,4 +1,6 @@
 project_id                   = "prana-elex-production"
+github_repository            = "VQ-Vinh/VHF"
+terraform_state_bucket       = "prana-elex-production-tfstate"
 environment                  = "production"
 deploy_services              = false
 region                       = "us-central1"
