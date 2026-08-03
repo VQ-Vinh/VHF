@@ -93,6 +93,53 @@ TranslationResult sameLanguageResult(String id, {String language = 'vi-VN'}) =>
     );
 
 void main() {
+  test(
+    'disabled auto playback skips results and resumes with new ones',
+    () async {
+      final engine = FakeSpeechEngine();
+      final source = FakeSourceAudioEngine();
+      final controller = TranslationSpeechController(engine, source);
+      controller.trackStation('station-1', '2026-07-28');
+      controller.ingest(const [], fallbackLanguage: 'vi');
+
+      await controller.setAutoPlaybackEnabled(false);
+      controller.ingest([result('muted', 1)], fallbackLanguage: 'vi');
+      await settleSpeech();
+      expect(engine.spoken, isEmpty);
+      expect(controller.autoPlaybackEnabled, isFalse);
+      expect(engine.stopCalls, greaterThanOrEqualTo(1));
+      expect(source.stopCalls, greaterThanOrEqualTo(1));
+
+      await controller.setAutoPlaybackEnabled(true);
+      controller.ingest([
+        result('muted', 1),
+        result('new', 2),
+      ], fallbackLanguage: 'vi');
+      await settleSpeech();
+
+      expect(engine.spoken, [('Bản dịch', 'vi-VN')]);
+    },
+  );
+
+  test(
+    'manual playback remains available while auto playback is disabled',
+    () async {
+      final engine = FakeSpeechEngine();
+      final controller = TranslationSpeechController(
+        engine,
+        FakeSourceAudioEngine(),
+      );
+      controller.trackStation('station-1', '2026-07-28');
+      await controller.setAutoPlaybackEnabled(false);
+
+      await controller.speakNow(result('manual-muted', 1));
+      await settleSpeech();
+
+      expect(engine.spoken, [('Bản dịch', 'vi-VN')]);
+      expect(controller.autoPlaybackEnabled, isFalse);
+    },
+  );
+
   test('same source and target language plays original audio', () async {
     final speech = FakeSpeechEngine();
     final source = FakeSourceAudioEngine();

@@ -1,11 +1,50 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:prana_mobile/core/localization.dart';
 import 'package:prana_mobile/core/theme.dart';
 import 'package:prana_mobile/features/live/live_controller.dart';
 import 'package:prana_mobile/features/live/live_screen.dart';
 import 'package:prana_mobile/models/station.dart';
+import 'package:prana_mobile/providers.dart';
+import 'package:prana_mobile/services/source_audio.dart';
+import 'package:prana_mobile/services/translation_speech.dart';
+
+class _NoopSpeechEngine implements SpeechEngine {
+  int stopCalls = 0;
+
+  @override
+  Future<String?> resolveLocale(String preferredLocale) async =>
+      preferredLocale;
+
+  @override
+  Future<void> speak(String text, String locale) async {}
+
+  @override
+  Future<void> stop() async {
+    stopCalls++;
+  }
+}
+
+class _NoopSourceAudioEngine implements SourceAudioEngine {
+  int stopCalls = 0;
+
+  @override
+  Future<void> clearCache() async {}
+
+  @override
+  Future<void> play(
+    String stationId,
+    String sessionId,
+    String requestId,
+  ) async {}
+
+  @override
+  Future<void> stop() async {
+    stopCalls++;
+  }
+}
 
 void main() {
   StationModel station({String name = 'VINH', bool running = true}) =>
@@ -51,6 +90,39 @@ void main() {
         ),
     home: child,
   );
+
+  testWidgets('live audio toggle sits beside history and stops auto playback', (
+    tester,
+  ) async {
+    final speechEngine = _NoopSpeechEngine();
+    final sourceAudio = _NoopSourceAudioEngine();
+    final controller = TranslationSpeechController(speechEngine, sourceAudio);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          translationSpeechProvider.overrideWith((ref) => controller),
+        ],
+        child: harness(
+          size: const Size(360, 800),
+          child: Scaffold(
+            body: LiveFeedHeader(onHistory: () {}, count: 2, limit: 10),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byIcon(Icons.volume_up_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.history), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('live-audio-toggle')));
+    await tester.pump();
+
+    expect(find.byIcon(Icons.volume_off_outlined), findsOneWidget);
+    expect(controller.autoPlaybackEnabled, isFalse);
+    expect(speechEngine.stopCalls, 1);
+    expect(sourceAudio.stopCalls, 1);
+  });
 
   testWidgets('live header stays compact on a 360dp screen', (tester) async {
     tester.view.physicalSize = const Size(360, 800);
