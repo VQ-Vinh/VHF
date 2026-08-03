@@ -199,6 +199,9 @@ class SegmentProcessor:
                 processing_notes=[str(exc)],
             )
             self._failed_audio[(sid, seq)] = (audio_path, job.target_language)
+        # The API identifies source audio by session/sequence, but the local
+        # result must be paired with the timestamped WAV written above.
+        result.audio_file = audio_path.name
         tracker.mark("backend_done")
 
         process_ms = tracker.total_ms()
@@ -266,6 +269,7 @@ class SegmentProcessor:
             sequence,
             target_language,
         )
+        result.audio_file = audio_path.name
         if not result.target_language:
             result.target_language = target_language
         tracker.mark("backend_done")
@@ -313,6 +317,7 @@ class SegmentProcessor:
                 sequence,
                 target_language,
             )
+            result.audio_file = audio_path.name
             self._storage.save_result(result)
             self._failed_audio.pop((session_id, sequence), None)
             self._publish_result(result)

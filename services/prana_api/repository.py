@@ -6,6 +6,7 @@ import hashlib
 from typing import Protocol
 
 from google.cloud import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 from services.prana_api.errors import api_error
 from services.prana_api.models import (
@@ -116,6 +117,14 @@ class Repository(Protocol):
         station_id: str,
         session_id: str,
         plan: Plan,
+        limit: int,
+    ) -> list[dict]: ...
+    def list_station_live_results(
+        self,
+        uid: str,
+        station_id: str,
+        start_at: datetime,
+        end_at: datetime,
         limit: int,
     ) -> list[dict]: ...
     def list_station_history_results(
@@ -880,6 +889,43 @@ class FirestoreRepository:
         values = [snap.to_dict() for snap in (*unlocked, *recent)]
         values.sort(key=lambda item: item.get("timestamp") or now)
         return values
+
+    def list_station_live_results(
+        self,
+        uid: str,
+        station_id: str,
+        start_at: datetime,
+        end_at: datetime,
+        limit: int,
+    ) -> list[dict]:
+        station_ref = self._user_ref(uid).collection("stations").document(station_id)
+        station = station_ref.get()
+        if not station.exists or not station.to_dict().get("active", True):
+            raise api_error(404, "STATION_NOT_FOUND", "Station was not found")
+
+        snapshots = (
+            self.db.collection_group("results")
+            .where(filter=FieldFilter("station_id", "==", station_id))
+            .where(filter=FieldFilter("timestamp", ">=", start_at))
+            .where(filter=FieldFilter("timestamp", "<", end_at))
+            .order_by("timestamp", direction=firestore.Query.DESCENDING)
+            .limit(1000)
+            .stream()
+        )
+        unique: dict[str, dict] = {}
+        owner_prefix = f"users/{uid}/stations/{station_id}/sessions/"
+        for snapshot in snapshots:
+            if not snapshot.reference.path.startswith(owner_prefix):
+                continue
+            value = snapshot.to_dict()
+            request_id = str(value.get("request_id") or snapshot.id)
+            unique[request_id] = value
+        values = sorted(
+            unique.values(),
+            key=lambda item: item.get("timestamp") or start_at,
+            reverse=True,
+        )[:limit]
+        return sorted(values, key=lambda item: item.get("timestamp") or start_at)
 
     def list_station_history_results(
         self,

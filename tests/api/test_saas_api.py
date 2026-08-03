@@ -67,6 +67,17 @@ class FakeArchive:
         pass
 
 
+class FlakyArchive:
+    def __init__(self):
+        self.calls = 0
+
+    def archive(self, *_args):
+        self.calls += 1
+        if self.calls == 1:
+            raise RuntimeError("temporary storage failure")
+        return "customers/user-1/recovered.wav"
+
+
 class SaasApiTests(unittest.TestCase):
     def setUp(self):
         self.repo = MemoryRepository()
@@ -175,6 +186,25 @@ class SaasApiTests(unittest.TestCase):
         self.assertEqual(conflict.status_code, 409)
         self.assertEqual(conflict.json()["detail"]["code"], "IDEMPOTENCY_CONFLICT")
         self.assertEqual(self.repo.get_usage("user-1", self.plan).used_audio_seconds, 1)
+
+    def test_archive_failure_is_retryable_instead_of_cached_as_success(self):
+        request_id = str(uuid.uuid4())
+        archive = FlakyArchive()
+        with (
+            patch("services.prana_api.main.get_processor", return_value=FakeProcessor(None)),
+            patch("services.prana_api.main.get_archive", return_value=archive),
+        ):
+            failed = self._audio_request(request_id)
+            retried = self._audio_request(request_id)
+
+        self.assertEqual(failed.status_code, 503)
+        self.assertEqual(retried.status_code, 200, retried.text)
+        self.assertEqual(archive.calls, 2)
+        self.assertEqual(FakeProcessor.calls, 2)
+        self.assertEqual(
+            self.repo.get_usage("user-1", self.plan).used_audio_seconds,
+            1,
+        )
 
     def test_revoked_or_bad_signature_is_blocked(self):
         request_id = str(uuid.uuid4())

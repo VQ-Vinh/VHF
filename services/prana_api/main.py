@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import secrets
 import time
 import re
@@ -22,7 +23,11 @@ from services.prana_api.auth import (
 )
 from services.prana_api.config import get_settings
 from services.prana_api.errors import api_error
-from services.prana_api.google_services import CloudStorageArchive, GeminiProcessor
+from services.prana_api.google_services import (
+    CloudStorageArchive,
+    GeminiProcessor,
+    station_audio_filename,
+)
 from services.prana_api.google_auth import (
     AuthRateLimiter,
     FirestoreAuthRateLimiter,
@@ -63,6 +68,7 @@ from services.prana_api.security import (
 )
 
 app = FastAPI(title="PRANA ELEX API", version="1.2.0", docs_url=None, redoc_url=None)
+logger = logging.getLogger(__name__)
 
 
 @app.exception_handler(Aborted)
@@ -596,6 +602,38 @@ def list_station_history_day_results(
 
 
 @app.get(
+    "/v1/stations/{station_id}/live/results",
+    response_model=list[ProcessingResponse],
+)
+def list_station_live_results(
+    station_id: str,
+    timezone_offset_minutes: int = 0,
+    limit: int = 1000,
+    identity: Identity = Depends(require_identity),
+    repo: Repository = Depends(get_repository),
+):
+    account, plan = active_account(identity, repo)
+    local_timezone = _history_timezone(timezone_offset_minutes)
+    local_now = datetime.now(timezone.utc).astimezone(local_timezone)
+    local_start = datetime.combine(local_now.date(), datetime.min.time(), local_timezone)
+    start_at = local_start.astimezone(timezone.utc)
+    end_at = (local_start + timedelta(days=1)).astimezone(timezone.utc)
+    safe_limit = max(1, min(limit, 1000))
+    entitled_limit = (
+        safe_limit
+        if plan.live_log_limit == 0
+        else min(safe_limit, plan.live_log_limit)
+    )
+    return repo.list_station_live_results(
+        account.uid,
+        station_id,
+        start_at,
+        end_at,
+        entitled_limit,
+    )
+
+
+@app.get(
     "/v1/stations/{station_id}/sessions/{session_id}/results",
     response_model=list[ProcessingResponse],
 )
@@ -860,9 +898,18 @@ def process_audio(
     try:
         get_archive().archive(identity.uid, session_id, request_id, data, response)
     except Exception:
+        logger.exception(
+            "Cloud archive failed",
+            extra={"request_id": request_id, "session_id": session_id},
+        )
         metrics["archive_failed"] = True
-        repo.settle_success(identity.uid, request_id, response, metrics)
-        raise api_error(503, "SERVICE_USAGE_LIMIT_REACHED", "Result was processed but cloud archival is temporarily unavailable")
+        repo.settle_failure(identity.uid, request_id, "ARCHIVE_FAILED", metrics)
+        raise api_error(
+            503,
+            "SERVICE_BUSY",
+            "Result was processed but cloud archival is temporarily unavailable",
+            retry_after=2,
+        )
     repo.settle_success(identity.uid, request_id, response, metrics)
     return processed_response
 
@@ -902,6 +949,10 @@ def process_station_audio(
     owner_uid = station.get("owner_uid")
     if not owner_uid:
         raise api_error(403, "STATION_NOT_PAIRED", "Station has not been paired")
+    stored_audio_filename, stored_date_path = station_audio_filename(
+        audio.filename,
+        sequence,
+    )
     verify_device_signature(
         station["public_key"],
         signature,
@@ -961,7 +1012,10 @@ def process_station_audio(
         )
 
     processed_response = model_result.response.model_copy(
-        update={"target_language": target_language}
+        update={
+            "target_language": target_language,
+            "audio_file": stored_audio_filename,
+        }
     )
     response = {
         **processed_response.model_dump(mode="json"),
@@ -977,18 +1031,27 @@ def process_station_audio(
         }
     )
     try:
-        audio_object = get_archive().archive(
-            owner_uid,
-            session_id,
-            request_id,
+        audio_object = get_archive().archive_station(
+            station_id,
+            str(station.get("name") or ""),
+            stored_audio_filename,
+            stored_date_path,
             data,
             response,
         )
         if audio_object:
             response["_source_audio_object"] = audio_object
     except Exception:
+        logger.exception(
+            "Station cloud archive failed",
+            extra={
+                "request_id": request_id,
+                "session_id": session_id,
+                "station_id": station_id,
+            },
+        )
         metrics["archive_failed"] = True
-        repo.settle_success(owner_uid, request_id, response, metrics)
+        repo.settle_failure(owner_uid, request_id, "ARCHIVE_FAILED", metrics)
         raise api_error(
             503,
             "SERVICE_BUSY",

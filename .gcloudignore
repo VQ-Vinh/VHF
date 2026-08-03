@@ -10,6 +10,7 @@ venv/
 *.tfvars
 !*.tfvars.example
 VHF_Storage/
+.prana/
 build/
 dist/
 release/

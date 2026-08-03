@@ -53,10 +53,36 @@ class Processor:
 class Archive:
     def __init__(self):
         self.audio = {}
+        self.station_calls = []
 
     def archive(self, *_args):
         uid, session_id, request_id, audio, _response = _args
         object_name = f"customers/{uid}/{session_id}/{request_id}.wav"
+        self.audio[object_name] = audio
+        return object_name
+
+    def archive_station(
+        self,
+        station_id,
+        station_name,
+        audio_filename,
+        date_path,
+        audio,
+        response,
+    ):
+        object_name = (
+            f"VHF-Storage/{station_name}_{station_id[:8]}/audio/"
+            f"{date_path}/{audio_filename}"
+        )
+        self.station_calls.append(
+            {
+                "station_id": station_id,
+                "station_name": station_name,
+                "audio_filename": audio_filename,
+                "date_path": date_path,
+                "response": dict(response),
+            }
+        )
         self.audio[object_name] = audio
         return object_name
 
@@ -618,6 +644,48 @@ class StationApiTests(unittest.TestCase):
             [1, 3, 4],
         )
 
+    def test_live_results_merge_today_across_sessions_and_apply_plan_limit(self):
+        self.create_and_claim()
+        local_timezone = timezone(timedelta(hours=7))
+        local_now = datetime.now(timezone.utc).astimezone(local_timezone)
+        timestamps = [
+            local_now - timedelta(days=1),
+            local_now.replace(hour=8, minute=0, second=0, microsecond=0),
+            local_now.replace(hour=9, minute=0, second=0, microsecond=0),
+            local_now.replace(hour=10, minute=0, second=0, microsecond=0),
+        ]
+        for sequence, timestamp in enumerate(timestamps, start=1):
+            self.repo.publish_station_result(
+                self.identity.uid,
+                self.station_id,
+                ProcessingResponse(
+                    request_id=f"live-request-{sequence}",
+                    station_id=self.station_id,
+                    session_id=f"session-{sequence}",
+                    sequence=sequence,
+                    audio_file=f"{sequence}.wav",
+                    timestamp=timestamp.astimezone(timezone.utc),
+                ).model_dump(mode="json"),
+            )
+        self.repo.plans["free"] = self.repo.plans["free"].model_copy(
+            update={"live_log_limit": 2}
+        )
+
+        response = self.client.get(
+            f"/v1/stations/{self.station_id}/live/results",
+            params={"timezone_offset_minutes": 420, "limit": 1000},
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(
+            [item["request_id"] for item in response.json()],
+            ["live-request-3", "live-request-4"],
+        )
+        self.assertEqual(
+            [item["session_id"] for item in response.json()],
+            ["session-3", "session-4"],
+        )
+
     def test_history_groups_sessions_by_local_day_and_locks_today(self):
         self.create_and_claim()
         local_timezone = timezone(timedelta(hours=7))
@@ -741,7 +809,13 @@ class StationApiTests(unittest.TestCase):
                     "sequence": "1",
                     "request_id": request_id,
                 },
-                files={"audio": ("segment.wav", audio, "audio/wav")},
+                files={
+                    "audio": (
+                        "20260803_110002_0001.wav",
+                        audio,
+                        "audio/wav",
+                    )
+                },
             )
             repeated = self.client.post(
                 f"/v1/stations/{self.station_id}/audio/process",
@@ -756,7 +830,13 @@ class StationApiTests(unittest.TestCase):
                     "sequence": "1",
                     "request_id": request_id,
                 },
-                files={"audio": ("segment.wav", audio, "audio/wav")},
+                files={
+                    "audio": (
+                        "20260803_110002_0001.wav",
+                        audio,
+                        "audio/wav",
+                    )
+                },
             )
             source = self.client.get(
                 f"/v1/stations/{self.station_id}/sessions/session-1/"
@@ -788,11 +868,22 @@ class StationApiTests(unittest.TestCase):
         self.assertEqual(Processor.calls, 1)
         self.assertEqual(response.json()["station_id"], self.station_id)
         self.assertEqual(response.json()["target_language"], "vi")
+        self.assertEqual(
+            response.json()["audio_file"],
+            "20260803_110002_0001.wav",
+        )
         self.assertNotIn("_source_audio_object", response.json())
         key = (self.identity.uid, self.station_id, "session-1", request_id)
         self.assertIn(key, self.repo.station_results)
         self.assertEqual(self.repo.station_results[key]["target_language"], "vi")
+        self.assertEqual(
+            self.repo.station_results[key]["audio_file"],
+            "20260803_110002_0001.wav",
+        )
         self.assertIn("_source_audio_object", self.repo.station_results[key])
+        self.assertEqual(len(archive.station_calls), 1)
+        self.assertEqual(archive.station_calls[0]["station_name"], "Bridge Pi")
+        self.assertEqual(archive.station_calls[0]["date_path"], "2026/08/03")
         usage = self.repo.get_usage(self.identity.uid, self.repo.plans["free"])
         self.assertEqual(usage.used_audio_seconds, 1)
 

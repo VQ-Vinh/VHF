@@ -110,7 +110,8 @@ class LocalStorage:
         threshold_ts = time.time() - (max_days * 86400)
         count = 0
 
-        for path in list(self._audio_dir.rglob("*")) + list(self._result_dir.rglob("*")):
+        roots = (self._audio_dir, self._result_dir)
+        for path in [item for root in roots for item in root.rglob("*")]:
             if not path.is_file():
                 continue
             try:
@@ -126,9 +127,28 @@ class LocalStorage:
                         path.unlink()
                         count += 1
             except (ValueError, OSError):
-                if path.stat().st_mtime < threshold_ts:
-                    path.unlink()
-                    count += 1
+                try:
+                    if path.stat().st_mtime < threshold_ts:
+                        path.unlink()
+                        count += 1
+                except OSError:
+                    logger.warning("Could not inspect or remove expired file: %s", path)
+
+        # Remove the now-empty YYYY/MM/DD hierarchy, deepest directories first.
+        # Keep the configured audio/results roots themselves in place.
+        for root in roots:
+            directories = sorted(
+                (path for path in root.rglob("*") if path.is_dir()),
+                key=lambda path: len(path.parts),
+                reverse=True,
+            )
+            for directory in directories:
+                try:
+                    directory.rmdir()
+                except OSError:
+                    # Non-empty directories and transient filesystem errors are
+                    # safe to leave for the next retention pass.
+                    continue
 
         if count:
             logger.info(f"Cleaned up {count} old files (> {max_days} days)")

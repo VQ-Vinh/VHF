@@ -542,6 +542,31 @@ class MemoryRepository:
             key=_result_timestamp,
         )
 
+    def list_station_live_results(
+        self,
+        uid: str,
+        station_id: str,
+        start_at: datetime,
+        end_at: datetime,
+        limit: int,
+    ) -> list[dict]:
+        station = self.station_projections.get(uid, {}).get(station_id)
+        if not station or not station.get("active", True):
+            raise api_error(404, "STATION_NOT_FOUND", "Station was not found")
+        values = [
+            dict(value)
+            for (owner, station_key, _, _), value in self.station_results.items()
+            if owner == uid
+            and station_key == station_id
+            and start_at <= _result_timestamp(value) < end_at
+        ]
+        unique = {
+            str(value.get("request_id") or index): value
+            for index, value in enumerate(values)
+        }
+        ordered = sorted(unique.values(), key=_result_timestamp, reverse=True)
+        return sorted(ordered[:limit], key=_result_timestamp)
+
     def list_station_history_results(
         self,
         uid: str,

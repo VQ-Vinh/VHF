@@ -48,6 +48,18 @@ def test_enable_station_uses_cloud_without_customer_adc_by_default() -> None:
     assert local_branch < script.index("Confirm-GoogleAdc", local_branch)
 
 
+def test_runtime_logs_and_pids_stay_outside_recording_storage() -> None:
+    script = _read("scripts/dev/enable-station.ps1")
+
+    assert 'Join-Path $root ".prana\\runtime"' in script
+    assert 'Join-Path $root ".prana\\logs\\dev"' in script
+    assert 'Join-Path $root "VHF_Storage\\logs\\dev"' not in script
+    assert 'Join-Path $root "VHF_Storage\\runtime"' in script  # legacy cleanup only
+    assert '".prana\\legacy\\"' in script
+    assert "Move-Item -LiteralPath $legacyLogDir" in script
+    assert "Move-Item -LiteralPath $legacyRuntimeDir" in script
+
+
 def test_private_and_generated_files_are_ignored() -> None:
     gitignore = _read(".gitignore")
 
@@ -55,6 +67,7 @@ def test_private_and_generated_files_are_ignored() -> None:
         ".venv/",
         ".secrets/",
         "VHF_Storage/",
+        ".prana/",
         "stations/",
         "*.tfvars",
         "*.apk",

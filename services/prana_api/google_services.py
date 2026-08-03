@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
+import re
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -12,6 +14,65 @@ from google.genai import types
 
 from services.prana_api.config import Settings
 from services.prana_api.models import ProcessingResponse
+
+logger = logging.getLogger(__name__)
+
+_STATION_AUDIO_FILENAME = re.compile(
+    r"^(?P<date>\d{8})_\d{6}_(?P<sequence>\d{4})\.wav$"
+)
+
+
+def station_storage_folder(station_name: str, station_id: str) -> str:
+    """Return a readable, path-safe and collision-resistant Station folder."""
+    cleaned = []
+    previous_separator = False
+    for character in station_name.strip():
+        if character.isalnum() or character in {"-", "_", "."}:
+            cleaned.append(character)
+            previous_separator = False
+        elif character.isspace() or character in {"/", "\\"}:
+            if cleaned and not previous_separator:
+                cleaned.append("-")
+                previous_separator = True
+    slug = "".join(cleaned).strip("-_.")[:64].rstrip("-_.")
+    if not slug:
+        slug = "PRANA-Station"
+    return f"{slug}_{station_id[:8]}"
+
+
+def station_audio_filename(
+    uploaded_filename: str | None,
+    sequence: int,
+    *,
+    now: datetime | None = None,
+) -> tuple[str, str]:
+    """Validate a local WAV basename and return it with its date path."""
+    candidate = uploaded_filename or ""
+    match = _STATION_AUDIO_FILENAME.fullmatch(candidate)
+    if match:
+        try:
+            date = datetime.strptime(match.group("date"), "%Y%m%d")
+        except ValueError:
+            match = None
+    if not match:
+        date = now or datetime.now(timezone.utc)
+        candidate = f"{date:%Y%m%d_%H%M%S}_{sequence:04d}.wav"
+    return candidate, f"{date:%Y/%m/%d}"
+
+
+def station_storage_objects(
+    station_id: str,
+    station_name: str,
+    audio_filename: str,
+    date_path: str,
+) -> tuple[str, str]:
+    station_folder = station_storage_folder(station_name, station_id)
+    result_filename = f"{audio_filename.removesuffix('.wav')}.json"
+    root = f"VHF-Storage/{station_folder}"
+    return (
+        f"{root}/audio/{date_path}/{audio_filename}",
+        f"{root}/result/{date_path}/{result_filename}",
+    )
 
 
 LANGUAGE_NAMES = {
@@ -145,6 +206,8 @@ class GeminiProcessor:
 
 class CloudStorageArchive:
     def __init__(self, settings: Settings):
+        if not settings.storage_bucket.strip():
+            raise ValueError("PRANA_API_STORAGE_BUCKET is not configured")
         self.bucket = storage.Client(project=settings.google_cloud_project or None).bucket(settings.storage_bucket)
 
     def archive(
@@ -164,6 +227,43 @@ class CloudStorageArchive:
         )
         self.bucket.blob(f"{prefix}.json").upload_from_string(
             json.dumps(response, ensure_ascii=False), content_type="application/json"
+        )
+        logger.info(
+            "Archived processing result",
+            extra={"bucket": self.bucket.name, "object_prefix": prefix},
+        )
+        return audio_object
+
+    def archive_station(
+        self,
+        station_id: str,
+        station_name: str,
+        audio_filename: str,
+        date_path: str,
+        audio: bytes,
+        response: dict,
+    ) -> str:
+        audio_object, result_object = station_storage_objects(
+            station_id,
+            station_name,
+            audio_filename,
+            date_path,
+        )
+        self.bucket.blob(audio_object).upload_from_string(
+            audio,
+            content_type="audio/wav",
+        )
+        self.bucket.blob(result_object).upload_from_string(
+            json.dumps(response, ensure_ascii=False),
+            content_type="application/json",
+        )
+        logger.info(
+            "Archived Station processing result",
+            extra={
+                "bucket": self.bucket.name,
+                "audio_object": audio_object,
+                "result_object": result_object,
+            },
         )
         return audio_object
 

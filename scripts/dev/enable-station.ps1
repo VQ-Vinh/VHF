@@ -11,10 +11,14 @@ param(
 
 $ErrorActionPreference = "Stop"
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
-$runtimeDir = Join-Path $root "VHF_Storage\runtime"
-$logDir = Join-Path $root "VHF_Storage\logs\dev"
+$runtimeDir = Join-Path $root ".prana\runtime"
+$logDir = Join-Path $root ".prana\logs\dev"
+$legacyRuntimeDir = Join-Path $root "VHF_Storage\runtime"
+$legacyLogDir = Join-Path $root "VHF_Storage\logs"
 $apiPidFile = Join-Path $runtimeDir "api.pid"
 $stationPidFile = Join-Path $runtimeDir "station.pid"
+$legacyApiPidFile = Join-Path $legacyRuntimeDir "api.pid"
+$legacyStationPidFile = Join-Path $legacyRuntimeDir "station.pid"
 $cloudApiUrl = "https://prana-api-owuilj5d4a-uc.a.run.app"
 $apiHealthUrl = if ($LocalApi) {
     "http://127.0.0.1:8080/health"
@@ -137,6 +141,26 @@ if ($LocalApi) {
 }
 Stop-ManagedProcess -PidFile $apiPidFile -Name "API"
 Stop-ManagedProcess -PidFile $stationPidFile -Name "Station"
+# One-time compatibility for processes started before runtime metadata moved
+# out of VHF_Storage. These files can be removed after the old process stops.
+Stop-ManagedProcess -PidFile $legacyApiPidFile -Name "legacy API"
+Stop-ManagedProcess -PidFile $legacyStationPidFile -Name "legacy Station"
+
+# Preserve old diagnostics while keeping VHF_Storage dedicated to recordings.
+if ((Test-Path -LiteralPath $legacyLogDir) -or
+    (Test-Path -LiteralPath $legacyRuntimeDir)) {
+    $legacyArchive = Join-Path $root (
+        ".prana\legacy\" + (Get-Date -Format "yyyyMMdd-HHmmss")
+    )
+    New-Item -ItemType Directory -Force -Path $legacyArchive | Out-Null
+    if (Test-Path -LiteralPath $legacyLogDir) {
+        Move-Item -LiteralPath $legacyLogDir -Destination $legacyArchive
+    }
+    if (Test-Path -LiteralPath $legacyRuntimeDir) {
+        Move-Item -LiteralPath $legacyRuntimeDir -Destination $legacyArchive
+    }
+    Write-Host "[PRANA] Da chuyen log/runtime cu sang $legacyArchive." -ForegroundColor DarkGray
+}
 
 if ($LocalApi -and -not (Test-ApiHealth)) {
     $apiPython = Join-Path $root ".venv\backend\Scripts\python.exe"

@@ -77,6 +77,10 @@ class PipelineOrchestrator:
         self._executor: ThreadPoolExecutor | None = None
         self._worker_futures: list = []
         self._cleanup_timer: threading.Timer | None = None
+        self._shutdown_event = threading.Event()
+        # Retention belongs to the Station process lifecycle, not to capture.
+        # It must also run while the Station is paired but currently IDLE.
+        self._run_cleanup()
 
     # ── State ───────────────────────────────────────────────────────
     @property
@@ -214,9 +218,6 @@ class PipelineOrchestrator:
         try:
             self._stop_event.set()
 
-            if self._cleanup_timer is not None:
-                self._cleanup_timer.cancel()
-                self._cleanup_timer = None
             if self._recorder is not None:
                 self._recorder.stop()
                 self._recorder = None
@@ -277,6 +278,8 @@ class PipelineOrchestrator:
             logger.warning(f"Cleanup failed: {e}")
 
         interval_hours = cfg.cleanup_interval_hours
+        if self._shutdown_event.is_set():
+            return
         self._cleanup_timer = threading.Timer(interval_hours * 3600, self._run_cleanup)
         self._cleanup_timer.daemon = True
         self._cleanup_timer.start()
@@ -454,6 +457,10 @@ class PipelineOrchestrator:
 
     def shutdown(self, timeout: float = 15.0) -> bool:
         """Stop all pipeline work and wait for cleanup before an account switch."""
+        self._shutdown_event.set()
+        if self._cleanup_timer is not None:
+            self._cleanup_timer.cancel()
+            self._cleanup_timer = None
         self.stop()
         deadline = time.monotonic() + timeout
         while self.state not in (PipelineState.IDLE, PipelineState.ERROR):

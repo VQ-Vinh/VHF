@@ -237,7 +237,7 @@ class PipelineStructureTests(unittest.TestCase):
             "prana_core.pipeline.segment_processor.time.sleep"
         ) as sleep:
             result = processor._process_with_retry(
-                SimpleNamespace(),
+                SimpleNamespace(name="20260803_100000_0001.wav"),
                 "session",
                 1,
                 "vi",
@@ -256,8 +256,10 @@ class PipelineStructureTests(unittest.TestCase):
 
     def test_manual_retry_keeps_failed_segment_target(self) -> None:
         processor = SegmentProcessor.__new__(SegmentProcessor)
-        processor._failed_audio = {("session", 7): (SimpleNamespace(), "vi")}
-        processor._storage = SimpleNamespace(save_result=lambda _result: None)
+        audio_path = SimpleNamespace(name="20260803_100000_0007.wav")
+        processor._failed_audio = {("session", 7): (audio_path, "vi")}
+        saved = []
+        processor._storage = SimpleNamespace(save_result=saved.append)
         processor._publish_result = lambda _result: None
         observed = []
 
@@ -271,10 +273,35 @@ class PipelineStructureTests(unittest.TestCase):
             )
 
         processor._process_with_retry = process
-        processor._retry_failed(SimpleNamespace(), "session", 7, "vi")
+        processor._retry_failed(audio_path, "session", 7, "vi")
 
         self.assertEqual(observed, ["vi"])
         self.assertEqual(processor._failed_audio, {})
+        self.assertEqual(saved[0].audio_file, audio_path.name)
+
+    def test_saved_file_result_uses_local_timestamped_audio_name(self) -> None:
+        class Backend:
+            def process_audio(self, *_args, **_kwargs):
+                return ProcessingResult(
+                    session_id="session",
+                    sequence=3,
+                    audio_file="session_0003.wav",
+                )
+
+        saved = []
+        processor = SegmentProcessor.__new__(SegmentProcessor)
+        processor._backend = Backend()
+        processor._storage = SimpleNamespace(save_result=saved.append)
+        processor._config = SimpleNamespace(
+            translation=SimpleNamespace(target_language="vi")
+        )
+        processor.print_result = lambda _result: None
+        audio_path = SimpleNamespace(name="20260803_101500_0003.wav")
+
+        result = processor._process_saved_file(audio_path, "session", 3)
+
+        self.assertEqual(result.audio_file, audio_path.name)
+        self.assertEqual(saved[0].audio_file, audio_path.name)
 
     def test_non_transient_backend_failure_is_not_retried(self) -> None:
         class Backend:

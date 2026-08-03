@@ -5,6 +5,7 @@
 .venv/
 .terraform/
 VHF_Storage/
+.prana/
 apps/
 build/
 dist/
