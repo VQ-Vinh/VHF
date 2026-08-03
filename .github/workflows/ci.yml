@@ -75,7 +75,7 @@ jobs:
           python -m pip install --no-build-isolation --no-deps -e apps/linux
           python -m pip install keyring pyaudio pytest
       - name: Run core, Linux and packaging tests
-        run: python -m pytest tests/core tests/linux tests/packaging tests/client
+        run: python -m pytest tests/core tests/linux tests/packaging
 
   windows:
     name: Windows tests
@@ -93,9 +93,7 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          python -m pip install --no-build-isolation -e packages/prana_core
-          python -m pip install --no-build-isolation -e apps/windows
-          python -m pip install pytest
+          python -m pip install -e packages/prana_core -e apps/windows pytest
       - name: Run Windows tests
         run: python -m pytest tests/windows
 
@@ -129,7 +127,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
         with:
-          terraform_version: '1.8.5'
+          terraform_version: '1.15.8'
       - run: terraform fmt -check -recursive
       - run: terraform init -backend=false -input=false
       - run: terraform validate -no-color

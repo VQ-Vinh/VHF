@@ -28,7 +28,7 @@ jobs:
           service_account: ${{ vars.GCP_TERRAFORM_SERVICE_ACCOUNT }}
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
         with:
-          terraform_version: '1.8.5'
+          terraform_version: '1.15.8'
           terraform_wrapper: false
       - name: Restore protected staging variables
         shell: bash
@@ -86,7 +86,7 @@ jobs:
           service_account: ${{ vars.GCP_TERRAFORM_SERVICE_ACCOUNT }}
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
         with:
-          terraform_version: '1.8.5'
+          terraform_version: '1.15.8'
       - run: terraform init -input=false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
