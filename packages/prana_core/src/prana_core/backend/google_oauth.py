@@ -118,7 +118,7 @@ class GoogleOAuthSession:
         challenge = base64.urlsafe_b64encode(
             hashlib.sha256(self._code_verifier.encode("ascii")).digest()
         ).rstrip(b"=").decode("ascii")
-        self.authorization_url = f"{GOOGLE_AUTHORIZATION_URL}?{urlencode({
+        authorization_parameters = {
             'client_id': self.client_id,
             'redirect_uri': self.redirect_uri,
             'response_type': 'code',
@@ -128,7 +128,10 @@ class GoogleOAuthSession:
             'state': self._state,
             'prompt': 'select_account',
             'access_type': 'online',
-        })}"
+        }
+        self.authorization_url = (
+            f"{GOOGLE_AUTHORIZATION_URL}?{urlencode(authorization_parameters)}"
+        )
 
     def wait(self) -> GoogleOAuthAuthorization:
         deadline = time.monotonic() + self.timeout
