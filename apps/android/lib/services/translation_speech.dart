@@ -118,6 +118,7 @@ class TranslationSpeechController extends ChangeNotifier {
   String _fallbackLanguage = 'en';
   String? speakingRequestId;
   String? warningKey;
+  bool autoPlaybackEnabled = true;
   bool _foreground = true;
   bool _needsBaseline = true;
   bool _draining = false;
@@ -160,6 +161,7 @@ class TranslationSpeechController extends ChangeNotifier {
     }
     for (final result in ordered) {
       if (!_seenRequestIds.add(result.requestId)) continue;
+      if (!autoPlaybackEnabled) continue;
       if (!_canSpeak(result)) continue;
       _queue.add(
         _SpeechItem(
@@ -174,6 +176,19 @@ class TranslationSpeechController extends ChangeNotifier {
       );
     }
     _drain();
+  }
+
+  Future<void> setAutoPlaybackEnabled(bool enabled) async {
+    if (autoPlaybackEnabled == enabled) return;
+    autoPlaybackEnabled = enabled;
+    if (!enabled) {
+      _queue.clear();
+      _epoch++;
+      speakingRequestId = null;
+      _draining = false;
+      await _stopSafely();
+    }
+    notifyListeners();
   }
 
   Future<void> speakNow(TranslationResult result) async {

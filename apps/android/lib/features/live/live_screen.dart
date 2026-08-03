@@ -210,7 +210,7 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
                         ? () => controller.retry(station)
                         : null,
               ),
-            _FeedHeader(
+            LiveFeedHeader(
               onHistory: _showHistory,
               count: items.length,
               limit: entitlements.liveLogLimit,
@@ -667,8 +667,9 @@ class _LanguageValue extends StatelessWidget {
   );
 }
 
-class _FeedHeader extends StatelessWidget {
-  const _FeedHeader({
+class LiveFeedHeader extends ConsumerWidget {
+  const LiveFeedHeader({
+    super.key,
     required this.onHistory,
     required this.count,
     required this.limit,
@@ -678,41 +679,60 @@ class _FeedHeader extends StatelessWidget {
   final int limit;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 11, 10, 5),
-    child: Row(
-      children: [
-        Text(
-          AppText.of(context, 'translations').toUpperCase(),
-          style: const TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.w800,
-            letterSpacing: .8,
-            color: PranaTheme.muted,
-          ),
-        ),
-        if (limit > 0) ...[
-          const SizedBox(width: 10),
-          Tooltip(
-            message: AppText.format(context, 'live_log_usage', {
-              'count': count,
-              'limit': limit,
-            }),
-            child: Text(
-              '$count/$limit',
-              style: const TextStyle(fontSize: 10, color: PranaTheme.muted),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final speech = ref.watch(translationSpeechProvider);
+    final audioEnabled = speech.autoPlaybackEnabled;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 11, 10, 5),
+      child: Row(
+        children: [
+          Text(
+            AppText.of(context, 'translations').toUpperCase(),
+            style: const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              letterSpacing: .8,
+              color: PranaTheme.muted,
             ),
           ),
+          if (limit > 0) ...[
+            const SizedBox(width: 10),
+            Tooltip(
+              message: AppText.format(context, 'live_log_usage', {
+                'count': count,
+                'limit': limit,
+              }),
+              child: Text(
+                '$count/$limit',
+                style: const TextStyle(fontSize: 10, color: PranaTheme.muted),
+              ),
+            ),
+          ],
+          const Spacer(),
+          IconButton(
+            key: const ValueKey('live-audio-toggle'),
+            tooltip: AppText.of(
+              context,
+              audioEnabled ? 'disable_live_audio' : 'enable_live_audio',
+            ),
+            isSelected: audioEnabled,
+            onPressed: () => speech.setAutoPlaybackEnabled(!audioEnabled),
+            icon: Icon(
+              audioEnabled
+                  ? Icons.volume_up_outlined
+                  : Icons.volume_off_outlined,
+              color: audioEnabled ? PranaTheme.brandBlue : PranaTheme.muted,
+            ),
+          ),
+          IconButton(
+            tooltip: AppText.of(context, 'history'),
+            onPressed: onHistory,
+            icon: const Icon(Icons.history, color: PranaTheme.brandBlue),
+          ),
         ],
-        const Spacer(),
-        IconButton(
-          tooltip: AppText.of(context, 'history'),
-          onPressed: onHistory,
-          icon: const Icon(Icons.history, color: PranaTheme.brandBlue),
-        ),
-      ],
-    ),
-  );
+      ),
+    );
+  }
 }
 
 class _TranslationFeed extends StatefulWidget {
