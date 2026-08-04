@@ -24,7 +24,6 @@ dependencies:
   just_audio: ^0.10.5
   mobile_scanner: ^7.4.0
   path_provider: ^2.1.5
-  share_plus: ^13.3.0
 
 dev_dependencies:
   flutter_test:

@@ -134,11 +134,15 @@ def test_mobile_declares_android_text_to_speech_support() -> None:
     live = Path("apps/android/lib/features/live/live_screen.dart").read_text(
         encoding="utf-8"
     )
+    result_card = Path(
+        "apps/android/lib/features/live/translation_result_card.dart"
+    ).read_text(encoding="utf-8")
 
     assert "flutter_tts: ^4.2.5" in pubspec
     assert "android.intent.action.TTS_SERVICE" in manifest
-    assert "speak_translation" in live
-    assert "Icons.volume_up_outlined" in live
+    assert "TranslationResultCard" in live
+    assert "speak_translation" in result_card
+    assert "Icons.volume_up_outlined" in result_card
 
 
 def test_live_screen_does_not_render_station_diagnostics() -> None:

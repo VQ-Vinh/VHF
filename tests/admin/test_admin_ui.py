@@ -135,9 +135,20 @@ class AdminUiTests(unittest.TestCase):
         english_html = english.body.decode()
         self.assertIn("Operations overview", english_html)
         self.assertIn(
-            'href="/static/admin.css?v=admin-production-2"',
+            'href="/static/admin.css?v=admin-production-3"',
             english_html,
         )
+        self.assertIn('src="/static/logo_mark.png"', english_html)
+        self.assertIn("operator-avatar", english_html)
+
+        logo = (
+            Path(__file__).resolve().parents[2]
+            / "services"
+            / "prana_admin"
+            / "static"
+            / "logo_mark.png"
+        )
+        self.assertTrue(logo.is_file())
 
         vietnamese_scope = dict(scope)
         vietnamese_scope["headers"] = [(b"cookie", b"prana_admin_locale=vi")]
@@ -173,6 +184,7 @@ class AdminUiTests(unittest.TestCase):
 
         for legacy_teal in ("#087f8c", "#005e68", "#35a5af"):
             self.assertNotIn(legacy_teal, css)
+        self.assertIn("background: #c75b12;", css)
         self.assertIn(
             "outline: 3px solid rgb(18 63 126 / 55%);",
             css,

@@ -144,7 +144,6 @@ abstract final class AppText {
           'Đã lưu thay đổi nhưng dữ liệu realtime chưa đồng bộ. '
           'Ứng dụng sẽ tiếp tục chờ để tránh gửi lệnh trùng.',
       'history_search': 'Tìm nội dung hoặc bản dịch',
-      'clear_view': 'Xóa khỏi màn hình',
       'forgot_password': 'Quên mật khẩu',
       'reset_password': 'Gửi email đặt lại mật khẩu',
       'reset_password_short': 'Đặt lại mật khẩu',
@@ -345,7 +344,6 @@ abstract final class AppText {
           'Changes were saved, but realtime data has not synchronized yet. '
           'The app will keep waiting to avoid a duplicate command.',
       'history_search': 'Search transcripts or translations',
-      'clear_view': 'Clear from view',
       'forgot_password': 'Forgot password',
       'reset_password': 'Send password reset email',
       'reset_password_short': 'Reset password',

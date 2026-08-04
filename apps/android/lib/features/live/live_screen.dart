@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 
 import '../../core/localization.dart';
 import '../../core/languages.dart';
@@ -10,6 +9,7 @@ import '../../core/widgets.dart';
 import '../../models/station.dart';
 import '../../providers.dart';
 import '../history/history_screen.dart';
+import 'translation_result_card.dart';
 import '../tx/application/fake_tx_repository.dart';
 import '../tx/application/tx_controller.dart';
 import '../tx/domain/tx_phase.dart';
@@ -813,107 +813,13 @@ class _TranslationFeedState extends State<_TranslationFeed> {
             itemCount: items.length,
             separatorBuilder: (_, _) => const SizedBox(height: 10),
             itemBuilder:
-                (_, index) => _ResultCard(
+                (_, index) => TranslationResultCard(
                   key: ValueKey(items[index].requestId),
                   result: items[index],
                 ),
           );
     },
   );
-}
-
-class _ResultCard extends ConsumerWidget {
-  const _ResultCard({super.key, required this.result});
-  final TranslationResult result;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final speech = ref.watch(translationSpeechProvider);
-    final speaking = speech.speakingRequestId == result.requestId;
-    final canSpeak =
-        (result.translation.trim().isNotEmpty ||
-            result.transcript.trim().isNotEmpty) &&
-        !(result.error?.trim().isNotEmpty ?? false);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '${DateFormat.Hms().format(result.timestamp)}  ·  '
-                    '${result.language.toUpperCase().isEmpty ? '?' : result.language.toUpperCase()}  ·  '
-                    '${(result.confidence * 100).round()}%',
-                    style: const TextStyle(
-                      color: PranaTheme.muted,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  key: ValueKey('speak-${result.requestId}'),
-                  tooltip: AppText.of(
-                    context,
-                    speaking ? 'stop_speaking' : 'speak_translation',
-                  ),
-                  visualDensity: VisualDensity.compact,
-                  constraints: const BoxConstraints(
-                    minWidth: 32,
-                    minHeight: 32,
-                  ),
-                  padding: EdgeInsets.zero,
-                  onPressed:
-                      canSpeak
-                          ? () {
-                            if (speaking) {
-                              speech.stopCurrent();
-                            } else {
-                              speech.speakNow(result);
-                            }
-                          }
-                          : null,
-                  iconSize: 20,
-                  icon: Icon(
-                    speaking
-                        ? Icons.stop_circle_outlined
-                        : Icons.volume_up_outlined,
-                  ),
-                ),
-              ],
-            ),
-            if (result.error != null) ...[
-              const SizedBox(height: 10),
-              Text(
-                result.error!,
-                style: const TextStyle(color: Color(0xFFB12F40)),
-              ),
-            ],
-            if (result.transcript.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text(
-                result.transcript,
-                style: const TextStyle(fontSize: 14, color: Color(0xFF355762)),
-              ),
-            ],
-            if (result.translation.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(
-                result.translation,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: PranaTheme.navy,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 class _QuotaBanner extends StatelessWidget {
