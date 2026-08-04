@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:prana_mobile/models/station.dart';
 
 void main() {
-  test('history day decodes API date and stable export key', () {
+  test('history day decodes API date', () {
     final day = StationHistoryDay.fromMap({
       'date': '2026-07-27',
       'result_count': 12,
@@ -25,7 +25,12 @@ void main() {
 
     expect(source, contains("'history_day_title'"));
     expect(source, contains('day.locked'));
-    expect(source, contains('prana-\${widget.day.apiDate}'));
+    expect(source, contains('TranslationResultCard'));
+    expect(source, isNot(contains("Text('TXT')")));
+    expect(source, isNot(contains("Text('CSV')")));
+    expect(source, isNot(contains('_export(')));
+    expect(source, isNot(contains('clear_view')));
+    expect(source, isNot(contains('hidden')));
     expect(source, isNot(contains('title: Text(doc.id)')));
     expect(source, isNot(contains('onSessionSelected')));
     final live = File('lib/features/live/live_screen.dart').readAsStringSync();

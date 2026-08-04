@@ -1,15 +1,12 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../../core/localization.dart';
 import '../../core/widgets.dart';
 import '../../models/station.dart';
 import '../../providers.dart';
+import '../live/translation_result_card.dart';
 
 class HistoryScreen extends ConsumerStatefulWidget {
   const HistoryScreen({
@@ -156,7 +153,6 @@ class _DayHistory extends ConsumerStatefulWidget {
 
 class _DayHistoryState extends ConsumerState<_DayHistory> {
   final search = TextEditingController();
-  final hidden = <String>{};
   late Future<List<TranslationResult>> results;
   String query = '';
 
@@ -184,40 +180,6 @@ class _DayHistoryState extends ConsumerState<_DayHistory> {
     {'date': DateFormat('dd/MM/yyyy').format(widget.day.date)},
   );
 
-  Future<void> _export(List<TranslationResult> items, bool csv) async {
-    final shareTitle = _title(context);
-    final directory = await getTemporaryDirectory();
-    final extension = csv ? 'csv' : 'txt';
-    final file = File(
-      '${directory.path}/prana-${widget.day.apiDate}.$extension',
-    );
-    final text =
-        csv
-            ? [
-              'time,language,transcript,translation',
-              ...items.map(
-                (item) => [
-                  item.timestamp.toIso8601String(),
-                  item.language,
-                  item.transcript,
-                  item.translation,
-                ].map((value) => '"${value.replaceAll('"', '""')}"').join(','),
-              ),
-            ].join('\n')
-            : items
-                .map(
-                  (item) =>
-                      '[${DateFormat.Hms().format(item.timestamp.toLocal())}] '
-                      '[${item.language.toUpperCase()}]\n'
-                      'TXT: ${item.transcript}\nTRN: ${item.translation}\n',
-                )
-                .join('\n');
-    await file.writeAsString(text);
-    await SharePlus.instance.share(
-      ShareParams(files: [XFile(file.path)], title: shareTitle),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -237,12 +199,8 @@ class _DayHistoryState extends ConsumerState<_DayHistory> {
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
-          final all =
-              snapshot.data!
-                  .where((item) => !hidden.contains(item.requestId))
-                  .toList();
           final filtered =
-              all.where((item) {
+              snapshot.data!.where((item) {
                 final text =
                     '${item.transcript} ${item.translation}'.toLowerCase();
                 return text.contains(query.toLowerCase());
@@ -260,45 +218,17 @@ class _DayHistoryState extends ConsumerState<_DayHistory> {
                   ),
                 ),
               ),
-              Wrap(
-                spacing: 8,
-                children: [
-                  OutlinedButton(
-                    onPressed: all.isEmpty ? null : () => _export(all, false),
-                    child: const Text('TXT'),
-                  ),
-                  OutlinedButton(
-                    onPressed: all.isEmpty ? null : () => _export(all, true),
-                    child: const Text('CSV'),
-                  ),
-                  TextButton.icon(
-                    onPressed:
-                        all.isEmpty
-                            ? null
-                            : () => setState(
-                              () => hidden.addAll(
-                                all.map((item) => item.requestId),
-                              ),
-                            ),
-                    icon: const Icon(Icons.clear_all),
-                    label: Text(AppText.of(context, 'clear_view')),
-                  ),
-                ],
-              ),
               Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.all(12),
+                child: ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(16, 6, 16, 18),
                   itemCount: filtered.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 10),
                   itemBuilder: (_, index) {
                     final item = filtered[index];
-                    return Card(
-                      child: ListTile(
-                        title: Text(item.transcript),
-                        subtitle: Text(item.translation),
-                        trailing: Text(
-                          DateFormat.Hm().format(item.timestamp.toLocal()),
-                        ),
-                      ),
+                    return TranslationResultCard(
+                      key: ValueKey(item.requestId),
+                      result: item,
+                      showPlayback: false,
                     );
                   },
                 ),
