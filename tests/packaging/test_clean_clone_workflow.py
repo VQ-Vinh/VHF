@@ -93,6 +93,8 @@ def test_cloud_run_deploy_waits_for_eventual_consistency() -> None:
     assert "traffic[]?" in action
     assert "conditions[?type=Ready]" not in action
     assert "traffic[?revisionName=" not in action
+    assert ".status.url // .uri // .status.uri // empty" in action
+    assert '[[ -n "$url" ]]' in action
     assert "github/actions/deploy-cloud-run/" in staging
     assert "api=true" in staging
     assert "admin=true" in staging

@@ -70,9 +70,10 @@ runs:
         [[ "$verified" == "true" ]]
 
         if [[ "$REQUIRE_HEALTH" == "true" ]]; then
-          url="$(gcloud run services describe "$SERVICE" \
-            --project "$PROJECT_ID" --region "$REGION" \
-            --format='value(status.uri)')"
+          service_json="$(gcloud run services describe "$SERVICE" \
+            --project "$PROJECT_ID" --region "$REGION" --format=json)"
+          url="$(jq -r '.status.url // .uri // .status.uri // empty' <<<"$service_json")"
+          [[ -n "$url" ]]
           curl --fail --silent --show-error --retry 5 --retry-all-errors \
             --retry-delay 2 "$url/health" | grep -q '"status":"ok"'
         fi
