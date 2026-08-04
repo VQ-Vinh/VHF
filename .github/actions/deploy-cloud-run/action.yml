@@ -40,22 +40,25 @@ runs:
 
         gcloud run deploy "$SERVICE" --image "$IMAGE" \
           --project "$PROJECT_ID" --region "$REGION" --quiet
+        gcloud run services update-traffic "$SERVICE" \
+          --project "$PROJECT_ID" --region "$REGION" \
+          --to-latest --quiet
 
         revision=""
         verified=false
         for attempt in {1..12}; do
-          revision="$(gcloud run services describe "$SERVICE" \
+          service_json="$(gcloud run services describe "$SERVICE" \
             --project "$PROJECT_ID" --region "$REGION" \
-            --format='value(status.latestReadyRevisionName)' 2>/dev/null || true)"
+            --format=json 2>/dev/null || true)"
+          revision="$(jq -r '.status.latestReadyRevisionName // empty' <<<"$service_json")"
           ready=""
           traffic=""
           if [[ -n "$revision" ]]; then
-            ready="$(gcloud run revisions describe "$revision" \
+            revision_json="$(gcloud run revisions describe "$revision" \
               --project "$PROJECT_ID" --region "$REGION" \
-              --format='value(status.conditions[?type=Ready].status)' 2>/dev/null || true)"
-            traffic="$(gcloud run services describe "$SERVICE" \
-              --project "$PROJECT_ID" --region "$REGION" \
-              --format="value(status.traffic[?revisionName='$revision'].percent)" 2>/dev/null || true)"
+              --format=json 2>/dev/null || true)"
+            ready="$(jq -r '[.status.conditions[]? | select(.type == "Ready")][0].status // empty' <<<"$revision_json")"
+            traffic="$(jq -r --arg revision "$revision" '[.status.traffic[]? | select(.revisionName == $revision)][0].percent // empty' <<<"$service_json")"
           fi
           if [[ "$ready" == "True" && "$traffic" == "100" ]]; then
             verified=true
