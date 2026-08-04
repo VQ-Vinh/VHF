@@ -80,8 +80,12 @@ def test_private_and_generated_files_are_ignored() -> None:
 
 def test_cloud_run_deploy_waits_for_eventual_consistency() -> None:
     action = _read(".github/actions/deploy-cloud-run/action.yml")
+    staging = _read(".github/workflows/deploy-staging.yml")
 
     assert "for attempt in {1..12}" in action
     assert "Waiting for Cloud Run state propagation" in action
     assert '[[ "$verified" == "true" ]]' in action
     assert "trap rollback ERR" in action
+    assert "github/actions/deploy-cloud-run/" in staging
+    assert "api=true" in staging
+    assert "admin=true" in staging
