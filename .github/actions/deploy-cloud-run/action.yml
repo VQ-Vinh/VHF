@@ -41,18 +41,30 @@ runs:
         gcloud run deploy "$SERVICE" --image "$IMAGE" \
           --project "$PROJECT_ID" --region "$REGION" --quiet
 
-        revision="$(gcloud run services describe "$SERVICE" \
-          --project "$PROJECT_ID" --region "$REGION" \
-          --format='value(status.latestReadyRevisionName)')"
-        [[ -n "$revision" ]]
-        ready="$(gcloud run revisions describe "$revision" \
-          --project "$PROJECT_ID" --region "$REGION" \
-          --format='value(status.conditions[?type=Ready].status)')"
-        [[ "$ready" == "True" ]]
-        traffic="$(gcloud run services describe "$SERVICE" \
-          --project "$PROJECT_ID" --region "$REGION" \
-          --format="value(status.traffic[?revisionName='$revision'].percent)")"
-        [[ "$traffic" == "100" ]]
+        revision=""
+        verified=false
+        for attempt in {1..12}; do
+          revision="$(gcloud run services describe "$SERVICE" \
+            --project "$PROJECT_ID" --region "$REGION" \
+            --format='value(status.latestReadyRevisionName)' 2>/dev/null || true)"
+          ready=""
+          traffic=""
+          if [[ -n "$revision" ]]; then
+            ready="$(gcloud run revisions describe "$revision" \
+              --project "$PROJECT_ID" --region "$REGION" \
+              --format='value(status.conditions[?type=Ready].status)' 2>/dev/null || true)"
+            traffic="$(gcloud run services describe "$SERVICE" \
+              --project "$PROJECT_ID" --region "$REGION" \
+              --format="value(status.traffic[?revisionName='$revision'].percent)" 2>/dev/null || true)"
+          fi
+          if [[ "$ready" == "True" && "$traffic" == "100" ]]; then
+            verified=true
+            break
+          fi
+          echo "Waiting for Cloud Run state propagation ($attempt/12): revision=$revision ready=$ready traffic=$traffic"
+          sleep 5
+        done
+        [[ "$verified" == "true" ]]
 
         if [[ "$REQUIRE_HEALTH" == "true" ]]; then
           url="$(gcloud run services describe "$SERVICE" \
