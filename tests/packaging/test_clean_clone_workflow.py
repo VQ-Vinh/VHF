@@ -86,6 +86,13 @@ def test_cloud_run_deploy_waits_for_eventual_consistency() -> None:
     assert "Waiting for Cloud Run state propagation" in action
     assert '[[ "$verified" == "true" ]]' in action
     assert "trap rollback ERR" in action
+    assert "--to-latest --quiet" in action
+    assert "--format=json" in action
+    assert "jq -r" in action
+    assert "conditions[]?" in action
+    assert "traffic[]?" in action
+    assert "conditions[?type=Ready]" not in action
+    assert "traffic[?revisionName=" not in action
     assert "github/actions/deploy-cloud-run/" in staging
     assert "api=true" in staging
     assert "admin=true" in staging
