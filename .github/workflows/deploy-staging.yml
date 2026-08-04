@@ -42,6 +42,10 @@ jobs:
           admin=false
           if grep -Eq '^(services/prana_api/|\.dockerignore$|\.gcloudignore$)' <<<"$files"; then api=true; fi
           if grep -Eq '^(services/prana_admin/|\.dockerignore$|\.gcloudignore$)' <<<"$files"; then admin=true; fi
+          if grep -Eq '^\.github/actions/deploy-cloud-run/' <<<"$files"; then
+            api=true
+            admin=true
+          fi
           echo "api=$api" >> "$GITHUB_OUTPUT"
           echo "admin=$admin" >> "$GITHUB_OUTPUT"
           {
