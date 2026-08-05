@@ -283,3 +283,48 @@ class CloudStorageArchive:
             json.dumps(metadata, ensure_ascii=False), content_type="application/json"
         )
         return source_object, output_object
+
+    def archive_tx_source(
+        self,
+        uid: str,
+        station_id: str,
+        audio_filename: str,
+        date_path: str,
+        source: bytes,
+    ) -> str:
+        source_object = (
+            f"VHF-Storage/{uid}/{station_id}/TX/source/"
+            f"{date_path}/{audio_filename}"
+        )
+        self.bucket.blob(source_object).upload_from_string(
+            source,
+            content_type="audio/wav",
+        )
+        return source_object
+
+    def archive_tx_output(
+        self,
+        uid: str,
+        station_id: str,
+        audio_filename: str,
+        date_path: str,
+        output: bytes,
+        metadata: dict,
+    ) -> str:
+        output_object = (
+            f"VHF-Storage/{uid}/{station_id}/TX/output/"
+            f"{date_path}/{audio_filename}"
+        )
+        result_object = (
+            f"VHF-Storage/{uid}/{station_id}/TX/result/{date_path}/"
+            f"{audio_filename.removesuffix('.wav')}.json"
+        )
+        self.bucket.blob(output_object).upload_from_string(
+            output,
+            content_type="audio/wav",
+        )
+        self.bucket.blob(result_object).upload_from_string(
+            json.dumps(metadata, ensure_ascii=False),
+            content_type="application/json",
+        )
+        return output_object

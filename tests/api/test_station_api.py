@@ -90,16 +90,22 @@ class Archive:
     def download_audio(self, object_name):
         return self.audio.get(object_name)
 
-    def archive_tx(self, uid, station_id, job_id, source, output, _metadata):
-        source_object = f"TX/{uid}/{station_id}/{job_id}/source.wav"
-        output_object = f"TX/{uid}/{station_id}/{job_id}/output.wav"
+    def archive_tx_source(self, uid, station_id, audio_filename, date_path, source):
+        source_object = f"TX/{uid}/{station_id}/source/{date_path}/{audio_filename}"
         self.audio[source_object] = source
+        return source_object
+
+    def archive_tx_output(self, uid, station_id, audio_filename, date_path, output, _metadata):
+        output_object = f"TX/{uid}/{station_id}/output/{date_path}/{audio_filename}"
         self.audio[output_object] = output
-        return source_object, output_object
+        return output_object
 
 
 class Synthesizer:
-    def synthesize_with_over(self, _text, _target_language):
+    texts = []
+
+    def synthesize_with_over(self, text, _target_language):
+        type(self).texts.append(text)
         return wav_bytes()
 
 
@@ -920,6 +926,9 @@ class StationApiTests(unittest.TestCase):
 
     def test_tx_draft_confirm_claim_download_and_complete(self):
         self.create_and_claim()
+        self.repo.update_station_desired_state(
+            self.identity.uid, self.station_id, {"running": True}
+        )
         archive = Archive()
         request_id = str(uuid.uuid4())
         with patch("services.prana_api.main.get_processor", return_value=Processor()), patch(
@@ -935,9 +944,24 @@ class StationApiTests(unittest.TestCase):
             self.assertEqual(draft.json()["status"], "review_ready")
 
             confirmed = self.client.post(
-                f"/v1/stations/{self.station_id}/tx/drafts/{request_id}/confirm"
+                f"/v1/stations/{self.station_id}/tx/drafts/{request_id}/confirm",
+                json={"translation": "Chuyển sang kênh 18."},
             )
             self.assertEqual(confirmed.status_code, 200, confirmed.text)
+            self.assertEqual(confirmed.json()["translation"], "Chuyển sang kênh 18.")
+            self.assertTrue(confirmed.json()["translation_edited"])
+            self.assertRegex(
+                confirmed.json()["audio_filename"],
+                r"^\d{8}_\d{6}_\d{4}\.wav$",
+            )
+            self.assertEqual(Synthesizer.texts[-1], "Chuyển sang kênh 18.")
+            synthesis_count = len(Synthesizer.texts)
+            duplicate = self.client.post(
+                f"/v1/stations/{self.station_id}/tx/drafts/{request_id}/confirm",
+                json={"translation": "Chuyển sang kênh 18."},
+            )
+            self.assertEqual(duplicate.status_code, 200, duplicate.text)
+            self.assertEqual(len(Synthesizer.texts), synthesis_count)
 
             claim_path = f"/v1/stations/{self.station_id}/tx/jobs/claim"
             claimed = self.client.post(
@@ -972,6 +996,64 @@ class StationApiTests(unittest.TestCase):
             )
             self.assertEqual(response.status_code, 200, response.text)
             self.assertEqual(response.json()["status"], "completed")
+
+            self.repo.plans["free"] = self.repo.plans["free"].model_copy(
+                update={"history_unlock_delay_days": 0}
+            )
+            days = self.client.get(
+                f"/v1/stations/{self.station_id}/tx/history/days",
+                params={"timezone_offset_minutes": 420},
+            )
+            self.assertEqual(days.status_code, 200, days.text)
+            self.assertEqual(days.json()[0]["result_count"], 1)
+            history_date = days.json()[0]["date"]
+            jobs = self.client.get(
+                f"/v1/stations/{self.station_id}/tx/history/days/{history_date}/jobs",
+                params={"timezone_offset_minutes": 420},
+            )
+            self.assertEqual(jobs.status_code, 200, jobs.text)
+            self.assertEqual(jobs.json()["items"][0]["id"], request_id)
+            history_audio = self.client.get(
+                f"/v1/stations/{self.station_id}/tx/history/{request_id}/audio"
+            )
+            self.assertEqual(history_audio.status_code, 200, history_audio.text)
+            self.assertEqual(history_audio.headers["content-type"], "audio/wav")
+
+    def test_tx_create_and_confirm_require_station_start(self):
+        self.create_and_claim()
+        archive = Archive()
+        request_id = str(uuid.uuid4())
+        with patch("services.prana_api.main.get_processor", return_value=Processor()), patch(
+            "services.prana_api.main.get_archive", return_value=archive
+        ):
+            blocked = self.client.post(
+                f"/v1/stations/{self.station_id}/tx/drafts",
+                data={"target_language": "vi"},
+                files={"audio": ("phone.wav", wav_bytes(), "audio/wav")},
+                headers={"X-Request-ID": request_id},
+            )
+            self.assertEqual(blocked.status_code, 409, blocked.text)
+            self.assertEqual(blocked.json()["detail"]["code"], "TX_NOT_STARTED")
+
+            self.repo.update_station_desired_state(
+                self.identity.uid, self.station_id, {"running": True}
+            )
+            draft = self.client.post(
+                f"/v1/stations/{self.station_id}/tx/drafts",
+                data={"target_language": "vi"},
+                files={"audio": ("phone.wav", wav_bytes(), "audio/wav")},
+                headers={"X-Request-ID": request_id},
+            )
+            self.assertEqual(draft.status_code, 200, draft.text)
+            self.repo.update_station_desired_state(
+                self.identity.uid, self.station_id, {"running": False}
+            )
+            confirm = self.client.post(
+                f"/v1/stations/{self.station_id}/tx/drafts/{request_id}/confirm",
+                json={"translation": draft.json()["translation"]},
+            )
+            self.assertEqual(confirm.status_code, 409, confirm.text)
+            self.assertEqual(confirm.json()["detail"]["code"], "TX_NOT_STARTED")
 
 
 if __name__ == "__main__":

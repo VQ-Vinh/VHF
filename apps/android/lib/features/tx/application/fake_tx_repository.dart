@@ -14,6 +14,7 @@ class FakeTxRepository implements TxRepository {
   final Object? processingError;
   final Object? transmissionError;
   int _pollCount = 0;
+  String? lastConfirmedTranslation;
 
   @override
   Future<TxDraft> processRecording(TxRecordingInput input) async {
@@ -30,9 +31,10 @@ class FakeTxRepository implements TxRepository {
   }
 
   @override
-  Future<void> confirmTransmission(TxDraft draft) async {
+  Future<void> confirmTransmission(TxDraft draft, String translation) async {
     await Future<void>.delayed(transmissionDelay);
     if (transmissionError != null) throw transmissionError!;
+    lastConfirmedTranslation = translation;
   }
 
   @override

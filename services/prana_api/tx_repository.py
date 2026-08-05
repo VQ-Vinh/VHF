@@ -8,13 +8,22 @@ from google.cloud import firestore
 from services.prana_api.errors import api_error
 
 
-ACTIVE_TX_STATES = {"queued", "claimed", "transmitting"}
+ACTIVE_TX_STATES = {"synthesizing", "queued", "claimed", "transmitting"}
+HISTORY_TX_STATES = ACTIVE_TX_STATES | {"completed", "failed"}
 
 
 class MemoryTxRepository:
     def __init__(self):
         self.lock = threading.RLock()
         self.items: dict[str, dict] = {}
+        self.counters: dict[tuple[str, str], int] = {}
+
+    def next_filename(self, station_id: str, created_at: datetime) -> str:
+        day = created_at.strftime("%Y%m%d")
+        with self.lock:
+            key = (station_id, day)
+            self.counters[key] = self.counters.get(key, 0) + 1
+            return f"{created_at:%Y%m%d_%H%M%S}_{self.counters[key]:04d}.wav"
 
     def create(self, value: dict) -> dict:
         with self.lock:
@@ -39,6 +48,39 @@ class MemoryTxRepository:
             item["status"] = "queued"
             return dict(item)
 
+    def begin_confirm(self, uid: str, station_id: str, job_id: str, translation: str) -> dict:
+        with self.lock:
+            item = self._owned(uid, station_id, job_id)
+            if item["status"] != "review_ready":
+                raise api_error(409, "TX_INVALID_STATE", "TX draft is not ready")
+            if any(other["station_id"] == station_id and other["status"] in ACTIVE_TX_STATES for other in self.items.values()):
+                raise api_error(409, "TX_BUSY", "Station already has an active TX job")
+            item.update({
+                "status": "synthesizing",
+                "translation": translation,
+                "translation_edited": translation != item.get("translation_original", ""),
+            })
+            return dict(item)
+
+    def finish_confirm(self, uid: str, station_id: str, job_id: str, output_object: str) -> dict:
+        with self.lock:
+            item = self._owned(uid, station_id, job_id)
+            if item["status"] != "synthesizing":
+                raise api_error(409, "TX_INVALID_STATE", "TX draft is not synthesizing")
+            item.update({"status": "queued", "output_object": output_object, "output_available": True})
+            return dict(item)
+
+    def fail_synthesis(self, uid: str, station_id: str, job_id: str, error: str) -> dict:
+        with self.lock:
+            item = self._owned(uid, station_id, job_id)
+            item.update({"status": "failed", "error": error, "output_available": False})
+            return dict(item)
+
+    def history(self, uid: str, station_id: str) -> list[dict]:
+        with self.lock:
+            values = [dict(item) for item in self.items.values() if item.get("uid") == uid and item.get("station_id") == station_id and item.get("status") in HISTORY_TX_STATES]
+        return sorted(values, key=lambda item: item["created_at"], reverse=True)
+
     def cancel(self, uid: str, station_id: str, job_id: str) -> None:
         with self.lock:
             item = self._owned(uid, station_id, job_id)
@@ -56,7 +98,7 @@ class MemoryTxRepository:
                 for other in self.items.values()
             ):
                 raise api_error(409, "TX_BUSY", "Station already has an active TX job")
-            clone = dict(failed, id=new_id, status="queued", attempt=failed.get("attempt", 1) + 1,
+            clone = dict(failed, id=new_id, status="review_ready", attempt=failed.get("attempt", 1) + 1,
                          retry_of=job_id, created_at=datetime.now(timezone.utc))
             self.items[new_id] = clone
             return dict(clone)
@@ -108,6 +150,67 @@ class FirestoreTxRepository:
         snap = self.collection.document(job_id).get()
         return ({"id": snap.id, **snap.to_dict()} if snap.exists else None)
 
+    def next_filename(self, station_id: str, created_at: datetime) -> str:
+        day = created_at.strftime("%Y%m%d")
+        ref = self.db.collection("station_tx_counters").document(f"{station_id}_{day}")
+        transaction = self.db.transaction()
+
+        @firestore.transactional
+        def allocate(tx):
+            snap = ref.get(transaction=tx)
+            sequence = int((snap.to_dict() or {}).get("sequence", 0)) + 1
+            tx.set(ref, {"station_id": station_id, "date": day, "sequence": sequence})
+            return sequence
+
+        sequence = allocate(transaction)
+        return f"{created_at:%Y%m%d_%H%M%S}_{sequence:04d}.wav"
+
+    def begin_confirm(self, uid: str, station_id: str, job_id: str, translation: str) -> dict:
+        transaction = self.db.transaction()
+        ref = self.collection.document(job_id)
+        active_ref = self.db.collection("station_tx_state").document(station_id)
+
+        @firestore.transactional
+        def apply(tx):
+            snap, active = ref.get(transaction=tx), active_ref.get(transaction=tx)
+            item = {"id": snap.id, **(snap.to_dict() or {})} if snap.exists else None
+            self._owned(item, uid, station_id)
+            if item["status"] != "review_ready":
+                raise api_error(409, "TX_INVALID_STATE", "TX draft is not ready")
+            if (active.to_dict() or {}).get("job_id"):
+                raise api_error(409, "TX_BUSY", "Station already has an active TX job")
+            updates = {"status": "synthesizing", "translation": translation, "translation_edited": translation != item.get("translation_original", ""), "updated_at": firestore.SERVER_TIMESTAMP}
+            tx.update(ref, updates)
+            tx.set(active_ref, {"job_id": job_id, "status": "synthesizing"})
+            return dict(item, **{key: value for key, value in updates.items() if key != "updated_at"})
+        return apply(transaction)
+
+    def finish_confirm(self, uid: str, station_id: str, job_id: str, output_object: str) -> dict:
+        item = self.get(job_id)
+        self._owned(item, uid, station_id)
+        if item["status"] != "synthesizing":
+            raise api_error(409, "TX_INVALID_STATE", "TX draft is not synthesizing")
+        updates = {"status": "queued", "output_object": output_object, "output_available": True, "updated_at": firestore.SERVER_TIMESTAMP}
+        self.collection.document(job_id).update(updates)
+        self.db.collection("station_tx_state").document(station_id).update({"status": "queued"})
+        return dict(item, status="queued", output_object=output_object, output_available=True)
+
+    def fail_synthesis(self, uid: str, station_id: str, job_id: str, error: str) -> dict:
+        item = self.get(job_id)
+        self._owned(item, uid, station_id)
+        updates = {"status": "failed", "error": error, "output_available": False, "updated_at": firestore.SERVER_TIMESTAMP}
+        self.collection.document(job_id).update(updates)
+        self.db.collection("station_tx_state").document(station_id).set({"job_id": "", "status": "failed"})
+        return dict(item, status="failed", error=error, output_available=False)
+
+    def history(self, uid: str, station_id: str) -> list[dict]:
+        values = []
+        for snap in self.collection.where("station_id", "==", station_id).stream():
+            item = {"id": snap.id, **(snap.to_dict() or {})}
+            if item.get("uid") == uid and item.get("status") in HISTORY_TX_STATES:
+                values.append(item)
+        return sorted(values, key=lambda item: item["created_at"], reverse=True)
+
     def confirm(self, uid: str, station_id: str, job_id: str) -> dict:
         transaction = self.db.transaction()
         ref = self.collection.document(job_id)
@@ -134,6 +237,10 @@ class FirestoreTxRepository:
         if item["status"] in {"claimed", "transmitting", "completed"}:
             raise api_error(409, "TX_INVALID_STATE", "TX job cannot be cancelled")
         self.collection.document(job_id).update({"status": "cancelled"})
+        if item["status"] in ACTIVE_TX_STATES:
+            self.db.collection("station_tx_state").document(station_id).set(
+                {"job_id": "", "status": "cancelled"}
+            )
 
     def retry(self, uid: str, station_id: str, job_id: str, new_id: str) -> dict:
         failed = self.get(job_id)
@@ -142,8 +249,7 @@ class FirestoreTxRepository:
             raise api_error(409, "TX_INVALID_STATE", "Only failed jobs can be retried")
         clone = dict(failed, id=new_id, status="review_ready", attempt=failed.get("attempt", 1) + 1,
                      retry_of=job_id, created_at=datetime.now(timezone.utc))
-        self.create(clone)
-        return self.confirm(uid, station_id, new_id)
+        return self.create(clone)
 
     def claim(self, station_id: str) -> dict | None:
         transaction = self.db.transaction()

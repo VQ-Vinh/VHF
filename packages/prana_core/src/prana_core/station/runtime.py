@@ -248,11 +248,16 @@ class StationRuntime:
         }
 
     def _save_tx_files(self, job: dict, source: bytes, output: bytes, status: str, error: str | None = None) -> None:
-        date_path = datetime.now().strftime("%Y/%m/%d")
+        filename = str(job.get("audio_filename") or f"{job['id']}.wav")
+        try:
+            file_date = datetime.strptime(filename[:8], "%Y%m%d")
+        except (ValueError, TypeError):
+            file_date = datetime.now()
+        date_path = file_date.strftime("%Y/%m/%d")
         storage = self.config.storage.local
-        source_path = Path(storage.tx_source_dir) / date_path / f"{job['id']}.wav"
-        output_path = Path(storage.tx_output_dir) / date_path / f"{job['id']}.wav"
-        result_path = Path(storage.tx_result_dir) / date_path / f"{job['id']}.json"
+        source_path = Path(storage.tx_source_dir) / date_path / filename
+        output_path = Path(storage.tx_output_dir) / date_path / filename
+        result_path = Path(storage.tx_result_dir) / date_path / f"{Path(filename).stem}.json"
         for path in (source_path, output_path, result_path):
             path.parent.mkdir(parents=True, exist_ok=True)
         source_path.write_bytes(source)

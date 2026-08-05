@@ -29,6 +29,8 @@ class TxController extends ChangeNotifier {
   Timer? _recordingTimer;
   DateTime? _recordingStartedAt;
   bool _stationOnline = true;
+  bool _stationRunning = false;
+  bool _commandPending = false;
   bool _disposed = false;
   Future<void>? _recordingStart;
 
@@ -46,6 +48,26 @@ class TxController extends ChangeNotifier {
     }
   }
 
+  void setStationAvailability({
+    required bool online,
+    required bool running,
+    required bool commandPending,
+  }) {
+    setStationOnline(online);
+    if (_stationRunning == running && _commandPending == commandPending) return;
+    _stationRunning = running;
+    _commandPending = commandPending;
+    notifyListeners();
+  }
+
+  bool get canStartRecording =>
+      state.canStartRecording &&
+      _stationOnline &&
+      _stationRunning &&
+      !_commandPending;
+
+  bool get startRequired => _stationOnline && !_stationRunning;
+
   void setTargetLanguage(String language) {
     if (!state.canChangeLanguage || language == state.targetLanguage) return;
     state = state.copyWith(targetLanguage: language);
@@ -57,7 +79,7 @@ class TxController extends ChangeNotifier {
       _fail(TxFailure.stationOffline, TxPhase.stationOffline);
       return;
     }
-    if (!state.canStartRecording) return;
+    if (!canStartRecording) return;
     _recordingStartedAt = DateTime.now();
     state = state.copyWith(
       phase: TxPhase.recording,
@@ -123,14 +145,24 @@ class TxController extends ChangeNotifier {
     }
   }
 
-  Future<void> confirmTransmission() async {
+  Future<void> confirmTransmission(String translation) async {
     final draft = state.draft;
     if (state.phase != TxPhase.reviewReady || draft == null) return;
-    state = state.copyWith(phase: TxPhase.queued, clearFailure: true);
+    final normalized = translation.trim();
+    if (normalized.isEmpty || normalized.length > 2000) return;
+    final confirmedDraft = draft.copyWith(translation: normalized);
+    state = state.copyWith(
+      phase: TxPhase.processing,
+      draft: confirmedDraft,
+      clearFailure: true,
+    );
     notifyListeners();
     try {
-      await _repository.confirmTransmission(draft);
-      await _monitorTransmission(draft);
+      await _repository.confirmTransmission(draft, normalized);
+      if (_disposed || state.phase != TxPhase.processing) return;
+      state = state.copyWith(phase: TxPhase.queued, draft: confirmedDraft);
+      notifyListeners();
+      await _monitorTransmission(confirmedDraft);
     } catch (_) {
       if (!_disposed) {
         _fail(TxFailure.transmissionFailed, TxPhase.failed);

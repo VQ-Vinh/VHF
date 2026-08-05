@@ -26,6 +26,11 @@ void main() {
     expect(source, contains("'history_day_title'"));
     expect(source, contains('day.locked'));
     expect(source, contains('TranslationResultCard'));
+    expect(source, contains('enum _HistoryMode { rx, tx }'));
+    expect(source, contains('_HistoryMode mode = _HistoryMode.rx'));
+    expect(source, contains('txHistoryDays'));
+    expect(source, contains('txHistoryDayJobs'));
+    expect(source, contains('job.outputAvailable ? onPlay : null'));
     expect(source, isNot(contains("Text('TXT')")));
     expect(source, isNot(contains("Text('CSV')")));
     expect(source, isNot(contains('_export(')));
