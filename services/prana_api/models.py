@@ -252,6 +252,7 @@ class StationDesiredState(BaseModel):
     target_language: Literal["vi", "en", "zh", "ja", "ko"] = "en"
     capture_mode: Literal["device", "loopback"] = "device"
     audio_device_id: str = Field(default="", max_length=64)
+    tx_audio_device_id: str = Field(default="", max_length=64)
     capability_refresh_generation: int = Field(default=0, ge=0)
     retry_generation: int = Field(default=0, ge=0)
     generation: int = Field(default=0, ge=0)
@@ -262,6 +263,7 @@ class StationDesiredStatePatch(BaseModel):
     target_language: Literal["vi", "en", "zh", "ja", "ko"] | None = None
     capture_mode: Literal["device", "loopback"] | None = None
     audio_device_id: str | None = Field(default=None, max_length=64)
+    tx_audio_device_id: str | None = Field(default=None, max_length=64)
     refresh_capabilities: bool = False
     retry: bool = False
 
@@ -299,6 +301,10 @@ class StationHeartbeat(BaseModel):
     retrying: bool = False
     retry_code: str | None = Field(default=None, max_length=80)
     retry_attempt: int = Field(default=0, ge=0, le=3)
+    tx_state: Literal["idle", "claimed", "transmitting", "completed", "failed"] = "idle"
+    tx_job_id: str = Field(default="", max_length=64)
+    active_tx_audio_device_id: str = Field(default="", max_length=64)
+    tx_error: str | None = Field(default=None, max_length=500)
 
 
 class Station(BaseModel):
@@ -320,3 +326,37 @@ class Station(BaseModel):
     retrying: bool = False
     retry_code: str | None = None
     retry_attempt: int = 0
+    tx_state: str = "idle"
+    tx_job_id: str = ""
+    active_tx_audio_device_id: str = ""
+    tx_error: str | None = None
+
+
+class TxDraft(BaseModel):
+    id: str
+    station_id: str
+    status: Literal["review_ready", "queued", "claimed", "transmitting", "completed", "failed", "cancelled"]
+    duration_ms: int = Field(ge=1, le=60_000)
+    target_language: Literal["vi", "en", "zh", "ja", "ko"]
+    detected_language: str = ""
+    transcript: str
+    translation: str
+    error: str | None = None
+    attempt: int = Field(default=1, ge=1)
+    retry_of: str | None = None
+    created_at: datetime
+
+
+class TxJob(BaseModel):
+    id: str
+    station_id: str
+    target_language: str
+    source_object: str
+    output_object: str
+    duration_ms: int
+    attempt: int = 1
+
+
+class TxJobUpdate(BaseModel):
+    status: Literal["transmitting", "completed", "failed"]
+    error: str | None = Field(default=None, max_length=500)

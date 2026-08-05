@@ -27,7 +27,10 @@ from services.prana_api.google_services import (
     CloudStorageArchive,
     GeminiProcessor,
     station_audio_filename,
+    normalize_language_code,
 )
+from services.prana_api.tx_audio import CloudTxSynthesizer
+from services.prana_api.tx_repository import FirestoreTxRepository
 from services.prana_api.google_auth import (
     AuthRateLimiter,
     FirestoreAuthRateLimiter,
@@ -55,6 +58,9 @@ from services.prana_api.models import (
     StationPairingResponse,
     StationProvisionRequest,
     StationProvisionResponse,
+    TxDraft,
+    TxJob,
+    TxJobUpdate,
 )
 from services.prana_api.repository import FirestoreRepository, Repository
 from services.prana_api.security import (
@@ -110,6 +116,16 @@ def get_processor() -> GeminiProcessor:
 @lru_cache
 def get_archive() -> CloudStorageArchive:
     return CloudStorageArchive(get_settings())
+
+
+@lru_cache
+def get_tx_synthesizer() -> CloudTxSynthesizer:
+    return CloudTxSynthesizer(get_settings().google_cloud_project)
+
+
+@lru_cache
+def get_tx_repository():
+    return FirestoreTxRepository(get_settings().google_cloud_project)
 
 
 @lru_cache
@@ -1070,3 +1086,162 @@ def process_station_audio(
             retry_after=2,
         )
     return ProcessingResponse.model_validate(response)
+
+
+def _owned_tx_station(repo: Repository, uid: str, station_id: str) -> dict:
+    station = repo.get_station_registry(station_id)
+    if not station or station.get("owner_uid") != uid:
+        raise api_error(404, "STATION_NOT_FOUND", "Station was not found")
+    if not station.get("active", True):
+        raise api_error(409, "STATION_REVOKED", "Station is inactive")
+    return station
+
+
+@app.post("/v1/stations/{station_id}/tx/drafts", response_model=TxDraft)
+def create_tx_draft(
+    station_id: str,
+    audio: UploadFile = File(),
+    target_language: str = Form(),
+    request_id: str = Header(alias="X-Request-ID"),
+    identity: Identity = Depends(require_identity),
+    repo: Repository = Depends(get_repository),
+    tx_repo=Depends(get_tx_repository),
+):
+    _validate_request_id(request_id)
+    if target_language not in {"vi", "en", "zh", "ja", "ko"}:
+        raise api_error(422, "INVALID_REQUEST", "Unsupported target language")
+    active_account(identity, repo)
+    _owned_tx_station(repo, identity.uid, station_id)
+    existing = tx_repo.get(request_id)
+    if existing:
+        if existing.get("uid") != identity.uid or existing.get("station_id") != station_id:
+            raise api_error(409, "IDEMPOTENCY_CONFLICT", "Request ID is already used")
+        return TxDraft.model_validate(existing)
+    settings = get_settings()
+    source = audio.file.read(settings.max_audio_bytes + 1)
+    info = validate_wav(source, settings.max_audio_bytes, min(60, settings.max_audio_seconds))
+    if info.seconds < 0.3:
+        raise api_error(422, "AUDIO_TOO_SHORT", "Hold to talk for at least 300 ms")
+    model = get_processor().process(source, target_language, f"tx-{request_id}", 0, request_id).response
+    if model.error:
+        raise api_error(422, "NO_SPEECH", model.error)
+    text = (
+        model.transcript_restored
+        if normalize_language_code(model.detected_language) == target_language
+        else model.translation
+    )
+    try:
+        output = get_tx_synthesizer().synthesize_with_over(text, target_language)
+        metadata = {
+            "id": request_id,
+            "station_id": station_id,
+            "target_language": target_language,
+            "detected_language": model.detected_language,
+            "transcript": model.transcript_restored,
+            "translation": model.translation,
+            "duration_ms": round(info.seconds * 1000),
+        }
+        source_object, output_object = get_archive().archive_tx(
+            identity.uid, station_id, request_id, source, output, metadata
+        )
+    except Exception:
+        logger.exception("TX synthesis/archive failed", extra={"station_id": station_id, "tx_job_id": request_id})
+        raise api_error(503, "TX_PROCESSING_FAILED", "TX audio could not be created")
+    value = {
+        **metadata,
+        "uid": identity.uid,
+        "status": "review_ready",
+        "error": None,
+        "attempt": 1,
+        "retry_of": None,
+        "created_at": datetime.now(timezone.utc),
+        "source_object": source_object,
+        "output_object": output_object,
+    }
+    return TxDraft.model_validate(tx_repo.create(value))
+
+
+@app.get("/v1/stations/{station_id}/tx/drafts/{job_id}", response_model=TxDraft)
+def get_tx_draft(station_id: str, job_id: str, identity: Identity = Depends(require_identity),
+                 repo: Repository = Depends(get_repository), tx_repo=Depends(get_tx_repository)):
+    _owned_tx_station(repo, identity.uid, station_id)
+    item = tx_repo.get(job_id)
+    if not item or item.get("uid") != identity.uid or item.get("station_id") != station_id:
+        raise api_error(404, "TX_NOT_FOUND", "TX draft was not found")
+    return TxDraft.model_validate(item)
+
+
+@app.post("/v1/stations/{station_id}/tx/drafts/{job_id}/confirm", response_model=TxDraft)
+def confirm_tx_draft(station_id: str, job_id: str, identity: Identity = Depends(require_identity),
+                     repo: Repository = Depends(get_repository), tx_repo=Depends(get_tx_repository)):
+    _owned_tx_station(repo, identity.uid, station_id)
+    return TxDraft.model_validate(tx_repo.confirm(identity.uid, station_id, job_id))
+
+
+@app.delete("/v1/stations/{station_id}/tx/drafts/{job_id}", status_code=204)
+def cancel_tx_draft(station_id: str, job_id: str, identity: Identity = Depends(require_identity),
+                    repo: Repository = Depends(get_repository), tx_repo=Depends(get_tx_repository)):
+    _owned_tx_station(repo, identity.uid, station_id)
+    tx_repo.cancel(identity.uid, station_id, job_id)
+    return Response(status_code=204)
+
+
+@app.post("/v1/stations/{station_id}/tx/drafts/{job_id}/retry", response_model=TxDraft)
+def retry_tx_draft(station_id: str, job_id: str, identity: Identity = Depends(require_identity),
+                   repo: Repository = Depends(get_repository), tx_repo=Depends(get_tx_repository)):
+    _owned_tx_station(repo, identity.uid, station_id)
+    return TxDraft.model_validate(tx_repo.retry(identity.uid, station_id, job_id, str(uuid.uuid4())))
+
+
+def _signed_tx_station(station_id: str, method: str, path: str, request_id: str,
+                       request_timestamp: str, signature: str, payload: dict, repo: Repository) -> dict:
+    return _authenticate_station_request(
+        station_id=station_id, method=method, path=path, request_id=request_id,
+        request_timestamp=request_timestamp, signature=signature, payload=payload, repo=repo,
+    )
+
+
+@app.post("/v1/stations/{station_id}/tx/jobs/claim", response_model=TxJob | None)
+def claim_tx_job(station_id: str, signed_station_id: str = Header(alias="X-Station-ID"),
+                 request_id: str = Header(alias="X-Request-ID"), request_timestamp: str = Header(alias="X-Timestamp"),
+                 signature: str = Header(alias="X-Signature"), repo: Repository = Depends(get_repository),
+                 tx_repo=Depends(get_tx_repository)):
+    if signed_station_id != station_id:
+        raise api_error(403, "STATION_REVOKED", "Station identity does not match")
+    path = f"/v1/stations/{station_id}/tx/jobs/claim"
+    _signed_tx_station(station_id, "POST", path, request_id, request_timestamp, signature, {}, repo)
+    item = tx_repo.claim(station_id)
+    return TxJob.model_validate(item) if item else None
+
+
+@app.get("/v1/stations/{station_id}/tx/jobs/{job_id}/audio")
+def download_tx_job(station_id: str, job_id: str, signed_station_id: str = Header(alias="X-Station-ID"),
+                    request_id: str = Header(alias="X-Request-ID"), request_timestamp: str = Header(alias="X-Timestamp"),
+                    signature: str = Header(alias="X-Signature"), repo: Repository = Depends(get_repository),
+                    tx_repo=Depends(get_tx_repository), kind: str = "output"):
+    if signed_station_id != station_id:
+        raise api_error(403, "STATION_REVOKED", "Station identity does not match")
+    path = f"/v1/stations/{station_id}/tx/jobs/{job_id}/audio"
+    _signed_tx_station(station_id, "GET", path, request_id, request_timestamp, signature, {}, repo)
+    item = tx_repo.get(job_id)
+    if not item or item.get("station_id") != station_id or item.get("status") not in {"claimed", "transmitting"}:
+        raise api_error(404, "TX_NOT_FOUND", "TX job was not found")
+    if kind not in {"source", "output"}:
+        raise api_error(422, "INVALID_REQUEST", "kind must be source or output")
+    audio = get_archive().download_audio(item[f"{kind}_object"])
+    if audio is None:
+        raise api_error(404, "TX_AUDIO_UNAVAILABLE", "TX audio is unavailable")
+    return Response(content=audio, media_type="audio/wav", headers={"Cache-Control": "private, no-store"})
+
+
+@app.post("/v1/stations/{station_id}/tx/jobs/{job_id}/status", response_model=TxDraft)
+def update_tx_job(station_id: str, job_id: str, request: TxJobUpdate,
+                  signed_station_id: str = Header(alias="X-Station-ID"), request_id: str = Header(alias="X-Request-ID"),
+                  request_timestamp: str = Header(alias="X-Timestamp"), signature: str = Header(alias="X-Signature"),
+                  repo: Repository = Depends(get_repository), tx_repo=Depends(get_tx_repository)):
+    if signed_station_id != station_id:
+        raise api_error(403, "STATION_REVOKED", "Station identity does not match")
+    path = f"/v1/stations/{station_id}/tx/jobs/{job_id}/status"
+    payload = request.model_dump(exclude_none=True)
+    _signed_tx_station(station_id, "POST", path, request_id, request_timestamp, signature, payload, repo)
+    return TxDraft.model_validate(tx_repo.station_update(station_id, job_id, request.status, request.error))

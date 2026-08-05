@@ -720,6 +720,7 @@ class FirestoreRepository:
             capabilities = registry.get("capabilities")
             requested_mode = updates.get("capture_mode")
             requested_device = updates.get("audio_device_id")
+            requested_tx_device = updates.get("tx_audio_device_id")
             if requested_mode is not None or requested_device is not None:
                 if not capabilities:
                     raise api_error(409, "CAPABILITIES_UNAVAILABLE", "Station has not reported audio capabilities")
@@ -736,6 +737,17 @@ class FirestoreRepository:
                     device_id not in devices or devices[device_id].get("mode") != mode
                 ):
                     raise api_error(422, "AUDIO_DEVICE_UNAVAILABLE", "Audio device is not available for this mode")
+            if requested_tx_device is not None:
+                if not capabilities:
+                    raise api_error(409, "CAPABILITIES_UNAVAILABLE", "Station has not reported audio capabilities")
+                outputs = {
+                    item.get("id")
+                    for item in capabilities.get("audio_devices") or []
+                    if item.get("mode") == "device"
+                    and int(item.get("output_channels", 0)) > 0
+                }
+                if requested_tx_device and requested_tx_device not in outputs:
+                    raise api_error(422, "AUDIO_DEVICE_UNAVAILABLE", "TX output device is unavailable")
             data = desired.model_dump()
             retry = bool(updates.pop("retry_generation_increment", False))
             refresh = bool(updates.pop("capability_refresh_increment", False))
@@ -782,6 +794,10 @@ class FirestoreRepository:
             "target_language": heartbeat.target_language,
             "active_capture_mode": heartbeat.active_capture_mode,
             "active_audio_device_id": heartbeat.active_audio_device_id,
+            "tx_state": heartbeat.tx_state,
+            "tx_job_id": heartbeat.tx_job_id,
+            "active_tx_audio_device_id": heartbeat.active_tx_audio_device_id,
+            "tx_error": heartbeat.tx_error,
             "last_error": heartbeat.error,
             "retrying": heartbeat.retrying,
             "retry_code": heartbeat.retry_code,

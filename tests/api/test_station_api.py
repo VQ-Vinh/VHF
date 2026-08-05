@@ -15,11 +15,12 @@ from fastapi.testclient import TestClient
 from unittest.mock import patch
 
 from services.prana_api.auth import Identity, require_identity
-from services.prana_api.main import app, get_repository
+from services.prana_api.main import app, get_repository, get_tx_repository
 from services.prana_api.google_services import ModelResult
 from services.prana_api.memory_repository import MemoryRepository
 from services.prana_api.models import Plan, ProcessingResponse, UserAccount
 from services.prana_api.security import canonical_request, canonical_station_request, station_payload_hash
+from services.prana_api.tx_repository import MemoryTxRepository
 
 
 def wav_bytes() -> bytes:
@@ -89,6 +90,18 @@ class Archive:
     def download_audio(self, object_name):
         return self.audio.get(object_name)
 
+    def archive_tx(self, uid, station_id, job_id, source, output, _metadata):
+        source_object = f"TX/{uid}/{station_id}/{job_id}/source.wav"
+        output_object = f"TX/{uid}/{station_id}/{job_id}/output.wav"
+        self.audio[source_object] = source
+        self.audio[output_object] = output
+        return source_object, output_object
+
+
+class Synthesizer:
+    def synthesize_with_over(self, _text, _target_language):
+        return wav_bytes()
+
 
 class StationApiTests(unittest.TestCase):
     def setUp(self):
@@ -112,6 +125,8 @@ class StationApiTests(unittest.TestCase):
         )
         app.dependency_overrides[get_repository] = lambda: self.repo
         app.dependency_overrides[require_identity] = lambda: self.identity
+        self.tx_repo = MemoryTxRepository()
+        app.dependency_overrides[get_tx_repository] = lambda: self.tx_repo
         self.client = TestClient(app, raise_server_exceptions=False)
         self.private = Ed25519PrivateKey.generate()
         public = self.private.public_key().public_bytes(
@@ -902,6 +917,61 @@ class StationApiTests(unittest.TestCase):
             response.json()["entitlements"]["max_concurrency"],
             2,
         )
+
+    def test_tx_draft_confirm_claim_download_and_complete(self):
+        self.create_and_claim()
+        archive = Archive()
+        request_id = str(uuid.uuid4())
+        with patch("services.prana_api.main.get_processor", return_value=Processor()), patch(
+            "services.prana_api.main.get_tx_synthesizer", return_value=Synthesizer()
+        ), patch("services.prana_api.main.get_archive", return_value=archive):
+            draft = self.client.post(
+                f"/v1/stations/{self.station_id}/tx/drafts",
+                data={"target_language": "vi"},
+                files={"audio": ("phone.wav", wav_bytes(), "audio/wav")},
+                headers={"X-Request-ID": request_id},
+            )
+            self.assertEqual(draft.status_code, 200, draft.text)
+            self.assertEqual(draft.json()["status"], "review_ready")
+
+            confirmed = self.client.post(
+                f"/v1/stations/{self.station_id}/tx/drafts/{request_id}/confirm"
+            )
+            self.assertEqual(confirmed.status_code, 200, confirmed.text)
+
+            claim_path = f"/v1/stations/{self.station_id}/tx/jobs/claim"
+            claimed = self.client.post(
+                claim_path,
+                headers=self.signed_headers("POST", claim_path, {}),
+            )
+            self.assertEqual(claimed.status_code, 200, claimed.text)
+            self.assertEqual(claimed.json()["id"], request_id)
+
+            audio_path = f"/v1/stations/{self.station_id}/tx/jobs/{request_id}/audio"
+            output = self.client.get(
+                audio_path,
+                params={"kind": "output"},
+                headers=self.signed_headers("GET", audio_path, {}),
+            )
+            self.assertEqual(output.status_code, 200, output.text)
+            self.assertEqual(output.headers["content-type"], "audio/wav")
+
+            status_path = f"/v1/stations/{self.station_id}/tx/jobs/{request_id}/status"
+            transmitting = {"status": "transmitting"}
+            response = self.client.post(
+                status_path,
+                json=transmitting,
+                headers=self.signed_headers("POST", status_path, transmitting),
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            completed = {"status": "completed"}
+            response = self.client.post(
+                status_path,
+                json=completed,
+                headers=self.signed_headers("POST", status_path, completed),
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()["status"], "completed")
 
 
 if __name__ == "__main__":

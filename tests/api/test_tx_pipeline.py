@@ -1,0 +1,76 @@
+from __future__ import annotations
+
+import io
+import wave
+from datetime import datetime, timezone
+
+import pytest
+from fastapi import HTTPException
+
+from services.prana_api.tx_audio import append_over
+from services.prana_api.tx_repository import MemoryTxRepository
+
+
+def wav(frames: int, rate: int = 24_000) -> bytes:
+    target = io.BytesIO()
+    with wave.open(target, "wb") as output:
+        output.setnchannels(1)
+        output.setsampwidth(2)
+        output.setframerate(rate)
+        output.writeframes(b"\x01\x00" * frames)
+    return target.getvalue()
+
+
+def job(job_id: str = "job-1") -> dict:
+    return {
+        "id": job_id,
+        "uid": "user-1",
+        "station_id": "station-1",
+        "status": "review_ready",
+        "duration_ms": 1000,
+        "target_language": "vi",
+        "detected_language": "en",
+        "transcript": "Channel eighteen",
+        "translation": "Kênh mười tám",
+        "source_object": "source.wav",
+        "output_object": "output.wav",
+        "error": None,
+        "attempt": 1,
+        "retry_of": None,
+        "created_at": datetime.now(timezone.utc),
+    }
+
+
+def test_append_over_adds_300ms_silence_and_both_clips() -> None:
+    combined = append_over(wav(2400), wav(1200))
+    with wave.open(io.BytesIO(combined), "rb") as result:
+        assert result.getframerate() == 24_000
+        assert result.getnchannels() == 1
+        assert result.getnframes() == 2400 + 7200 + 1200
+
+
+def test_tx_queue_claims_once_and_never_requeues_failed_job() -> None:
+    repository = MemoryTxRepository()
+    repository.create(job())
+    repository.confirm("user-1", "station-1", "job-1")
+    assert repository.claim("station-1")["status"] == "claimed"
+    assert repository.claim("station-1") is None
+    repository.station_update("station-1", "job-1", "failed", "OUTPUT_FAILED")
+    assert repository.claim("station-1") is None
+
+
+def test_one_active_tx_job_per_station_and_manual_retry_attempt() -> None:
+    repository = MemoryTxRepository()
+    repository.create(job())
+    repository.confirm("user-1", "station-1", "job-1")
+    repository.create(job("job-2"))
+    with pytest.raises(HTTPException) as error:
+        repository.confirm("user-1", "station-1", "job-2")
+    assert error.value.detail["code"] == "TX_BUSY"
+
+    repository.claim("station-1")
+    repository.station_update("station-1", "job-1", "failed", "OUTPUT_FAILED")
+    retried = repository.retry("user-1", "station-1", "job-1", "job-3")
+    assert retried["status"] == "queued"
+    assert retried["attempt"] == 2
+    assert retried["retry_of"] == "job-1"

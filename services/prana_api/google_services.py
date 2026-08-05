@@ -70,8 +70,8 @@ def station_storage_objects(
     result_filename = f"{audio_filename.removesuffix('.wav')}.json"
     root = f"VHF-Storage/{station_folder}"
     return (
-        f"{root}/audio/{date_path}/{audio_filename}",
-        f"{root}/result/{date_path}/{result_filename}",
+        f"{root}/RX/audio/{date_path}/{audio_filename}",
+        f"{root}/RX/result/{date_path}/{result_filename}",
     )
 
 
@@ -272,3 +272,14 @@ class CloudStorageArchive:
         if not blob.exists():
             return None
         return blob.download_as_bytes()
+
+    def archive_tx(self, uid: str, station_id: str, job_id: str, source: bytes, output: bytes, metadata: dict) -> tuple[str, str]:
+        date = datetime.now(timezone.utc)
+        prefix = f"VHF-Storage/{uid}/{station_id}/TX/{date:%Y/%m/%d}/{job_id}"
+        source_object, output_object = f"{prefix}/source.wav", f"{prefix}/output.wav"
+        self.bucket.blob(source_object).upload_from_string(source, content_type="audio/wav")
+        self.bucket.blob(output_object).upload_from_string(output, content_type="audio/wav")
+        self.bucket.blob(f"{prefix}/metadata.json").upload_from_string(
+            json.dumps(metadata, ensure_ascii=False), content_type="application/json"
+        )
+        return source_object, output_object
