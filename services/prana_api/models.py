@@ -335,12 +335,16 @@ class Station(BaseModel):
 class TxDraft(BaseModel):
     id: str
     station_id: str
-    status: Literal["review_ready", "queued", "claimed", "transmitting", "completed", "failed", "cancelled"]
+    status: Literal["review_ready", "synthesizing", "queued", "claimed", "transmitting", "completed", "failed", "cancelled"]
     duration_ms: int = Field(ge=1, le=60_000)
     target_language: Literal["vi", "en", "zh", "ja", "ko"]
     detected_language: str = ""
     transcript: str
     translation: str
+    translation_original: str = ""
+    translation_edited: bool = False
+    audio_filename: str = ""
+    output_available: bool = False
     error: str | None = None
     attempt: int = Field(default=1, ge=1)
     retry_of: str | None = None
@@ -355,6 +359,24 @@ class TxJob(BaseModel):
     output_object: str
     duration_ms: int
     attempt: int = 1
+    audio_filename: str = ""
+
+
+class TxConfirmRequest(BaseModel):
+    translation: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("translation")
+    @classmethod
+    def validate_translation(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("translation must not be blank")
+        return normalized
+
+
+class TxHistoryPage(BaseModel):
+    items: list[TxDraft]
+    next_cursor: str | None = None
 
 
 class TxJobUpdate(BaseModel):

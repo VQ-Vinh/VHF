@@ -71,6 +71,15 @@ def test_one_active_tx_job_per_station_and_manual_retry_attempt() -> None:
     repository.claim("station-1")
     repository.station_update("station-1", "job-1", "failed", "OUTPUT_FAILED")
     retried = repository.retry("user-1", "station-1", "job-1", "job-3")
-    assert retried["status"] == "queued"
+    assert retried["status"] == "review_ready"
     assert retried["attempt"] == 2
     assert retried["retry_of"] == "job-1"
+
+
+def test_tx_filename_sequence_is_daily_and_independent() -> None:
+    repository = MemoryTxRepository()
+    created_at = datetime(2026, 8, 5, 15, 59, 23, tzinfo=timezone.utc)
+
+    assert repository.next_filename("station-1", created_at) == "20260805_155923_0001.wav"
+    assert repository.next_filename("station-1", created_at) == "20260805_155923_0002.wav"
+    assert repository.next_filename("station-2", created_at) == "20260805_155923_0001.wav"

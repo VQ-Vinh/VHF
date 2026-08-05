@@ -27,7 +27,6 @@ from services.prana_api.google_services import (
     CloudStorageArchive,
     GeminiProcessor,
     station_audio_filename,
-    normalize_language_code,
 )
 from services.prana_api.tx_audio import CloudTxSynthesizer
 from services.prana_api.tx_repository import FirestoreTxRepository
@@ -59,6 +58,8 @@ from services.prana_api.models import (
     StationProvisionRequest,
     StationProvisionResponse,
     TxDraft,
+    TxConfirmRequest,
+    TxHistoryPage,
     TxJob,
     TxJobUpdate,
 )
@@ -1097,6 +1098,12 @@ def _owned_tx_station(repo: Repository, uid: str, station_id: str) -> dict:
     return station
 
 
+def _require_tx_running(station: dict) -> None:
+    desired = station.get("desired_state") or {}
+    if not bool(desired.get("running")):
+        raise api_error(409, "TX_NOT_STARTED", "Start the Station before using TX")
+
+
 @app.post("/v1/stations/{station_id}/tx/drafts", response_model=TxDraft)
 def create_tx_draft(
     station_id: str,
@@ -1111,7 +1118,8 @@ def create_tx_draft(
     if target_language not in {"vi", "en", "zh", "ja", "ko"}:
         raise api_error(422, "INVALID_REQUEST", "Unsupported target language")
     active_account(identity, repo)
-    _owned_tx_station(repo, identity.uid, station_id)
+    station = _owned_tx_station(repo, identity.uid, station_id)
+    _require_tx_running(station)
     existing = tx_repo.get(request_id)
     if existing:
         if existing.get("uid") != identity.uid or existing.get("station_id") != station_id:
@@ -1125,13 +1133,10 @@ def create_tx_draft(
     model = get_processor().process(source, target_language, f"tx-{request_id}", 0, request_id).response
     if model.error:
         raise api_error(422, "NO_SPEECH", model.error)
-    text = (
-        model.transcript_restored
-        if normalize_language_code(model.detected_language) == target_language
-        else model.translation
-    )
+    created_at = datetime.now(timezone.utc)
+    audio_filename = tx_repo.next_filename(station_id, created_at)
+    date_path = f"{created_at:%Y/%m/%d}"
     try:
-        output = get_tx_synthesizer().synthesize_with_over(text, target_language)
         metadata = {
             "id": request_id,
             "station_id": station_id,
@@ -1139,10 +1144,18 @@ def create_tx_draft(
             "detected_language": model.detected_language,
             "transcript": model.transcript_restored,
             "translation": model.translation,
+            "translation_original": model.translation,
+            "translation_edited": False,
             "duration_ms": round(info.seconds * 1000),
+            "audio_filename": audio_filename,
+            "output_available": False,
         }
-        source_object, output_object = get_archive().archive_tx(
-            identity.uid, station_id, request_id, source, output, metadata
+        source_object = get_archive().archive_tx_source(
+            identity.uid,
+            station_id,
+            audio_filename,
+            date_path,
+            source,
         )
     except Exception:
         logger.exception("TX synthesis/archive failed", extra={"station_id": station_id, "tx_job_id": request_id})
@@ -1154,9 +1167,9 @@ def create_tx_draft(
         "error": None,
         "attempt": 1,
         "retry_of": None,
-        "created_at": datetime.now(timezone.utc),
+        "created_at": created_at,
         "source_object": source_object,
-        "output_object": output_object,
+        "output_object": "",
     }
     return TxDraft.model_validate(tx_repo.create(value))
 
@@ -1171,11 +1184,75 @@ def get_tx_draft(station_id: str, job_id: str, identity: Identity = Depends(requ
     return TxDraft.model_validate(item)
 
 
+def _synthesize_tx_draft(item: dict, tx_repo, uid: str, station_id: str) -> TxDraft:
+    try:
+        output = get_tx_synthesizer().synthesize_with_over(
+            item["translation"],
+            item["target_language"],
+        )
+        created_at = _history_timestamp(item)
+        output_object = get_archive().archive_tx_output(
+            uid,
+            station_id,
+            item["audio_filename"],
+            f"{created_at:%Y/%m/%d}",
+            output,
+            {
+                **{
+                    key: value
+                    for key, value in item.items()
+                    if key not in {"uid", "source_object", "output_object"}
+                },
+                "status": "queued",
+                "output_available": True,
+            },
+        )
+        return TxDraft.model_validate(
+            tx_repo.finish_confirm(uid, station_id, item["id"], output_object)
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception(
+            "TX synthesis/archive failed",
+            extra={"station_id": station_id, "tx_job_id": item.get("id")},
+        )
+        tx_repo.fail_synthesis(uid, station_id, item["id"], "TX_PROCESSING_FAILED")
+        raise api_error(503, "TX_PROCESSING_FAILED", "TX audio could not be created")
+
+
 @app.post("/v1/stations/{station_id}/tx/drafts/{job_id}/confirm", response_model=TxDraft)
-def confirm_tx_draft(station_id: str, job_id: str, identity: Identity = Depends(require_identity),
-                     repo: Repository = Depends(get_repository), tx_repo=Depends(get_tx_repository)):
-    _owned_tx_station(repo, identity.uid, station_id)
-    return TxDraft.model_validate(tx_repo.confirm(identity.uid, station_id, job_id))
+def confirm_tx_draft(
+    station_id: str,
+    job_id: str,
+    request: TxConfirmRequest,
+    identity: Identity = Depends(require_identity),
+    repo: Repository = Depends(get_repository),
+    tx_repo=Depends(get_tx_repository),
+):
+    station = _owned_tx_station(repo, identity.uid, station_id)
+    _require_tx_running(station)
+    existing = tx_repo.get(job_id)
+    if (
+        existing
+        and existing.get("uid") == identity.uid
+        and existing.get("station_id") == station_id
+        and existing.get("status") != "review_ready"
+    ):
+        if existing.get("translation") != request.translation:
+            raise api_error(
+                409,
+                "TX_INVALID_STATE",
+                "TX draft was already confirmed with different content",
+            )
+        return TxDraft.model_validate(existing)
+    item = tx_repo.begin_confirm(
+        identity.uid,
+        station_id,
+        job_id,
+        request.translation,
+    )
+    return _synthesize_tx_draft(item, tx_repo, identity.uid, station_id)
 
 
 @app.delete("/v1/stations/{station_id}/tx/drafts/{job_id}", status_code=204)
@@ -1189,8 +1266,115 @@ def cancel_tx_draft(station_id: str, job_id: str, identity: Identity = Depends(r
 @app.post("/v1/stations/{station_id}/tx/drafts/{job_id}/retry", response_model=TxDraft)
 def retry_tx_draft(station_id: str, job_id: str, identity: Identity = Depends(require_identity),
                    repo: Repository = Depends(get_repository), tx_repo=Depends(get_tx_repository)):
+    station = _owned_tx_station(repo, identity.uid, station_id)
+    _require_tx_running(station)
+    clone = tx_repo.retry(identity.uid, station_id, job_id, str(uuid.uuid4()))
+    item = tx_repo.begin_confirm(
+        identity.uid,
+        station_id,
+        clone["id"],
+        clone["translation"],
+    )
+    if item.get("output_object"):
+        return TxDraft.model_validate(
+            tx_repo.finish_confirm(
+                identity.uid,
+                station_id,
+                item["id"],
+                item["output_object"],
+            )
+        )
+    return _synthesize_tx_draft(item, tx_repo, identity.uid, station_id)
+
+
+def _tx_history_values(tx_repo, uid: str, station_id: str) -> list[dict]:
+    return tx_repo.history(uid, station_id)
+
+
+@app.get("/v1/stations/{station_id}/tx/history/days", response_model=list[StationHistoryDay])
+def list_tx_history_days(
+    station_id: str,
+    timezone_offset_minutes: int = 0,
+    identity: Identity = Depends(require_identity),
+    repo: Repository = Depends(get_repository),
+    tx_repo=Depends(get_tx_repository),
+):
+    account, plan = active_account(identity, repo)
+    _owned_tx_station(repo, account.uid, station_id)
+    local_timezone = _history_timezone(timezone_offset_minutes)
+    local_today = datetime.now(timezone.utc).astimezone(local_timezone).date()
+    grouped: dict[date, list[datetime]] = {}
+    for value in _tx_history_values(tx_repo, account.uid, station_id):
+        timestamp = _history_timestamp(value)
+        grouped.setdefault(timestamp.astimezone(local_timezone).date(), []).append(timestamp)
+    return [
+        StationHistoryDay(
+            date=history_date,
+            result_count=len(timestamps),
+            first_result_at=min(timestamps),
+            last_result_at=max(timestamps),
+            locked=not _history_unlocked(history_date, plan, local_today),
+        )
+        for history_date, timestamps in sorted(grouped.items(), reverse=True)
+    ]
+
+
+@app.get("/v1/stations/{station_id}/tx/history/days/{history_date}/jobs", response_model=TxHistoryPage)
+def list_tx_history_day_jobs(
+    station_id: str,
+    history_date: date,
+    timezone_offset_minutes: int = 0,
+    limit: int = 200,
+    cursor: str | None = None,
+    identity: Identity = Depends(require_identity),
+    repo: Repository = Depends(get_repository),
+    tx_repo=Depends(get_tx_repository),
+):
+    account, plan = active_account(identity, repo)
+    _owned_tx_station(repo, account.uid, station_id)
+    local_timezone = _history_timezone(timezone_offset_minutes)
+    local_today = datetime.now(timezone.utc).astimezone(local_timezone).date()
+    if not _history_unlocked(history_date, plan, local_today):
+        raise api_error(403, "HISTORY_LOCKED", "Full history is not available until the configured unlock date")
+    try:
+        offset = int(cursor or "0")
+    except ValueError as exc:
+        raise api_error(422, "INVALID_CURSOR", "History cursor is invalid") from exc
+    if offset < 0:
+        raise api_error(422, "INVALID_CURSOR", "History cursor is invalid")
+    values = [
+        item
+        for item in _tx_history_values(tx_repo, account.uid, station_id)
+        if _history_timestamp(item).astimezone(local_timezone).date() == history_date
+    ]
+    safe_limit = max(1, min(limit, 1000))
+    page = values[offset : offset + safe_limit]
+    next_offset = offset + len(page)
+    return TxHistoryPage(
+        items=[TxDraft.model_validate(item) for item in page],
+        next_cursor=str(next_offset) if next_offset < len(values) else None,
+    )
+
+
+@app.get("/v1/stations/{station_id}/tx/history/{job_id}/audio")
+def get_tx_history_audio(
+    station_id: str,
+    job_id: str,
+    identity: Identity = Depends(require_identity),
+    repo: Repository = Depends(get_repository),
+    tx_repo=Depends(get_tx_repository),
+):
     _owned_tx_station(repo, identity.uid, station_id)
-    return TxDraft.model_validate(tx_repo.retry(identity.uid, station_id, job_id, str(uuid.uuid4())))
+    item = tx_repo.get(job_id)
+    if not item or item.get("uid") != identity.uid or item.get("station_id") != station_id:
+        raise api_error(404, "TX_NOT_FOUND", "TX job was not found")
+    object_name = item.get("output_object")
+    if not object_name:
+        raise api_error(404, "TX_AUDIO_UNAVAILABLE", "TX audio is unavailable")
+    audio = get_archive().download_audio(object_name)
+    if audio is None:
+        raise api_error(404, "TX_AUDIO_UNAVAILABLE", "TX audio is unavailable")
+    return Response(content=audio, media_type="audio/wav", headers={"Cache-Control": "private, max-age=3600"})
 
 
 def _signed_tx_station(station_id: str, method: str, path: str, request_id: str,
@@ -1209,7 +1393,9 @@ def claim_tx_job(station_id: str, signed_station_id: str = Header(alias="X-Stati
     if signed_station_id != station_id:
         raise api_error(403, "STATION_REVOKED", "Station identity does not match")
     path = f"/v1/stations/{station_id}/tx/jobs/claim"
-    _signed_tx_station(station_id, "POST", path, request_id, request_timestamp, signature, {}, repo)
+    station = _signed_tx_station(station_id, "POST", path, request_id, request_timestamp, signature, {}, repo)
+    if not bool((station.get("desired_state") or {}).get("running")):
+        return None
     item = tx_repo.claim(station_id)
     return TxJob.model_validate(item) if item else None
 
