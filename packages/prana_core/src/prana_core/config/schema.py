@@ -47,8 +47,11 @@ class TranslationConfig(BaseModel):
 
 
 class LocalStorageConfig(BaseModel):
-    audio_dir: Path = Path("./VHF_Storage/audio")
-    result_dir: Path = Path("./VHF_Storage/results")
+    audio_dir: Path = Path("./VHF_Storage/RX/audio")
+    result_dir: Path = Path("./VHF_Storage/RX/results")
+    tx_source_dir: Path = Path("./VHF_Storage/TX/source")
+    tx_output_dir: Path = Path("./VHF_Storage/TX/output")
+    tx_result_dir: Path = Path("./VHF_Storage/TX/results")
 
 
 class StorageConfig(BaseModel):
@@ -80,8 +83,11 @@ class AppConfig(BaseModel):
         storage_root = base / "VHF_Storage"
         storage_root.mkdir(parents=True, exist_ok=True)
         self.general.data_dir = storage_root
-        self.storage.local.audio_dir = (storage_root / "audio").resolve()
-        self.storage.local.result_dir = (storage_root / "results").resolve()
+        self.storage.local.audio_dir = (storage_root / "RX" / "audio").resolve()
+        self.storage.local.result_dir = (storage_root / "RX" / "results").resolve()
+        self.storage.local.tx_source_dir = (storage_root / "TX" / "source").resolve()
+        self.storage.local.tx_output_dir = (storage_root / "TX" / "output").resolve()
+        self.storage.local.tx_result_dir = (storage_root / "TX" / "results").resolve()
 
 def load_config(config_path: str | Path = Path("config/default.toml"), base_dir: Path | None = None) -> AppConfig:
     cfg = AppConfig.from_toml(config_path)

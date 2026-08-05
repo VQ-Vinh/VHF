@@ -37,5 +37,5 @@ retention_days = 14
 cleanup_interval_hours = 24
 
 [storage.local]
-audio_dir = "./VHF_Storage/audio"
-result_dir = "./VHF_Storage/results"
+audio_dir = "./VHF_Storage/RX/audio"
+result_dir = "./VHF_Storage/RX/results"

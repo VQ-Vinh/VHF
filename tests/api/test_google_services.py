@@ -41,11 +41,11 @@ def test_station_storage_separates_audio_and_result_with_matching_stems() -> Non
         "2026/08/03",
     )
     assert audio == (
-        "VHF-Storage/VINH_0f90cd8e/audio/2026/08/03/"
+        "VHF-Storage/VINH_0f90cd8e/RX/audio/2026/08/03/"
         "20260803_110002_0001.wav"
     )
     assert result == (
-        "VHF-Storage/VINH_0f90cd8e/result/2026/08/03/"
+        "VHF-Storage/VINH_0f90cd8e/RX/result/2026/08/03/"
         "20260803_110002_0001.json"
     )
 

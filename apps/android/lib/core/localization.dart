@@ -131,6 +131,8 @@ abstract final class AppText {
       'device_scan_timeout':
           'Station chưa phản hồi kết quả quét. Hãy kiểm tra kết nối.',
       'audio_source': 'Nguồn thu',
+      'tx_output': 'Đầu ra TX',
+      'tx_output_device': 'Thiết bị phát âm thanh trên Laptop',
       'station_information': 'Thông tin Station',
       'storage_path': 'Thư mục lưu trên Station',
       'active_capture': 'Cấu hình đang hoạt động',
@@ -331,6 +333,8 @@ abstract final class AppText {
       'device_scan_timeout':
           'The Station did not return scan results. Check its connection.',
       'audio_source': 'Audio source',
+      'tx_output': 'TX output',
+      'tx_output_device': 'Laptop audio output',
       'station_information': 'Station information',
       'storage_path': 'Station storage path',
       'active_capture': 'Active capture configuration',

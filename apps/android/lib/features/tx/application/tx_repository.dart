@@ -6,4 +6,8 @@ abstract interface class TxRepository {
   Future<void> confirmTransmission(TxDraft draft);
 
   Future<void> cancelDraft(String draftId);
+
+  Future<TxDraft> getDraft(String stationId, String draftId);
+
+  Future<TxDraft> retryTransmission(TxDraft draft);
 }

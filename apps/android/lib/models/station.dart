@@ -7,6 +7,7 @@ class DesiredState {
     required this.retryGeneration,
     this.captureMode = 'device',
     this.audioDeviceId = '',
+    this.txAudioDeviceId = '',
     this.capabilityRefreshGeneration = 0,
     required this.generation,
   });
@@ -16,6 +17,7 @@ class DesiredState {
   final int retryGeneration;
   final String captureMode;
   final String audioDeviceId;
+  final String txAudioDeviceId;
   final int capabilityRefreshGeneration;
   final int generation;
 
@@ -25,6 +27,7 @@ class DesiredState {
     retryGeneration: map['retry_generation'] as int? ?? 0,
     captureMode: map['capture_mode'] as String? ?? 'device',
     audioDeviceId: map['audio_device_id'] as String? ?? '',
+    txAudioDeviceId: map['tx_audio_device_id'] as String? ?? '',
     capabilityRefreshGeneration:
         map['capability_refresh_generation'] as int? ?? 0,
     generation: map['generation'] as int? ?? 0,
@@ -121,6 +124,10 @@ class StationModel {
     this.retrying = false,
     this.retryCode,
     this.retryAttempt = 0,
+    this.txState = 'idle',
+    this.txJobId = '',
+    this.activeTxAudioDeviceId = '',
+    this.txError,
   });
 
   final String id;
@@ -140,6 +147,10 @@ class StationModel {
   final bool retrying;
   final String? retryCode;
   final int retryAttempt;
+  final String txState;
+  final String txJobId;
+  final String activeTxAudioDeviceId;
+  final String? txError;
 
   bool isOnlineAt(DateTime now) =>
       active &&
@@ -177,6 +188,10 @@ class StationModel {
       retrying: map['retrying'] as bool? ?? false,
       retryCode: map['retry_code'] as String?,
       retryAttempt: map['retry_attempt'] as int? ?? 0,
+      txState: map['tx_state'] as String? ?? 'idle',
+      txJobId: map['tx_job_id'] as String? ?? '',
+      activeTxAudioDeviceId: map['active_tx_audio_device_id'] as String? ?? '',
+      txError: map['tx_error'] as String?,
     );
   }
 }

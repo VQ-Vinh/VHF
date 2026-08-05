@@ -10,8 +10,9 @@ import '../../models/station.dart';
 import '../../providers.dart';
 import '../history/history_screen.dart';
 import 'translation_result_card.dart';
-import '../tx/application/fake_tx_repository.dart';
+import '../tx/application/api_tx_repository.dart';
 import '../tx/application/tx_controller.dart';
+import '../tx/application/tx_recorder.dart';
 import '../tx/domain/tx_phase.dart';
 import '../tx/presentation/widgets/tx_live_dock.dart';
 import '../tx/presentation/widgets/tx_review_card.dart';
@@ -36,7 +37,8 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
     super.initState();
     _txController = TxController(
       stationId: widget.stationId,
-      repository: FakeTxRepository(),
+      repository: ApiTxRepository(ref.read(apiProvider)),
+      recorder: PhoneTxRecorder(),
     );
     _txController.addListener(_onTxChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
