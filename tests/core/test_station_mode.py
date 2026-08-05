@@ -368,6 +368,44 @@ class StationModeTests(unittest.TestCase):
 
         self.assertEqual(runtime.orchestrator.starts, 1)
 
+    def test_tx_files_share_rx_style_filename_and_date_tree(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = StationRuntime.__new__(StationRuntime)
+            runtime.config = SimpleNamespace(
+                storage=SimpleNamespace(
+                    local=SimpleNamespace(
+                        tx_source_dir=str(root / "TX" / "source"),
+                        tx_output_dir=str(root / "TX" / "output"),
+                        tx_result_dir=str(root / "TX" / "results"),
+                    )
+                )
+            )
+            filename = "20260805_155923_0001.wav"
+
+            runtime._save_tx_files(
+                {"id": "job-1", "audio_filename": filename, "attempt": 1},
+                b"source",
+                b"output",
+                "completed",
+            )
+
+            relative = Path("2026/08/05")
+            self.assertEqual(
+                (root / "TX" / "source" / relative / filename).read_bytes(),
+                b"source",
+            )
+            self.assertEqual(
+                (root / "TX" / "output" / relative / filename).read_bytes(),
+                b"output",
+            )
+            receipt = json.loads(
+                (root / "TX" / "results" / relative / "20260805_155923_0001.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(receipt["status"], "completed")
+
 
 if __name__ == "__main__":
     unittest.main()
