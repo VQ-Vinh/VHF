@@ -20,8 +20,8 @@ class ApiTxRepository implements TxRepository {
   }
 
   @override
-  Future<void> confirmTransmission(TxDraft draft) =>
-      api.confirmTxDraft(draft.stationId, draft.id);
+  Future<void> confirmTransmission(TxDraft draft, String translation) =>
+      api.confirmTxDraft(draft.stationId, draft.id, translation);
 
   @override
   Future<void> cancelDraft(String draftId) {

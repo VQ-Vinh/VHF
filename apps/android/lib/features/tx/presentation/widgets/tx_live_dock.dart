@@ -150,10 +150,12 @@ class _CenterControl extends StatelessWidget {
     if (state.phase == TxPhase.idle || state.phase == TxPhase.recording) {
       return TxPttButton(
         compact: true,
-        enabled: state.canStartRecording,
+        enabled: controller.canStartRecording,
         recording: state.phase == TxPhase.recording,
         onHoldStart: controller.startRecording,
         onHoldEnd: controller.stopRecording,
+        disabledTextKey:
+            controller.startRequired ? 'tx_start_required_short' : null,
       );
     }
     if (state.phase == TxPhase.reviewReady) {

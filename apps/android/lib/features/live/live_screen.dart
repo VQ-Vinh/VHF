@@ -79,9 +79,9 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
               languageLabel:
                   supportedLanguages[draft.targetLanguage] ??
                   draft.targetLanguage.toUpperCase(),
-              onTransmit: () {
+              onTransmit: (translation) {
                 Navigator.pop(sheetContext);
-                _txController.confirmTransmission();
+                _txController.confirmTransmission(translation);
               },
               onCancel: () {
                 Navigator.pop(sheetContext);
@@ -153,7 +153,11 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           controller.synchronize(station, online: online);
-          _txController.setStationOnline(online);
+          _txController.setStationAvailability(
+            online: online,
+            running: station.desired.running,
+            commandPending: station.commandPending || controller.state.busy,
+          );
         });
         final ux = controller.state;
         final stationDisplayState = liveStationDisplayState(

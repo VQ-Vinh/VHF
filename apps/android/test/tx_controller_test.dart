@@ -7,16 +7,24 @@ void main() {
   TxController controller({
     Object? processingError,
     Object? transmissionError,
-  }) => TxController(
-    stationId: 'station-1',
-    repository: FakeTxRepository(
-      processingDelay: Duration.zero,
-      transmissionDelay: Duration.zero,
-      processingError: processingError,
-      transmissionError: transmissionError,
-    ),
-    queuePreviewDuration: Duration.zero,
-  );
+  }) {
+    final subject = TxController(
+      stationId: 'station-1',
+      repository: FakeTxRepository(
+        processingDelay: Duration.zero,
+        transmissionDelay: Duration.zero,
+        processingError: processingError,
+        transmissionError: transmissionError,
+      ),
+      queuePreviewDuration: Duration.zero,
+    );
+    subject.setStationAvailability(
+      online: true,
+      running: true,
+      commandPending: false,
+    );
+    return subject;
+  }
 
   test('recording moves through processing and review', () async {
     final subject = controller();
@@ -50,8 +58,10 @@ void main() {
     subject.startRecording();
     await subject.stopRecording();
 
-    final first = subject.confirmTransmission();
-    final second = subject.confirmTransmission();
+    final first = subject.confirmTransmission(subject.state.draft!.translation);
+    final second = subject.confirmTransmission(
+      subject.state.draft!.translation,
+    );
     await Future.wait([first, second]);
 
     expect(subject.state.phase, TxPhase.completed);
@@ -69,6 +79,33 @@ void main() {
     expect(subject.state.draft, isNull);
   });
 
+  test('confirm sends the edited translation exactly once', () async {
+    final repository = FakeTxRepository(
+      processingDelay: Duration.zero,
+      transmissionDelay: Duration.zero,
+    );
+    final subject = TxController(
+      stationId: 'station-1',
+      repository: repository,
+      queuePreviewDuration: Duration.zero,
+    );
+    subject.setStationAvailability(
+      online: true,
+      running: true,
+      commandPending: false,
+    );
+    addTearDown(subject.dispose);
+    subject.startRecording();
+    await subject.stopRecording();
+
+    await Future.wait([
+      subject.confirmTransmission('Nội dung đã sửa.'),
+      subject.confirmTransmission('Không được gửi hai lần.'),
+    ]);
+
+    expect(repository.lastConfirmedTranslation, 'Nội dung đã sửa.');
+  });
+
   test('offline station blocks recording', () {
     final subject = controller();
     addTearDown(subject.dispose);
@@ -77,6 +114,28 @@ void main() {
     subject.startRecording();
 
     expect(subject.state.phase, TxPhase.stationOffline);
+  });
+
+  test('stopped or command-pending Station blocks recording', () {
+    final stopped = controller();
+    addTearDown(stopped.dispose);
+    stopped.setStationAvailability(
+      online: true,
+      running: false,
+      commandPending: false,
+    );
+    stopped.startRecording();
+    expect(stopped.state.phase, TxPhase.idle);
+
+    final pending = controller();
+    addTearDown(pending.dispose);
+    pending.setStationAvailability(
+      online: true,
+      running: true,
+      commandPending: true,
+    );
+    pending.startRecording();
+    expect(pending.state.phase, TxPhase.idle);
   });
 
   test('processing failure can be reset and retried', () async {
@@ -99,7 +158,7 @@ void main() {
       subject.startRecording();
       await subject.stopRecording();
 
-      await subject.confirmTransmission();
+      await subject.confirmTransmission(subject.state.draft!.translation);
       expect(subject.state.phase, TxPhase.failed);
 
       await subject.retry();

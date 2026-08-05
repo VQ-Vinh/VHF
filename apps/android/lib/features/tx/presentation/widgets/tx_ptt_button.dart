@@ -11,6 +11,7 @@ class TxPttButton extends StatelessWidget {
     required this.onHoldStart,
     required this.onHoldEnd,
     this.compact = false,
+    this.disabledTextKey,
   });
 
   final bool enabled;
@@ -18,6 +19,7 @@ class TxPttButton extends StatelessWidget {
   final VoidCallback onHoldStart;
   final VoidCallback onHoldEnd;
   final bool compact;
+  final String? disabledTextKey;
 
   @override
   Widget build(BuildContext context) {
@@ -69,7 +71,11 @@ class TxPttButton extends StatelessWidget {
                 Text(
                   AppText.of(
                     context,
-                    recording ? 'tx_release_to_stop' : 'tx_hold_to_talk',
+                    recording
+                        ? 'tx_release_to_stop'
+                        : !enabled && disabledTextKey != null
+                        ? disabledTextKey!
+                        : 'tx_hold_to_talk',
                   ),
                   textAlign: TextAlign.center,
                   style: TextStyle(

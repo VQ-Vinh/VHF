@@ -222,6 +222,60 @@ class PranaApi {
         .toList();
   }
 
+  Future<List<StationHistoryDay>> txHistoryDays(
+    String stationId, {
+    required int timezoneOffsetMinutes,
+  }) async {
+    final response = await _dio.get<List<dynamic>>(
+      '/v1/stations/$stationId/tx/history/days',
+      queryParameters: {'timezone_offset_minutes': timezoneOffsetMinutes},
+    );
+    return (response.data ?? const [])
+        .map(
+          (item) =>
+              StationHistoryDay.fromMap(Map<String, dynamic>.from(item as Map)),
+        )
+        .toList();
+  }
+
+  Future<List<TxDraft>> txHistoryDayJobs(
+    String stationId,
+    String date, {
+    required int timezoneOffsetMinutes,
+  }) async {
+    final unique = <String, TxDraft>{};
+    String? cursor;
+    do {
+      final response = await _dio.get<Map<String, dynamic>>(
+        '/v1/stations/$stationId/tx/history/days/$date/jobs',
+        queryParameters: {
+          'timezone_offset_minutes': timezoneOffsetMinutes,
+          'limit': 200,
+          if (cursor != null) 'cursor': cursor,
+        },
+      );
+      final data = response.data ?? const <String, dynamic>{};
+      for (final value in data['items'] as List? ?? const []) {
+        final draft = TxDraft.fromMap(Map<String, dynamic>.from(value as Map));
+        unique[draft.id] = draft;
+      }
+      cursor = data['next_cursor'] as String?;
+    } while (cursor != null && cursor.isNotEmpty);
+    return unique.values.toList()..sort(
+      (left, right) => (right.createdAt ?? DateTime(1970)).compareTo(
+        left.createdAt ?? DateTime(1970),
+      ),
+    );
+  }
+
+  Future<Uint8List> txHistoryAudio(String stationId, String jobId) async {
+    final response = await _dio.get<List<int>>(
+      '/v1/stations/$stationId/tx/history/$jobId/audio',
+      options: Options(responseType: ResponseType.bytes),
+    );
+    return Uint8List.fromList(response.data ?? const <int>[]);
+  }
+
   Future<List<TranslationResult>> stationHistoryDayResults(
     String stationId,
     String date, {
@@ -285,8 +339,15 @@ class PranaApi {
     return TxDraft.fromMap(response.data ?? const {});
   }
 
-  Future<void> confirmTxDraft(String stationId, String draftId) async {
-    await _dio.post<void>('/v1/stations/$stationId/tx/drafts/$draftId/confirm');
+  Future<void> confirmTxDraft(
+    String stationId,
+    String draftId,
+    String translation,
+  ) async {
+    await _dio.post<void>(
+      '/v1/stations/$stationId/tx/drafts/$draftId/confirm',
+      data: {'translation': translation},
+    );
   }
 
   Future<void> cancelTxDraft(String stationId, String draftId) async {

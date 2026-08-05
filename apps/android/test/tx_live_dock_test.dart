@@ -30,14 +30,22 @@ void main() {
     lastSeenAt: DateTime.now(),
   );
 
-  TxController controller() => TxController(
-    stationId: 'station-1',
-    repository: FakeTxRepository(
-      processingDelay: Duration.zero,
-      transmissionDelay: Duration.zero,
-    ),
-    queuePreviewDuration: Duration.zero,
-  );
+  TxController controller({bool running = true}) {
+    final subject = TxController(
+      stationId: 'station-1',
+      repository: FakeTxRepository(
+        processingDelay: Duration.zero,
+        transmissionDelay: Duration.zero,
+      ),
+      queuePreviewDuration: Duration.zero,
+    );
+    subject.setStationAvailability(
+      online: true,
+      running: running,
+      commandPending: false,
+    );
+    return subject;
+  }
 
   Widget harness(TxController subject) => MaterialApp(
     theme: PranaTheme.light(),
@@ -145,5 +153,16 @@ void main() {
 
     expect(find.byKey(const ValueKey('tx-live-dock')), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('PTT is disabled until Station is started', (tester) async {
+    final subject = controller(running: false);
+    addTearDown(subject.dispose);
+    await tester.pumpWidget(harness(subject));
+
+    expect(find.text('START FIRST'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('tx-ptt-button')));
+    await tester.pump();
+    expect(subject.state.phase, TxPhase.idle);
   });
 }
