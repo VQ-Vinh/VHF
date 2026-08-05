@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import time
+import json
+import threading
+from datetime import datetime
+from pathlib import Path
 from typing import Callable
 from prana_core import __version__
 from prana_core.backend.client import BackendApiError
@@ -44,6 +48,13 @@ class StationRuntime:
         self._failed_audio_generation = -1
         self._last_start_attempt: tuple[int, int] | None = None
         self._audio_backend_factory = audio_backend_factory
+        self._desired_running = False
+        self._tx_active = False
+        self._tx_state = "idle"
+        self._tx_job_id = ""
+        self._tx_error: str | None = None
+        self._tx_device_id = ""
+        self._stop_tx = threading.Event()
 
     def _scan_capabilities(self, force: bool = False) -> None:
         now = time.monotonic()
@@ -176,9 +187,12 @@ class StationRuntime:
             self._station_error = None
 
         should_run = bool(desired.get("running"))
+        self._desired_running = should_run
+        self._tx_device_id = str(desired.get("tx_audio_device_id", ""))
         start_attempt = (generation, retry_generation)
         if (
             should_run
+            and not getattr(self, "_tx_active", False)
             and self.orchestrator.state in {PipelineState.IDLE, PipelineState.ERROR}
             and getattr(self, "_last_start_attempt", None) != start_attempt
         ):
@@ -227,11 +241,108 @@ class StationRuntime:
             "retrying": bool(status.get("retrying")),
             "retry_code": status.get("retry_code"),
             "retry_attempt": int(status.get("retry_attempt", 0)),
+            "tx_state": self._tx_state,
+            "tx_job_id": self._tx_job_id,
+            "active_tx_audio_device_id": self._tx_device_id if self._tx_active else "",
+            "tx_error": self._tx_error,
         }
+
+    def _save_tx_files(self, job: dict, source: bytes, output: bytes, status: str, error: str | None = None) -> None:
+        date_path = datetime.now().strftime("%Y/%m/%d")
+        storage = self.config.storage.local
+        source_path = Path(storage.tx_source_dir) / date_path / f"{job['id']}.wav"
+        output_path = Path(storage.tx_output_dir) / date_path / f"{job['id']}.wav"
+        result_path = Path(storage.tx_result_dir) / date_path / f"{job['id']}.json"
+        for path in (source_path, output_path, result_path):
+            path.parent.mkdir(parents=True, exist_ok=True)
+        source_path.write_bytes(source)
+        output_path.write_bytes(output)
+        result_path.write_text(json.dumps({**job, "status": status, "error": error}, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+
+    def _tx_loop(self) -> None:
+        if not callable(getattr(self.client, "claim_tx_job", None)):
+            return
+        while not self._stop_tx.wait(1.0):
+            if self._tx_active:
+                continue
+            if self._tx_state == "failed" and self._tx_job_id:
+                try:
+                    self.client.update_tx_job(self._tx_job_id, "failed", self._tx_error or "TX_FAILED")
+                    self._tx_job_id = ""
+                except Exception:
+                    continue
+            job = None
+            source = b""
+            output = b""
+            try:
+                job = self.client.claim_tx_job()
+                if not job:
+                    continue
+                self._tx_active = True
+                self._tx_job_id = str(job["id"])
+                self._tx_state = "claimed"
+                self._tx_error = None
+                source = self.client.download_tx_audio(self._tx_job_id, "source")
+                output = self.client.download_tx_audio(self._tx_job_id, "output")
+                self.orchestrator.stop()
+                deadline = time.monotonic() + 10
+                while self.orchestrator.state != PipelineState.IDLE and time.monotonic() < deadline:
+                    time.sleep(0.05)
+                if self.orchestrator.state != PipelineState.IDLE:
+                    raise RuntimeError("RX did not stop before TX")
+                self.client.update_tx_job(self._tx_job_id, "transmitting")
+                self._tx_state = "transmitting"
+                if self._tx_device_id and self._tx_device_id not in self._device_indices:
+                    raise RuntimeError("TX_AUDIO_DEVICE_UNAVAILABLE")
+                device_index = self._device_indices.get(self._tx_device_id, -1)
+                player = self._audio_backend_factory()
+                play = getattr(player, "play_wav", None)
+                if not callable(play):
+                    raise RuntimeError("Audio output is not supported on this Station")
+                play(output, device_index)
+                self._save_tx_files(job, source, output, "completed")
+                self.client.update_tx_job(self._tx_job_id, "completed")
+                self._tx_state = "completed"
+            except BackendApiError as exc:
+                if exc.code != "NETWORK_ERROR":
+                    logger.warning("TX worker failed: %s: %s", exc.code, exc)
+                self._tx_error = exc.code
+                if job and source and output:
+                    self._save_tx_files(job, source, output, "failed", exc.code)
+                if self._tx_job_id and self._tx_state in {"claimed", "transmitting"}:
+                    try:
+                        self.client.update_tx_job(self._tx_job_id, "failed", exc.code)
+                        self._tx_job_id = ""
+                    except Exception:
+                        pass
+                self._tx_state = "failed" if self._tx_job_id else "idle"
+            except Exception as exc:
+                logger.exception("TX playback failed")
+                self._tx_error = str(exc)[:500]
+                if job and source and output:
+                    self._save_tx_files(job, source, output, "failed", self._tx_error)
+                if self._tx_job_id:
+                    try:
+                        self.client.update_tx_job(self._tx_job_id, "failed", self._tx_error)
+                        self._tx_job_id = ""
+                    except Exception:
+                        pass
+                self._tx_state = "failed"
+            finally:
+                if self._tx_active:
+                    self._tx_active = False
+                    if self._desired_running and self.orchestrator.state in {PipelineState.IDLE, PipelineState.ERROR}:
+                        self.orchestrator.start()
+                if self._tx_state == "completed":
+                    time.sleep(0.5)
+                    self._tx_state = "idle"
+                    self._tx_job_id = ""
 
     def run_forever(self) -> None:
         next_poll = 0.0
         next_heartbeat = 0.0
+        tx_thread = threading.Thread(target=self._tx_loop, name="station-tx", daemon=True)
+        tx_thread.start()
         try:
             try:
                 self._scan_capabilities(force=True)
@@ -264,4 +375,6 @@ class StationRuntime:
                     logger.warning("Audio capability scan failed: %s", exc)
                 time.sleep(0.2)
         finally:
+            self._stop_tx.set()
+            tx_thread.join(timeout=5)
             self.orchestrator.shutdown()

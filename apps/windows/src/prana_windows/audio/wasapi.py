@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from typing import Callable
+import io
+import wave
 
 import numpy as np
 
@@ -298,3 +300,35 @@ class WASAPIBackend(AudioBackend):
             return devices
         finally:
             pa.terminate()
+
+    @classmethod
+    def play_wav(cls, data: bytes, device_index: int = -1) -> None:
+        import pyaudiowpatch as paw
+
+        with wave.open(io.BytesIO(data), "rb") as source:
+            pa = paw.PyAudio()
+            stream = None
+            try:
+                kwargs = {
+                    "format": pa.get_format_from_width(source.getsampwidth()),
+                    "channels": source.getnchannels(),
+                    "rate": source.getframerate(),
+                    "output": True,
+                }
+                if device_index >= 0:
+                    info = pa.get_device_info_by_index(device_index)
+                    if int(info.get("maxOutputChannels", 0)) < 1:
+                        raise AudioDeviceNotFoundError("Selected TX device has no output channels")
+                    kwargs["output_device_index"] = device_index
+                stream = pa.open(**kwargs)
+                while chunk := source.readframes(4096):
+                    stream.write(chunk)
+            except AudioDeviceNotFoundError:
+                raise
+            except Exception as exc:
+                raise AudioStreamError(f"Failed to play TX audio: {exc}") from exc
+            finally:
+                if stream is not None:
+                    stream.stop_stream()
+                    stream.close()
+                pa.terminate()

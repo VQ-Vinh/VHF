@@ -152,6 +152,40 @@ class StationApiClient:
             ) from exc
         self._raise(response)
 
+    def claim_tx_job(self) -> dict | None:
+        path = f"/v1/stations/{self.identity.id}/tx/jobs/claim"
+        try:
+            response = httpx.post(f"{self.api_url}{path}", headers=self._signed_headers("POST", path), timeout=self.control_timeout)
+        except httpx.RequestError as exc:
+            raise BackendApiError("NETWORK_ERROR", "Cannot claim TX job") from exc
+        self._raise(response)
+        return response.json() if response.content and response.json() else None
+
+    def download_tx_audio(self, job_id: str, kind: str = "output") -> bytes:
+        path = f"/v1/stations/{self.identity.id}/tx/jobs/{job_id}/audio"
+        try:
+            response = httpx.get(
+                f"{self.api_url}{path}", params={"kind": kind},
+                headers=self._signed_headers("GET", path), timeout=self.timeout,
+            )
+        except httpx.RequestError as exc:
+            raise BackendApiError("NETWORK_ERROR", "Cannot download TX audio") from exc
+        self._raise(response)
+        return response.content
+
+    def update_tx_job(self, job_id: str, status: str, error: str | None = None) -> dict:
+        path = f"/v1/stations/{self.identity.id}/tx/jobs/{job_id}/status"
+        payload = {"status": status, **({"error": error} if error else {})}
+        try:
+            response = httpx.post(
+                f"{self.api_url}{path}", json=payload,
+                headers=self._signed_headers("POST", path, payload), timeout=self.control_timeout,
+            )
+        except httpx.RequestError as exc:
+            raise BackendApiError("NETWORK_ERROR", "Cannot update TX job") from exc
+        self._raise(response)
+        return response.json()
+
     def me(self) -> dict:
         path = f"/v1/stations/{self.identity.id}/profile"
         try:

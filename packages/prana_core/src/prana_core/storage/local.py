@@ -19,6 +19,14 @@ class LocalStorage:
         self._config = config
         self._audio_dir = Path(config.audio_dir)
         self._result_dir = Path(config.result_dir)
+        storage_root = self._audio_dir.parents[1]
+        self._legacy_audio_dir = storage_root / "audio"
+        self._legacy_result_dir = storage_root / "results"
+        self._tx_dirs = (
+            Path(config.tx_source_dir),
+            Path(config.tx_output_dir),
+            Path(config.tx_result_dir),
+        )
         self._ensure_dirs()
 
     @property
@@ -32,6 +40,8 @@ class LocalStorage:
     def _ensure_dirs(self) -> None:
         self._audio_dir.mkdir(parents=True, exist_ok=True)
         self._result_dir.mkdir(parents=True, exist_ok=True)
+        for directory in self._tx_dirs:
+            directory.mkdir(parents=True, exist_ok=True)
 
     @staticmethod
     def _date_subdir() -> str:
@@ -95,11 +105,15 @@ class LocalStorage:
     def get_audio_path(self, session_id: str, sequence: int) -> Path | None:
         pattern = f"*_{sequence:04d}.wav"
         matches = list(self._audio_dir.rglob(pattern))
+        if not matches and self._legacy_audio_dir.exists():
+            matches = list(self._legacy_audio_dir.rglob(pattern))
         return matches[0] if matches else None
 
     def get_result_path(self, session_id: str, sequence: int) -> Path | None:
         pattern = f"*_{sequence:04d}.json"
         matches = list(self._result_dir.rglob(pattern))
+        if not matches and self._legacy_result_dir.exists():
+            matches = list(self._legacy_result_dir.rglob(pattern))
         return matches[0] if matches else None
 
     def cleanup_old_files(self, max_days: int = 30) -> int:
@@ -110,7 +124,7 @@ class LocalStorage:
         threshold_ts = time.time() - (max_days * 86400)
         count = 0
 
-        roots = (self._audio_dir, self._result_dir)
+        roots = (self._audio_dir, self._result_dir, *self._tx_dirs)
         for path in [item for root in roots for item in root.rglob("*")]:
             if not path.is_file():
                 continue
