@@ -91,16 +91,19 @@ void main() {
     expect(subject.state.phase, TxPhase.idle);
   });
 
-  test('transmission failure returns to review on retry', () async {
-    final subject = controller(transmissionError: Exception('radio'));
-    addTearDown(subject.dispose);
-    subject.startRecording();
-    await subject.stopRecording();
+  test(
+    'transmission failure only retries after explicit user action',
+    () async {
+      final subject = controller(transmissionError: Exception('radio'));
+      addTearDown(subject.dispose);
+      subject.startRecording();
+      await subject.stopRecording();
 
-    await subject.confirmTransmission();
-    expect(subject.state.phase, TxPhase.failed);
+      await subject.confirmTransmission();
+      expect(subject.state.phase, TxPhase.failed);
 
-    await subject.retry();
-    expect(subject.state.phase, TxPhase.reviewReady);
-  });
+      await subject.retry();
+      expect(subject.state.phase, TxPhase.completed);
+    },
+  );
 }

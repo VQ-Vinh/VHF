@@ -1,8 +1,12 @@
-import 'package:dio/dio.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:dio/dio.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:uuid/uuid.dart';
+
 import '../core/app_config.dart';
+import '../features/tx/domain/tx_draft.dart';
 import '../models/station.dart';
 
 class PranaApi {
@@ -86,6 +90,7 @@ class PranaApi {
     String? targetLanguage,
     String? captureMode,
     String? audioDeviceId,
+    String? txAudioDeviceId,
     bool refreshCapabilities = false,
     bool retry = false,
   }) async {
@@ -97,6 +102,7 @@ class PranaApi {
           if (targetLanguage != null) 'target_language': targetLanguage,
           if (captureMode != null) 'capture_mode': captureMode,
           if (audioDeviceId != null) 'audio_device_id': audioDeviceId,
+          if (txAudioDeviceId != null) 'tx_audio_device_id': txAudioDeviceId,
           if (refreshCapabilities) 'refresh_capabilities': true,
           if (retry) 'retry': true,
         },
@@ -250,6 +256,48 @@ class PranaApi {
     } on DioException catch (error) {
       throw PranaApiFailure.fromDio(error);
     }
+  }
+
+  Future<TxDraft> createTxDraft(
+    String stationId,
+    String audioPath,
+    String targetLanguage,
+  ) async {
+    final requestId = const Uuid().v4();
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/v1/stations/$stationId/tx/drafts',
+      data: FormData.fromMap({
+        'target_language': targetLanguage,
+        'audio': await MultipartFile.fromFile(
+          audioPath,
+          filename: File(audioPath).uri.pathSegments.last,
+        ),
+      }),
+      options: Options(headers: {'X-Request-ID': requestId}),
+    );
+    return TxDraft.fromMap(response.data ?? const {});
+  }
+
+  Future<TxDraft> txDraft(String stationId, String draftId) async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '/v1/stations/$stationId/tx/drafts/$draftId',
+    );
+    return TxDraft.fromMap(response.data ?? const {});
+  }
+
+  Future<void> confirmTxDraft(String stationId, String draftId) async {
+    await _dio.post<void>('/v1/stations/$stationId/tx/drafts/$draftId/confirm');
+  }
+
+  Future<void> cancelTxDraft(String stationId, String draftId) async {
+    await _dio.delete<void>('/v1/stations/$stationId/tx/drafts/$draftId');
+  }
+
+  Future<TxDraft> retryTxDraft(String stationId, String draftId) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/v1/stations/$stationId/tx/drafts/$draftId/retry',
+    );
+    return TxDraft.fromMap(response.data ?? const {});
   }
 }
 

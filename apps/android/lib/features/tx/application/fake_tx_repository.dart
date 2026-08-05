@@ -13,6 +13,7 @@ class FakeTxRepository implements TxRepository {
   final Duration transmissionDelay;
   final Object? processingError;
   final Object? transmissionError;
+  int _pollCount = 0;
 
   @override
   Future<TxDraft> processRecording(TxRecordingInput input) async {
@@ -36,6 +37,23 @@ class FakeTxRepository implements TxRepository {
 
   @override
   Future<void> cancelDraft(String draftId) async {}
+
+  @override
+  Future<TxDraft> getDraft(String stationId, String draftId) async {
+    _pollCount += 1;
+    return TxDraft(
+      id: draftId,
+      stationId: stationId,
+      duration: const Duration(seconds: 1),
+      targetLanguage: 'vi',
+      transcript: 'Test',
+      translation: 'Kiểm thử',
+      status: _pollCount == 1 ? 'transmitting' : 'completed',
+    );
+  }
+
+  @override
+  Future<TxDraft> retryTransmission(TxDraft draft) async => draft;
 
   static String _translationFor(String language) => switch (language) {
     'vi' => 'Vui lòng xác nhận tọa độ và báo cáo trạng thái của bạn.',

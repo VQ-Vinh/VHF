@@ -20,6 +20,7 @@ class StationSettingsScreen extends ConsumerStatefulWidget {
 class _StationSettingsScreenState extends ConsumerState<StationSettingsScreen> {
   String? mode;
   String? deviceId;
+  String? txDeviceId;
   bool saving = false;
   bool applying = false;
   bool refreshing = false;
@@ -32,8 +33,10 @@ class _StationSettingsScreenState extends ConsumerState<StationSettingsScreen> {
     required String selectedDevice,
     required bool modeChanged,
     required bool deviceChanged,
+    required String selectedTxDevice,
+    required bool txDeviceChanged,
   }) async {
-    if (!modeChanged && !deviceChanged) return;
+    if (!modeChanged && !deviceChanged && !txDeviceChanged) return;
     setState(() {
       saving = true;
       error = null;
@@ -46,6 +49,7 @@ class _StationSettingsScreenState extends ConsumerState<StationSettingsScreen> {
             station.id,
             captureMode: modeChanged ? selectedMode : null,
             audioDeviceId: deviceChanged ? selectedDevice : null,
+            txAudioDeviceId: txDeviceChanged ? selectedTxDevice : null,
           );
       if (!mounted) return;
       setState(() {
@@ -60,10 +64,13 @@ class _StationSettingsScreenState extends ConsumerState<StationSettingsScreen> {
         if (current != null &&
             (!modeChanged || current.desired.captureMode == selectedMode) &&
             (!deviceChanged ||
-                current.desired.audioDeviceId == selectedDevice)) {
+                current.desired.audioDeviceId == selectedDevice) &&
+            (!txDeviceChanged ||
+                current.desired.txAudioDeviceId == selectedTxDevice)) {
           setState(() {
             mode = null;
             deviceId = null;
+            txDeviceId = null;
             applying = false;
             error = null;
           });
@@ -194,7 +201,19 @@ class _StationSettingsScreenState extends ConsumerState<StationSettingsScreen> {
 
     final modeChanged = selectedMode != station.desired.captureMode;
     final deviceChanged = selectedDevice != station.desired.audioDeviceId;
-    final hasChanges = devices.isNotEmpty && (modeChanged || deviceChanged);
+    final outputDevices =
+        capabilities?.audioDevices
+            .where((item) => item.mode == 'device' && item.outputChannels > 0)
+            .toList() ??
+        const <StationAudioDevice>[];
+    var selectedTxDevice = txDeviceId ?? station.desired.txAudioDeviceId;
+    if (!outputDevices.any((item) => item.id == selectedTxDevice)) {
+      selectedTxDevice = outputDevices.isEmpty ? '' : outputDevices.first.id;
+    }
+    final txDeviceChanged = selectedTxDevice != station.desired.txAudioDeviceId;
+    final hasChanges =
+        (devices.isNotEmpty || outputDevices.isNotEmpty) &&
+        (modeChanged || deviceChanged || txDeviceChanged);
     final operationPending = saving || applying || station.commandPending;
     final controlsEnabled =
         online && capabilities != null && !operationPending && !refreshing;
@@ -305,6 +324,33 @@ class _StationSettingsScreenState extends ConsumerState<StationSettingsScreen> {
           ),
           const SizedBox(height: 14),
           _SettingsCard(
+            title: AppText.of(context, 'tx_output'),
+            child: DropdownButtonFormField<String>(
+              initialValue: selectedTxDevice.isEmpty ? null : selectedTxDevice,
+              isExpanded: true,
+              decoration: InputDecoration(
+                labelText: AppText.of(context, 'tx_output_device'),
+              ),
+              items:
+                  outputDevices
+                      .map(
+                        (device) => DropdownMenuItem(
+                          value: device.id,
+                          child: Text(
+                            device.name,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      )
+                      .toList(),
+              onChanged:
+                  controlsEnabled
+                      ? (value) => setState(() => txDeviceId = value)
+                      : null,
+            ),
+          ),
+          const SizedBox(height: 14),
+          _SettingsCard(
             title: AppText.of(context, 'station_information'),
             child: Column(
               children: [
@@ -359,6 +405,8 @@ class _StationSettingsScreenState extends ConsumerState<StationSettingsScreen> {
                   selectedDevice: selectedDevice,
                   modeChanged: modeChanged,
                   deviceChanged: deviceChanged,
+                  selectedTxDevice: selectedTxDevice,
+                  txDeviceChanged: txDeviceChanged,
                 )
                 : null,
       ),
