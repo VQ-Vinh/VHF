@@ -1,12 +1,30 @@
+import json
 from datetime import datetime, timezone
 
 from services.prana_api.google_services import (
+    CloudStorageArchive,
     normalize_language_code,
     normalize_same_language_translation,
     station_audio_filename,
     station_storage_folder,
     station_storage_objects,
 )
+
+
+class _Blob:
+    def __init__(self) -> None:
+        self.data = None
+
+    def upload_from_string(self, data, content_type: str) -> None:
+        self.data = data
+
+
+class _Bucket:
+    def __init__(self) -> None:
+        self.objects: dict[str, _Blob] = {}
+
+    def blob(self, name: str) -> _Blob:
+        return self.objects.setdefault(name, _Blob())
 
 
 def test_station_folder_is_readable_safe_and_unique() -> None:
@@ -82,6 +100,30 @@ def test_same_language_falls_back_to_raw_transcript() -> None:
     )
 
     assert result["translation"] == "xin chao"
+
+
+def test_tx_output_archive_serializes_firestore_datetime_metadata() -> None:
+    archive = CloudStorageArchive.__new__(CloudStorageArchive)
+    archive.bucket = _Bucket()
+    created_at = datetime(2026, 8, 5, 15, 59, 23, tzinfo=timezone.utc)
+
+    output_object = archive.archive_tx_output(
+        "owner-1",
+        "station-1",
+        "20260805_155923_0001.wav",
+        "2026/08/05",
+        b"wav-output",
+        {"id": "job-1", "created_at": created_at, "status": "queued"},
+    )
+
+    assert output_object.endswith("/TX/output/2026/08/05/20260805_155923_0001.wav")
+    result_object = (
+        "VHF-Storage/owner-1/station-1/TX/result/2026/08/05/"
+        "20260805_155923_0001.json"
+    )
+    metadata = json.loads(archive.bucket.objects[result_object].data)
+    assert metadata["created_at"] == "2026-08-05 15:59:23+00:00"
+    assert archive.bucket.objects[output_object].data == b"wav-output"
 
 
 def test_different_language_preserves_model_translation() -> None:

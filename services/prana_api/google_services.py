@@ -324,7 +324,7 @@ class CloudStorageArchive:
             content_type="audio/wav",
         )
         self.bucket.blob(result_object).upload_from_string(
-            json.dumps(metadata, ensure_ascii=False),
+            json.dumps(metadata, ensure_ascii=False, default=str),
             content_type="application/json",
         )
         return output_object
