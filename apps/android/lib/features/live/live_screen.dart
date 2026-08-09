@@ -26,6 +26,14 @@ class LiveScreen extends ConsumerStatefulWidget {
   ConsumerState<LiveScreen> createState() => _LiveScreenState();
 }
 
+bool canToggleLiveStation({
+  required bool online,
+  required bool running,
+  required bool busy,
+  required bool commandPending,
+}) =>
+    (online || running) && !busy && !commandPending;
+
 class _LiveScreenState extends ConsumerState<LiveScreen> {
   String? _dismissedProcessingError;
   late final TxController _txController;
@@ -265,7 +273,12 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
               ux: ux,
               txController: _txController,
               onToggle:
-                  online && !ux.busy && !station.commandPending
+                  canToggleLiveStation(
+                        online: online,
+                        running: station.desired.running,
+                        busy: ux.busy,
+                        commandPending: station.commandPending,
+                      )
                       ? () => controller.setRunning(
                         station,
                         !station.desired.running,

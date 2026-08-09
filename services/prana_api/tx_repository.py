@@ -128,6 +128,30 @@ class MemoryTxRepository:
             item["error"] = error
             return dict(item)
 
+    def expire_stale_active(self, station_id: str, stale: bool) -> dict | None:
+        if not stale:
+            return None
+        with self.lock:
+            active = next(
+                (
+                    item
+                    for item in self.items.values()
+                    if item.get("station_id") == station_id
+                    and item.get("status") in {"claimed", "transmitting"}
+                ),
+                None,
+            )
+            if active is None:
+                return None
+            active.update(
+                {
+                    "status": "failed",
+                    "error": "STATION_OFFLINE_DURING_TX",
+                    "updated_at": datetime.now(timezone.utc),
+                }
+            )
+            return dict(active)
+
     def _owned(self, uid: str, station_id: str, job_id: str) -> dict:
         item = self.items.get(job_id)
         if not item or item["uid"] != uid or item["station_id"] != station_id:
@@ -275,16 +299,68 @@ class FirestoreTxRepository:
         return apply(transaction)
 
     def station_update(self, station_id: str, job_id: str, status: str, error: str | None = None) -> dict:
-        item = self.get(job_id)
-        if not item or item.get("station_id") != station_id:
-            raise api_error(404, "TX_NOT_FOUND", "TX job was not found")
-        allowed = {"claimed": {"transmitting", "failed"}, "transmitting": {"completed", "failed"}}
-        if status not in allowed.get(item["status"], set()):
-            raise api_error(409, "TX_INVALID_STATE", "Invalid TX transition")
-        self.collection.document(job_id).update({"status": status, "error": error, "updated_at": firestore.SERVER_TIMESTAMP})
-        if status in {"completed", "failed"}:
-            self.db.collection("station_tx_state").document(station_id).set({"job_id": "", "status": status})
-        return dict(item, status=status, error=error)
+        transaction = self.db.transaction()
+        job_ref = self.collection.document(job_id)
+        active_ref = self.db.collection("station_tx_state").document(station_id)
+
+        @firestore.transactional
+        def apply(tx):
+            snap = job_ref.get(transaction=tx)
+            item = {"id": snap.id, **(snap.to_dict() or {})} if snap.exists else None
+            if not item or item.get("station_id") != station_id:
+                raise api_error(404, "TX_NOT_FOUND", "TX job was not found")
+            allowed = {
+                "claimed": {"transmitting", "failed"},
+                "transmitting": {"completed", "failed"},
+            }
+            if status not in allowed.get(item["status"], set()):
+                raise api_error(409, "TX_INVALID_STATE", "Invalid TX transition")
+            tx.update(
+                job_ref,
+                {
+                    "status": status,
+                    "error": error,
+                    "updated_at": firestore.SERVER_TIMESTAMP,
+                },
+            )
+            if status in {"completed", "failed"}:
+                tx.set(active_ref, {"job_id": "", "status": status})
+            return dict(item, status=status, error=error)
+
+        return apply(transaction)
+
+    def expire_stale_active(self, station_id: str, stale: bool) -> dict | None:
+        """Fail an abandoned claimed/transmitting job and release its active slot."""
+        if not stale:
+            return None
+        transaction = self.db.transaction()
+        active_ref = self.db.collection("station_tx_state").document(station_id)
+
+        @firestore.transactional
+        def apply(tx):
+            active_snap = active_ref.get(transaction=tx)
+            active_data = active_snap.to_dict() or {}
+            job_id = active_data.get("job_id")
+            if not job_id:
+                return None
+            job_ref = self.collection.document(job_id)
+            job_snap = job_ref.get(transaction=tx)
+            if not job_snap.exists:
+                tx.set(active_ref, {"job_id": "", "status": "failed"})
+                return None
+            item = {"id": job_snap.id, **(job_snap.to_dict() or {})}
+            if item.get("status") not in {"claimed", "transmitting"}:
+                return None
+            updates = {
+                "status": "failed",
+                "error": "STATION_OFFLINE_DURING_TX",
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            }
+            tx.update(job_ref, updates)
+            tx.set(active_ref, {"job_id": "", "status": "failed"})
+            return dict(item, status="failed", error=updates["error"])
+
+        return apply(transaction)
 
     @staticmethod
     def _owned(item: dict | None, uid: str, station_id: str) -> None:

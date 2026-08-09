@@ -120,6 +120,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
 
     expect(subject.state.phase, TxPhase.recording);
+    expect(find.byKey(const ValueKey('tx-recording-status')), findsOneWidget);
+    expect(find.textContaining('RECORDING'), findsOneWidget);
+    expect(find.textContaining('00:00 / 01:00'), findsOneWidget);
     expect(find.text('RX IDLE'), findsNothing);
     expect(find.text('TX'), findsWidgets);
     await tester.tap(find.byKey(const ValueKey('tx-dock-language')));
@@ -131,6 +134,27 @@ void main() {
 
     expect(subject.state.phase, TxPhase.reviewReady);
     expect(find.byKey(const ValueKey('tx-open-review')), findsOneWidget);
+  });
+
+  test('STOP remains available offline but START does not', () {
+    expect(
+      canToggleLiveStation(
+        online: false,
+        running: true,
+        busy: false,
+        commandPending: false,
+      ),
+      isTrue,
+    );
+    expect(
+      canToggleLiveStation(
+        online: false,
+        running: false,
+        busy: false,
+        commandPending: false,
+      ),
+      isFalse,
+    );
   });
 
   testWidgets('dock fits a 360dp screen at 1.3 text scale', (tester) async {
@@ -154,6 +178,37 @@ void main() {
     expect(find.byKey(const ValueKey('tx-live-dock')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  for (final size in const [Size(360, 800), Size(412, 915)]) {
+    testWidgets(
+      'recording dock fits ${size.width.toInt()}dp at 1.3 text scale',
+      (tester) async {
+        tester.view.physicalSize = size;
+        tester.view.devicePixelRatio = 1;
+        tester.platformDispatcher.textScaleFactorTestValue = 1.3;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        final subject = controller();
+        addTearDown(subject.dispose);
+
+        await tester.pumpWidget(harness(subject));
+        final gesture = await tester.startGesture(
+          tester.getCenter(find.byKey(const ValueKey('tx-ptt-button'))),
+        );
+        await tester.pump(const Duration(milliseconds: 200));
+
+        expect(
+          find.byKey(const ValueKey('tx-recording-status')),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+
+        await gesture.up();
+        await tester.pumpAndSettle();
+      },
+    );
+  }
 
   testWidgets('PTT is disabled until Station is started', (tester) async {
     final subject = controller(running: false);

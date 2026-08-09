@@ -4,6 +4,7 @@ import '../../../../core/localization.dart';
 import '../../../../core/languages.dart';
 import '../../../../core/theme.dart';
 import '../../application/tx_controller.dart';
+import '../../domain/tx_failure.dart';
 import '../../domain/tx_phase.dart';
 import 'tx_ptt_button.dart';
 
@@ -32,36 +33,63 @@ class TxLiveDock extends StatelessWidget {
       return Container(
         key: const ValueKey('tx-live-dock'),
         constraints: const BoxConstraints(minHeight: 88),
-        decoration: const BoxDecoration(
-          color: Color(0xFFDCE9ED),
-          border: Border(top: BorderSide(color: Color(0xFFC5DADF))),
+        decoration: BoxDecoration(
+          color:
+              recording ? const Color(0xFFFFF3F4) : const Color(0xFFDCE9ED),
         ),
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
-        child: Stack(
-          alignment: Alignment.center,
+        foregroundDecoration: BoxDecoration(
+          border: Border(
+            top: BorderSide(
+              color:
+                  recording
+                      ? const Color(0xFFC33F4F)
+                      : const Color(0xFFC5DADF),
+              width: recording ? 2 : 1,
+            ),
+          ),
+        ),
+        padding: EdgeInsets.fromLTRB(12, recording ? 6 : 8, 12, 10),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Row(
+            if (recording) ...[
+              _RecordingStatus(duration: state.duration),
+              const SizedBox(height: 4),
+            ],
+            if (state.failure == TxFailure.stationOfflineDuringTx) ...[
+              _OfflineTxNotice(settled: state.draft?.status == 'failed'),
+              const SizedBox(height: 4),
+            ],
+            Stack(
+              alignment: Alignment.center,
               children: [
-                Expanded(
-                  child: _RadioStatus(
-                    stationState: recording ? 'TX' : stationState,
-                    stationOnline: stationOnline,
-                    apiOnline: apiOnline,
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _RadioStatus(
+                        stationState: recording ? 'TX' : stationState,
+                        stationOnline: stationOnline,
+                        apiOnline: apiOnline,
+                      ),
+                    ),
+                    const SizedBox(width: 128),
+                    Expanded(
+                      child: _DockLanguage(
+                        controller: controller,
+                        enabled: state.canChangeLanguage && stationOnline,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 128),
-                Expanded(
-                  child: _DockLanguage(
+                SizedBox(
+                  key: const ValueKey('tx-center-control'),
+                  width: 112,
+                  child: _CenterControl(
                     controller: controller,
-                    enabled: state.canChangeLanguage && stationOnline,
+                    onReview: onReview,
                   ),
                 ),
               ],
-            ),
-            SizedBox(
-              key: const ValueKey('tx-center-control'),
-              width: 112,
-              child: _CenterControl(controller: controller, onReview: onReview),
             ),
           ],
         ),
@@ -179,9 +207,21 @@ class _CenterControl extends StatelessWidget {
         state.phase == TxPhase.busy ||
         state.phase == TxPhase.stationOffline) {
       return _DockAction(
-        icon: Icons.refresh,
-        label: AppText.of(context, 'retry'),
-        onPressed: controller.retry,
+        icon:
+            state.failure == TxFailure.stationOfflineDuringTx
+                ? Icons.cloud_off_outlined
+                : Icons.refresh,
+        label: AppText.of(
+          context,
+          state.failure == TxFailure.stationOfflineDuringTx &&
+                  !controller.canRetryTransmission
+              ? 'waiting'
+              : 'retry',
+        ),
+        onPressed:
+            state.draft == null || controller.canRetryTransmission
+                ? controller.retry
+                : null,
         error: true,
       );
     }
@@ -209,7 +249,7 @@ class _DockAction extends StatelessWidget {
 
   final IconData icon;
   final String label;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
   final bool error;
 
   @override
@@ -234,6 +274,75 @@ class _DockAction extends StatelessWidget {
           ),
         ],
       ),
+    ),
+  );
+}
+
+class _RecordingStatus extends StatelessWidget {
+  const _RecordingStatus({required this.duration});
+
+  final Duration duration;
+
+  String _clock(Duration value) {
+    final seconds = value.inSeconds.clamp(0, 60);
+    return '00:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    liveRegion: true,
+    label:
+        '${AppText.of(context, 'tx_recording_short')} ${_clock(duration)} / 01:00',
+    child: Container(
+      key: const ValueKey('tx-recording-status'),
+      height: 24,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFE7EA),
+        borderRadius: BorderRadius.circular(7),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.fiber_manual_record, size: 11, color: Color(0xFFC33F4F)),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              '${AppText.of(context, 'tx_recording_short')} • ${_clock(duration)} / 01:00  ·  ${AppText.of(context, 'tx_release_hint')}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF9E2637),
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _OfflineTxNotice extends StatelessWidget {
+  const _OfflineTxNotice({required this.settled});
+
+  final bool settled;
+
+  @override
+  Widget build(BuildContext context) => Text(
+    AppText.of(
+      context,
+      settled ? 'tx_station_offline_during_tx' : 'tx_retry_waiting_station',
+    ),
+    key: const ValueKey('tx-offline-notice'),
+    maxLines: 2,
+    textAlign: TextAlign.center,
+    overflow: TextOverflow.ellipsis,
+    style: const TextStyle(
+      color: Color(0xFF9E2637),
+      fontSize: 9,
+      fontWeight: FontWeight.w800,
     ),
   );
 }

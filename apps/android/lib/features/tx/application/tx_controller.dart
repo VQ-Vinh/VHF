@@ -33,11 +33,20 @@ class TxController extends ChangeNotifier {
   bool _commandPending = false;
   bool _disposed = false;
   Future<void>? _recordingStart;
+  String? _monitoredDraftId;
 
   void setStationOnline(bool online) {
     if (_stationOnline == online) return;
     _stationOnline = online;
-    if (!online && state.phase == TxPhase.idle) {
+    if (!online &&
+        (state.phase == TxPhase.queued ||
+            state.phase == TxPhase.transmitting)) {
+      state = state.copyWith(
+        phase: TxPhase.failed,
+        failure: TxFailure.stationOfflineDuringTx,
+      );
+      notifyListeners();
+    } else if (!online && state.phase == TxPhase.idle) {
       state = state.copyWith(
         phase: TxPhase.stationOffline,
         failure: TxFailure.stationOffline,
@@ -67,6 +76,15 @@ class TxController extends ChangeNotifier {
       !_commandPending;
 
   bool get startRequired => _stationOnline && !_stationRunning;
+
+  bool get canRetryTransmission =>
+      state.phase == TxPhase.failed &&
+      state.draft != null &&
+      (state.failure != TxFailure.stationOfflineDuringTx ||
+          state.draft?.status == 'failed') &&
+      _stationOnline &&
+      _stationRunning &&
+      !_commandPending;
 
   void setTargetLanguage(String language) {
     if (!state.canChangeLanguage || language == state.targetLanguage) return;
@@ -183,6 +201,7 @@ class TxController extends ChangeNotifier {
 
   Future<void> retry() async {
     if (state.phase == TxPhase.failed && state.draft != null) {
+      if (!canRetryTransmission) return;
       try {
         final retryDraft = await _repository.retryTransmission(state.draft!);
         state = state.copyWith(
@@ -207,19 +226,42 @@ class TxController extends ChangeNotifier {
   }
 
   Future<void> _monitorTransmission(TxDraft draft) async {
-    while (!_disposed &&
-        (state.phase == TxPhase.queued ||
-            state.phase == TxPhase.transmitting)) {
+    _monitoredDraftId = draft.id;
+    while (!_disposed && _monitoredDraftId == draft.id) {
       await Future<void>.delayed(queuePreviewDuration);
-      final current = await _repository.getDraft(stationId, draft.id);
+      TxDraft current;
+      try {
+        current = await _repository.getDraft(stationId, draft.id);
+      } catch (_) {
+        // A temporary API/network failure must not terminate monitoring. The
+        // Station availability stream owns the visible offline state.
+        continue;
+      }
       if (_disposed) return;
       if (current.status == 'claimed' || current.status == 'transmitting') {
-        state = state.copyWith(phase: TxPhase.transmitting, draft: current);
+        if (_stationOnline) {
+          state = state.copyWith(
+            phase: TxPhase.transmitting,
+            draft: current,
+            clearFailure: true,
+          );
+        } else {
+          state = state.copyWith(draft: current);
+        }
       } else if (current.status == 'completed') {
         state = state.copyWith(phase: TxPhase.completed, draft: current);
+        _monitoredDraftId = null;
       } else if (current.status == 'failed') {
-        _fail(TxFailure.transmissionFailed, TxPhase.failed);
-        return;
+        final failure =
+            current.error == 'STATION_OFFLINE_DURING_TX'
+                ? TxFailure.stationOfflineDuringTx
+                : TxFailure.transmissionFailed;
+        state = state.copyWith(
+          phase: TxPhase.failed,
+          draft: current,
+          failure: failure,
+        );
+        _monitoredDraftId = null;
       } else {
         state = state.copyWith(draft: current);
       }
@@ -242,6 +284,7 @@ class TxController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _monitoredDraftId = null;
     _stopRecordingTimer();
     unawaited(_recorder?.dispose() ?? Future<void>.value());
     super.dispose();
