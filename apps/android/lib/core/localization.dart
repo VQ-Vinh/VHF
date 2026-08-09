@@ -233,6 +233,12 @@ abstract final class AppText {
       'tx_completed_body': 'Station đã nhả PTT và quay lại chế độ RX.',
       'tx_new_message': 'Tạo bản phát mới',
       'tx_station_offline': 'Station đang offline. Không thể bắt đầu TX.',
+      'tx_station_offline_during_tx':
+          'Mất kết nối với Station khi đang phát. Kết quả TX chưa được xác nhận.',
+      'tx_retry_waiting_station':
+          'Chờ Station online và xác nhận job thất bại trước khi thử lại.',
+      'tx_recording_short': 'ĐANG THU',
+      'tx_release_hint': 'Thả để kết thúc',
       'tx_station_busy': 'Station đang được một thiết bị khác sử dụng.',
       'tx_channel_busy': 'Kênh VHF đang bận. Bản phát đã được hủy.',
       'tx_expired': 'Phiên TX đã hết hạn. Vui lòng thu lại.',
@@ -454,6 +460,12 @@ abstract final class AppText {
       'tx_completed_body': 'The Station released PTT and returned to RX mode.',
       'tx_new_message': 'Create another transmission',
       'tx_station_offline': 'The Station is offline. TX cannot be started.',
+      'tx_station_offline_during_tx':
+          'Connection to the Station was lost during transmission. The TX result is unconfirmed.',
+      'tx_retry_waiting_station':
+          'Wait for the Station to reconnect and confirm failure before retrying.',
+      'tx_recording_short': 'RECORDING',
+      'tx_release_hint': 'Release to finish',
       'tx_station_busy': 'Another device is currently using this Station.',
       'tx_channel_busy':
           'The VHF channel is busy. The transmission was cancelled.',
