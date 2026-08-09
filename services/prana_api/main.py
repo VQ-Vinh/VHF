@@ -1104,6 +1104,12 @@ def _require_tx_running(station: dict) -> None:
         raise api_error(409, "TX_NOT_STARTED", "Start the Station before using TX")
 
 
+def _reconcile_stale_tx(station: dict, station_id: str, tx_repo) -> dict | None:
+    last_seen = station.get("last_seen_at")
+    stale = last_seen is None or last_seen <= datetime.now(timezone.utc) - timedelta(seconds=20)
+    return tx_repo.expire_stale_active(station_id, stale)
+
+
 @app.post("/v1/stations/{station_id}/tx/drafts", response_model=TxDraft)
 def create_tx_draft(
     station_id: str,
@@ -1177,7 +1183,8 @@ def create_tx_draft(
 @app.get("/v1/stations/{station_id}/tx/drafts/{job_id}", response_model=TxDraft)
 def get_tx_draft(station_id: str, job_id: str, identity: Identity = Depends(require_identity),
                  repo: Repository = Depends(get_repository), tx_repo=Depends(get_tx_repository)):
-    _owned_tx_station(repo, identity.uid, station_id)
+    station = _owned_tx_station(repo, identity.uid, station_id)
+    _reconcile_stale_tx(station, station_id, tx_repo)
     item = tx_repo.get(job_id)
     if not item or item.get("uid") != identity.uid or item.get("station_id") != station_id:
         raise api_error(404, "TX_NOT_FOUND", "TX draft was not found")
@@ -1232,6 +1239,7 @@ def confirm_tx_draft(
 ):
     station = _owned_tx_station(repo, identity.uid, station_id)
     _require_tx_running(station)
+    _reconcile_stale_tx(station, station_id, tx_repo)
     existing = tx_repo.get(job_id)
     if (
         existing
@@ -1268,6 +1276,7 @@ def retry_tx_draft(station_id: str, job_id: str, identity: Identity = Depends(re
                    repo: Repository = Depends(get_repository), tx_repo=Depends(get_tx_repository)):
     station = _owned_tx_station(repo, identity.uid, station_id)
     _require_tx_running(station)
+    _reconcile_stale_tx(station, station_id, tx_repo)
     clone = tx_repo.retry(identity.uid, station_id, job_id, str(uuid.uuid4()))
     item = tx_repo.begin_confirm(
         identity.uid,

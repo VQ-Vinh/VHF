@@ -59,6 +59,28 @@ def test_tx_queue_claims_once_and_never_requeues_failed_job() -> None:
     assert repository.claim("station-1") is None
 
 
+def test_stale_active_tx_expires_once_and_rejects_late_completion() -> None:
+    repository = MemoryTxRepository()
+    repository.create(job())
+    repository.confirm("user-1", "station-1", "job-1")
+    repository.claim("station-1")
+    repository.station_update("station-1", "job-1", "transmitting")
+
+    assert repository.expire_stale_active("station-1", False) is None
+    expired = repository.expire_stale_active("station-1", True)
+    assert expired is not None
+    assert expired["status"] == "failed"
+    assert expired["error"] == "STATION_OFFLINE_DURING_TX"
+    assert repository.expire_stale_active("station-1", True) is None
+
+    with pytest.raises(HTTPException) as error:
+        repository.station_update("station-1", "job-1", "completed")
+    assert error.value.detail["code"] == "TX_INVALID_STATE"
+
+    repository.create(job("job-2"))
+    repository.confirm("user-1", "station-1", "job-2")
+
+
 def test_one_active_tx_job_per_station_and_manual_retry_attempt() -> None:
     repository = MemoryTxRepository()
     repository.create(job())
