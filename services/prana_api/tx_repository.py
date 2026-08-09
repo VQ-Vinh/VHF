@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from google.cloud import firestore
 
@@ -128,9 +128,9 @@ class MemoryTxRepository:
             item["error"] = error
             return dict(item)
 
-    def expire_stale_active(self, station_id: str, stale: bool) -> dict | None:
-        if not stale:
-            return None
+    def expire_stale_active(
+        self, station_id: str, station_stale: bool, now: datetime
+    ) -> dict | None:
         with self.lock:
             active = next(
                 (
@@ -143,11 +143,22 @@ class MemoryTxRepository:
             )
             if active is None:
                 return None
+            activity_at = (
+                active.get("updated_at")
+                or active.get("claimed_at")
+                or active.get("created_at")
+            )
+            lease_stale = bool(
+                activity_at
+                and activity_at <= now - timedelta(seconds=90)
+            )
+            if not station_stale and not lease_stale:
+                return None
             active.update(
                 {
                     "status": "failed",
                     "error": "STATION_OFFLINE_DURING_TX",
-                    "updated_at": datetime.now(timezone.utc),
+                    "updated_at": now,
                 }
             )
             return dict(active)
@@ -329,10 +340,10 @@ class FirestoreTxRepository:
 
         return apply(transaction)
 
-    def expire_stale_active(self, station_id: str, stale: bool) -> dict | None:
+    def expire_stale_active(
+        self, station_id: str, station_stale: bool, now: datetime
+    ) -> dict | None:
         """Fail an abandoned claimed/transmitting job and release its active slot."""
-        if not stale:
-            return None
         transaction = self.db.transaction()
         active_ref = self.db.collection("station_tx_state").document(station_id)
 
@@ -349,7 +360,22 @@ class FirestoreTxRepository:
                 tx.set(active_ref, {"job_id": "", "status": "failed"})
                 return None
             item = {"id": job_snap.id, **(job_snap.to_dict() or {})}
-            if item.get("status") not in {"claimed", "transmitting"}:
+            status = item.get("status")
+            if status not in ACTIVE_TX_STATES:
+                tx.set(active_ref, {"job_id": "", "status": status or "failed"})
+                return None
+            if status not in {"claimed", "transmitting"}:
+                return None
+            activity_at = (
+                item.get("updated_at")
+                or item.get("claimed_at")
+                or item.get("created_at")
+            )
+            lease_stale = bool(
+                activity_at
+                and activity_at <= now - timedelta(seconds=90)
+            )
+            if not station_stale and not lease_stale:
                 return None
             updates = {
                 "status": "failed",

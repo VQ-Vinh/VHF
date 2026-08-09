@@ -1105,9 +1105,10 @@ def _require_tx_running(station: dict) -> None:
 
 
 def _reconcile_stale_tx(station: dict, station_id: str, tx_repo) -> dict | None:
+    now = datetime.now(timezone.utc)
     last_seen = station.get("last_seen_at")
-    stale = last_seen is None or last_seen <= datetime.now(timezone.utc) - timedelta(seconds=20)
-    return tx_repo.expire_stale_active(station_id, stale)
+    stale = last_seen is None or last_seen <= now - timedelta(seconds=20)
+    return tx_repo.expire_stale_active(station_id, stale, now)
 
 
 @app.post("/v1/stations/{station_id}/tx/drafts", response_model=TxDraft)

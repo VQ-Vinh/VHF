@@ -38,6 +38,53 @@ class _OfflineTxRepository implements TxRepository {
       draft.copyWith(status: 'queued');
 }
 
+class _LostConfirmRepository implements TxRepository {
+  int confirmCalls = 0;
+  int getCalls = 0;
+  int retryCalls = 0;
+
+  TxDraft draft(String status) => TxDraft(
+    id: 'draft-1',
+    stationId: 'station-1',
+    duration: const Duration(seconds: 1),
+    targetLanguage: 'vi',
+    transcript: 'Mayday',
+    translation: 'Nội dung đã sửa',
+    status: status,
+  );
+
+  @override
+  Future<void> cancelDraft(String draftId) async {}
+
+  @override
+  Future<void> confirmTransmission(TxDraft draft, String translation) async {
+    confirmCalls += 1;
+    if (confirmCalls == 1) throw Exception('response lost');
+  }
+
+  @override
+  Future<TxDraft> getDraft(String stationId, String draftId) async {
+    getCalls += 1;
+    return draft(
+      getCalls == 1
+          ? 'review_ready'
+          : getCalls == 2
+          ? 'transmitting'
+          : 'completed',
+    );
+  }
+
+  @override
+  Future<TxDraft> processRecording(TxRecordingInput input) async =>
+      draft('review_ready');
+
+  @override
+  Future<TxDraft> retryTransmission(TxDraft draft) async {
+    retryCalls += 1;
+    return this.draft('queued');
+  }
+}
+
 void main() {
   TxController controller({
     Object? processingError,
@@ -201,42 +248,74 @@ void main() {
     },
   );
 
-  test('Station offline exits transmitting UI and waits for server failure', () async {
-    final repository = _OfflineTxRepository();
-    final subject = TxController(
-      stationId: 'station-1',
-      repository: repository,
-      queuePreviewDuration: const Duration(milliseconds: 1),
-    );
-    subject.setStationAvailability(
-      online: true,
-      running: true,
-      commandPending: false,
-    );
-    addTearDown(subject.dispose);
-    subject.startRecording();
-    await subject.stopRecording();
+  test(
+    'Station offline exits transmitting UI and waits for server failure',
+    () async {
+      final repository = _OfflineTxRepository();
+      final subject = TxController(
+        stationId: 'station-1',
+        repository: repository,
+        queuePreviewDuration: const Duration(milliseconds: 1),
+      );
+      subject.setStationAvailability(
+        online: true,
+        running: true,
+        commandPending: false,
+      );
+      addTearDown(subject.dispose);
+      subject.startRecording();
+      await subject.stopRecording();
 
-    final confirmation = subject.confirmTransmission('Cấp cứu');
-    await Future<void>.delayed(const Duration(milliseconds: 5));
-    expect(subject.state.phase, TxPhase.transmitting);
+      final confirmation = subject.confirmTransmission('Cấp cứu');
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      expect(subject.state.phase, TxPhase.transmitting);
 
-    subject.setStationOnline(false);
-    expect(subject.state.phase, TxPhase.failed);
-    expect(subject.state.failure, TxFailure.stationOfflineDuringTx);
-    expect(subject.canRetryTransmission, isFalse);
+      subject.setStationOnline(false);
+      expect(subject.state.phase, TxPhase.failed);
+      expect(subject.state.failure, TxFailure.stationOfflineDuringTx);
+      expect(subject.canRetryTransmission, isFalse);
 
-    repository.status = 'failed';
-    await confirmation;
-    expect(subject.state.phase, TxPhase.failed);
-    expect(subject.state.draft?.status, 'failed');
-    expect(subject.canRetryTransmission, isFalse);
+      repository.status = 'failed';
+      await confirmation;
+      expect(subject.state.phase, TxPhase.failed);
+      expect(subject.state.draft?.status, 'failed');
+      expect(subject.canRetryTransmission, isFalse);
 
-    subject.setStationAvailability(
-      online: true,
-      running: true,
-      commandPending: false,
-    );
-    expect(subject.canRetryTransmission, isTrue);
-  });
+      subject.setStationAvailability(
+        online: true,
+        running: true,
+        commandPending: false,
+      );
+      expect(subject.canRetryTransmission, isTrue);
+    },
+  );
+
+  test(
+    'retry reconciles review draft and confirms again idempotently',
+    () async {
+      final repository = _LostConfirmRepository();
+      final subject = TxController(
+        stationId: 'station-1',
+        repository: repository,
+        queuePreviewDuration: Duration.zero,
+      );
+      subject.setStationAvailability(
+        online: true,
+        running: true,
+        commandPending: false,
+      );
+      addTearDown(subject.dispose);
+      subject.startRecording();
+      await subject.stopRecording();
+
+      await subject.confirmTransmission('Nội dung đã sửa');
+      expect(subject.state.phase, TxPhase.failed);
+
+      await subject.retry();
+
+      expect(subject.state.phase, TxPhase.completed);
+      expect(repository.confirmCalls, 2);
+      expect(repository.retryCalls, 0);
+    },
+  );
 }
