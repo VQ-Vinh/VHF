@@ -181,7 +181,11 @@ class TxController extends ChangeNotifier {
       state = state.copyWith(phase: TxPhase.queued, draft: confirmedDraft);
       notifyListeners();
       await _monitorTransmission(confirmedDraft);
-    } catch (_) {
+    } catch (error, stackTrace) {
+      if (kDebugMode) {
+        debugPrint('TX confirm failed: $error');
+        debugPrintStack(stackTrace: stackTrace);
+      }
       if (!_disposed) {
         _fail(TxFailure.transmissionFailed, TxPhase.failed);
       }
@@ -200,10 +204,47 @@ class TxController extends ChangeNotifier {
   }
 
   Future<void> retry() async {
-    if (state.phase == TxPhase.failed && state.draft != null) {
+    final localDraft = state.draft;
+    if (state.phase == TxPhase.failed && localDraft != null) {
       if (!canRetryTransmission) return;
+      state = state.copyWith(phase: TxPhase.processing, clearFailure: true);
+      notifyListeners();
       try {
-        final retryDraft = await _repository.retryTransmission(state.draft!);
+        final current = await _repository.getDraft(stationId, localDraft.id);
+        if (_disposed) return;
+        if (current.status == 'completed') {
+          state = state.copyWith(phase: TxPhase.completed, draft: current);
+          notifyListeners();
+          return;
+        }
+        if (current.status == 'queued' ||
+            current.status == 'synthesizing' ||
+            current.status == 'claimed' ||
+            current.status == 'transmitting') {
+          state = state.copyWith(
+            phase:
+                current.status == 'claimed' || current.status == 'transmitting'
+                    ? TxPhase.transmitting
+                    : TxPhase.queued,
+            draft: current,
+          );
+          notifyListeners();
+          await _monitorTransmission(current);
+          return;
+        }
+        TxDraft retryDraft;
+        if (current.status == 'review_ready') {
+          await _repository.confirmTransmission(
+            localDraft,
+            localDraft.translation,
+          );
+          retryDraft = localDraft.copyWith(status: 'queued');
+        } else if (current.status == 'failed') {
+          retryDraft = await _repository.retryTransmission(current);
+        } else {
+          _fail(TxFailure.transmissionFailed, TxPhase.failed);
+          return;
+        }
         state = state.copyWith(
           phase: TxPhase.queued,
           draft: retryDraft,
@@ -211,7 +252,11 @@ class TxController extends ChangeNotifier {
         );
         notifyListeners();
         await _monitorTransmission(retryDraft);
-      } catch (_) {
+      } catch (error, stackTrace) {
+        if (kDebugMode) {
+          debugPrint('TX retry failed: $error');
+          debugPrintStack(stackTrace: stackTrace);
+        }
         _fail(TxFailure.transmissionFailed, TxPhase.failed);
       }
       return;
