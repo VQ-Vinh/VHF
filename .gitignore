@@ -41,6 +41,9 @@ stdin.txt
 err.txt
 out.txt
 
+# Local reports (may contain personal or NDA-sensitive information)
+reports/
+
 # IDE
 /.vscode/*
 !/.vscode/launch.json

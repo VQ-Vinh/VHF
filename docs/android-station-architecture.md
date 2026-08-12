@@ -1,22 +1,27 @@
 # Kiến trúc Android và Station
 
-> **Phạm vi RX:** Kiến trúc hiện tại chỉ phục vụ chiều thu (RX): Station nhận
-> audio từ thiết bị đầu vào, gửi audio để nhận dạng/dịch và Android phát bản
-> dịch. Hệ thống không phát RF, không điều khiển PTT và không truyền audio trở
-> lại máy vô tuyến. TX nằm ngoài phạm vi phiên bản này.
+> **Phạm vi hiện tại:** Hệ thống hỗ trợ RX hoàn chỉnh và TX Phase 2.1 từ
+> Android đến Cloud và audio output của Station. Station thực thi interlock
+> half-duplex bằng phần mềm nhưng chưa điều khiển GPIO/RF PTT, chưa sensing
+> channel busy và chưa phát qua máy VHF thật.
 
 ## Tổng quan
 
 PRANA ELEX gồm bốn vùng chạy độc lập:
 
-```text
-Android App ── Internet + Firebase ID token ──> Cloud PRANA API
-                                                     │
-Station Windows/Linux/Pi ─ Internet + Ed25519 ───────┤
-                                                     ▼
-                                           Firestore/GCS/Gemini
+```mermaid
+flowchart LR
+    APP[Android App] -->|Firebase ID token| API[Cloud PRANA API]
+    ST[Station Windows/Linux/Pi] -->|Ed25519 signed request| API
+    API --> DB[(Firestore)]
+    API --> STORE[(Cloud Storage)]
+    API --> AI[Gemini / Cloud TTS]
+    ADMIN[Web Admin] -->|IAP + allowlist| ADMINSVC[Admin service]
+    ADMINSVC --> DB
 
-Web Admin ── IAP + allowlist ──> Admin service ── IAM ──> Firestore
+    VHF[VHF RX audio] --> ST
+    ST --> OUT[TX audio output]
+    OUT -. Phase sau: GPIO/PTT + RF .-> VHFTX[VHF TX]
 ```
 
 - Android là client đăng nhập của người dùng, dùng Firebase Authentication.
@@ -24,160 +29,260 @@ Web Admin ── IAP + allowlist ──> Admin service ── IAM ──> Firest
 - PRANA API là đường ghi duy nhất cho Android và Station.
 - Android chỉ đọc projection Station của chính chủ sở hữu.
 - Web Admin là dịch vụ riêng, được bảo vệ bởi IAP, allowlist và CSRF.
-- Android và Station có thể ở hai mạng khác nhau; cả hai chỉ cần Internet và
-  không cần mở inbound port trên mạng của khách hàng.
-- Google ADC chỉ dùng khi lập trình viên chủ động chạy API local. Khách hàng
-  không cài `gcloud`, không đăng nhập Google Cloud và không được cấp IAM.
+- Android và Station chỉ cần Internet, không cần cùng LAN hoặc inbound port.
+- Khách hàng không cần Google Cloud CLI, ADC hoặc quyền IAM.
 
 ## Android App
 
-### Điều hướng và trạng thái
+### Điều hướng và trạng thái Station
 
 `GoRouter` chuyển người chưa đăng nhập tới `/sign-in`. Người đã đăng nhập có
-các route Station list, pairing/activation, Live, History, Station settings và
-Account Center.
+route Station list, pairing/activation, Live, History, Station settings và
+Account Center. Route `/stations/:id/live` vẫn là màn vận hành chính.
 
-Riverpod quản lý các nguồn trạng thái chính:
+Riverpod quản lý auth, Station projection, health, account, entitlement và Live
+results. `LiveController` quản lý desired state RX. `TxController` là nguồn duy
+nhất quản lý TX state machine; widget không tự thực hiện timer, network hoặc
+business transition.
 
-- Firebase auth state và ID token.
-- Danh sách/projection Station từ Firestore.
-- Đồng hồ 5 giây để tính online/offline.
-- API health, account, plan entitlement và Live results.
-- Controller lạc quan cho Start/Stop, ngôn ngữ và Retry.
-- Ngôn ngữ giao diện VI/EN được lưu trong secure storage.
+Android coi Station offline nếu heartbeat quá hạn. Desired state được hiển thị
+ở trạng thái chờ cho đến khi `observed_generation` bắt kịp generation mới nhất.
+HTT bị khóa nếu Station offline, chưa START hoặc command START/STOP còn pending.
 
-Android coi Station offline nếu `last_seen_at` cũ hơn 15 giây. Desired state
-được hiển thị ở trạng thái chờ cho đến khi `observed_generation` bắt kịp
-`desired_generation`.
+### Màn vận hành RX/TX
 
-### Xác thực và tài khoản
+TX không nằm ở một tab vận hành riêng. Dock TX nằm dưới Live Translations gồm:
 
-App hỗ trợ Email/Password, Google, xác minh email, gửi lại email xác minh, quên
-mật khẩu và liên kết Google vào tài khoản hiện có. Firebase ID token được gắn
-vào mọi request người dùng tới PRANA API.
+- trạng thái RX/API;
+- nút Hold-to-talk ở trung tâm;
+- TX language ở phía phải.
 
-Account Center tổng hợp account, quota ngày, plan catalog, devices và Stations.
-Người dùng chỉ tự chọn plan có `availability=available`; Plus/Pro không thể
-chọn nếu backend chưa phát hành. Revoke device và gỡ Station luôn yêu cầu xác
-nhận; gỡ Station không khóa vĩnh viễn danh tính thiết bị.
+Khi giữ HTT, badge RX chuyển thành TX và App thu WAV từ microphone. Khi nhả,
+App dừng thu và tạo draft. Review hiển thị transcript gốc chỉ đọc và bản dịch
+có thể chỉnh sửa; nội dung cuối không được rỗng và tối đa 2.000 ký tự.
 
-### Pairing và activation
+TX language chỉ đổi được khi idle. Nó được snapshot từ lúc bắt đầu recording và
+khóa đến terminal state để một request không đổi target giữa chừng.
 
-Luồng nhãn thiết bị cố định:
+### TX state machine
 
-1. `prana-station-provision` đăng ký public key và activation hash.
-2. Nhãn QR chứa Setup ID 10 ký tự và activation code 16 ký tự, không chứa
-   private key.
-3. Android gọi `POST /v1/station-activations/claim`.
-4. Claim đầu tiên gán owner; cùng owner scan lại là idempotent; owner khác,
-   mã sai, Station bị Admin khóa hoặc vượt `max_stations` bị từ chối.
-
-Luồng pairing tạm thời vẫn được giữ để tương thích:
-
-1. Station chứng minh private key với `POST /v1/station-pairings`.
-2. API trả code dùng một lần, hết hạn sau 10 phút.
-3. Android nhận deep link `prana-elex:///pair` hoặc nhập code.
-4. Transaction kiểm tra code, owner và giới hạn Station của plan.
-
-Người dùng có thể gỡ Station khỏi Account Center. API dừng desired state, giữ
-projection và lịch sử cũ ở trạng thái inactive, bỏ owner khỏi registry, rồi cho
-phép tem QR cố định được tài khoản khác claim. Lịch sử của chủ cũ không được
-chuyển sang chủ mới. Với record inactive từ phiên bản cũ, Web Admin cung cấp
-hành động release có audit. Transfer trực tiếp giữa hai owner vẫn chỉ thực hiện
-trong Web Admin.
-
-## Điều khiển và xử lý bản dịch
-
-Các lệnh Start/Stop trong tài liệu là bật/tắt **thu và xử lý RX** của phần mềm,
-không phải Start/Stop phát sóng hay điều khiển PTT.
-
-Station poll desired state mỗi 2 giây, heartbeat mỗi 5 giây. Generation counter
-giúp Start, Stop, thay ngôn ngữ và cấu hình audio latest-wins, idempotent. Retry
-có counter riêng. Heartbeat chứa capture state, session, sequence, observed
-generation, platform, app version, audio device và lỗi/retry.
-
-Station gửi WAV bằng request ký Ed25519. API xác định owner từ
-`station_registry`, sau đó áp dụng:
-
-- kiểm tra chữ ký, timestamp, nonce và idempotency;
-- validation WAV và giới hạn segment;
-- quota ngày, concurrency và circuit breaker toàn hệ thống;
-- xử lý Gemini, lưu archive GCS và ghi result projection;
-- TTL 14 ngày cho kết quả; projection không chứa audio URL.
-
-Live App poll endpoint result theo session mỗi 2 giây. `live_log_limit=0` nghĩa
-là không giới hạn theo entitlement; giá trị dương giới hạn số log gần nhất.
-Trước khi render, App đổi timestamp sang múi giờ điện thoại và chỉ giữ log thuộc
-ngày hiện tại. Khi qua 00:00, vòng poll kế tiếp tự loại log ngày hôm trước.
-
-## History theo ngày
-
-History không hiển thị session ID. API tổng hợp result của mọi session theo
-timestamp và múi giờ do điện thoại gửi:
-
-- `GET /v1/stations/{id}/history/days` trả mỗi ngày một mục, số log, thời gian
-  đầu/cuối và trạng thái khóa.
-- `GET /v1/stations/{id}/history/days/{date}/results` trả toàn bộ ngày bằng
-  cursor pagination.
-- Session đi qua nửa đêm được chia theo timestamp của từng result.
-- `history_unlock_delay_days=1` hiển thị ngày hiện tại nhưng khóa và mở từ
-  00:00 ngày hôm sau; `0` cho phép xem ngay.
-
-Android loại trùng theo `request_id`, sắp xếp ổn định theo timestamp, sequence
-và request ID. Search, ẩn tạm khỏi màn hình và export TXT/CSV áp dụng trên toàn
-bộ ngày; file có dạng `prana-YYYY-MM-DD.txt|csv`.
-
-## Dữ liệu và ranh giới tin cậy
-
-Private collections gồm `station_registry`, `station_pairings`,
-`station_activation_index`, attempt/rate-limit collections và
-`station_request_nonces`. Projection người dùng:
-
-```text
-users/{uid}/stations/{station_id}
-users/{uid}/stations/{station_id}/sessions/{session_id}
-users/{uid}/stations/{station_id}/sessions/{session_id}/results/{request_id}
+```mermaid
+stateDiagram-v2
+    [*] --> idle
+    idle --> recording: Hold HTT
+    recording --> processing: Release HTT
+    processing --> reviewReady: Transcribe/translate thành công
+    reviewReady --> synthesizing: Phát với nội dung đã xác nhận
+    reviewReady --> idle: Hủy draft
+    synthesizing --> queued: TTS/archive thành công
+    queued --> claimed: Station claim
+    claimed --> transmitting: Station bắt đầu playback
+    transmitting --> completed: Playback hoàn tất
+    processing --> failed
+    synthesizing --> failed
+    claimed --> failed
+    transmitting --> failed
+    failed --> queued: Retry thủ công
 ```
 
-Firestore Rules chỉ cho owner đọc projection Station và chặn mọi client write.
-History/Live result được trả qua PRANA API để backend thực thi entitlement.
-Admin SDK dùng IAM và không phụ thuộc Firestore Rules.
+Failure bao gồm Station offline/chưa START, audio quá ngắn hoặc không hợp lệ,
+microphone permission, processing/TTS/archive, output device và playback. Job
+lỗi không tự replay vì có thể gây truyền trùng; người dùng phải retry thủ công.
+
+### Xác thực, tài khoản và pairing
+
+App hỗ trợ Email/Password, Google, xác minh email và quên mật khẩu. Firebase ID
+token được gắn vào mọi user request tới PRANA API. Account Center tổng hợp
+account, usage, plan, devices và Stations.
+
+Luồng activation cố định dùng Setup ID và activation code trên nhãn QR; QR
+không chứa private key. Claim đầu tiên gán owner, scan lại bởi cùng owner là
+idempotent. Pairing code tạm thời vẫn được giữ để tương thích.
+
+Gỡ Station dừng desired state, bỏ owner khỏi registry và cho phép tài khoản khác
+claim lại tem QR. Lịch sử của owner cũ không chuyển sang owner mới. Transfer
+trực tiếp giữa owner chỉ thực hiện trong Web Admin có audit.
+
+## RX pipeline
+
+### Điều khiển và heartbeat
+
+Start/Stop bật hoặc tắt Station runtime. Khi running, RX capture được phép chạy
+và TX được phép tạo/confirm/claim. Station poll desired state, gửi heartbeat và
+dùng generation counter để áp dụng latest-wins cho Start/Stop, target language
+và cấu hình audio.
+
+Heartbeat tách trạng thái hai chiều:
+
+- RX: `capture_state`, session, sequence, input device và processing error.
+- TX: `tx_state`, `tx_job_id`, active output device và TX error.
+
+### Xử lý segment
+
+Station thu input audio, VAD tách segment và enqueue `SegmentJob`. Job snapshot
+target language ngay lúc enqueue; lần xử lý đầu, network retry và manual retry
+đều dùng target của job thay vì đọc config dùng chung.
+
+Station gửi WAV bằng request ký Ed25519. API xác định owner rồi kiểm tra chữ ký,
+timestamp, nonce, idempotency, WAV, quota và concurrency. Gemini nhận dạng,
+phục hồi transcript và dịch. Kết quả được archive và publish vào Station result
+projection.
+
+Language code được normalize theo base code (`VI`, `vi-VN`, `vi_VN` đều là
+`vi`). Nếu detected language trùng target, backend dùng transcript đã phục hồi
+làm translation thay vì chấp nhận model tự dịch sang ngôn ngữ khác.
+
+### RX playback trên Android
+
+Live App poll result mới và chỉ render log của ngày local hiện tại. Auto-play và
+nút loa dùng cùng quy tắc:
+
+- source khác target: TTS trường translation theo target locale;
+- source trùng target: tải và phát WAV nguồn;
+- WAV nguồn lỗi/không tồn tại: fallback TTS transcript theo detected locale.
+
+Playback dừng khi App background, logout, đổi Station hoặc người dùng tắt auto
+audio. Polling/rebuild không tự phát lại log cũ.
+
+## TX pipeline
+
+### 1. Tạo draft
+
+App thu WAV mono từ microphone, giới hạn 60 giây và gửi multipart cùng
+`target_language` và idempotency key. API chỉ chấp nhận nếu Station thuộc owner,
+active và `desired_state.running == true`.
+
+API validate WAV, chạy Gemini để tạo transcript/bản dịch và archive source WAV.
+Giai đoạn này chưa gọi TTS. Draft ở `review_ready` chứa:
+
+- transcript chỉ đọc;
+- `translation_original` do AI tạo;
+- `translation` hiện tại;
+- detected/target language, duration, attempt và logical filename.
+
+### 2. Confirm và tạo output
+
+App gửi nội dung translation cuối sau review. API atomically reserve active TX
+slot và chuyển draft sang `synthesizing`. Backend lưu cả bản AI gốc và nội dung
+cuối, đồng thời đánh dấu `translation_edited` khi hai giá trị khác nhau.
+
+Cloud TTS tổng hợp nội dung cuối thành LINEAR16. Backend chuẩn hóa format, chèn
+khoảng lặng khoảng 300 ms và nối clip “Over” tiếng Anh. Output WAV và metadata
+được archive trước khi job chuyển sang `queued`.
+
+Confirm lặp cùng nội dung trả job hiện tại và không tạo WAV/job thứ hai. Confirm
+lặp với nội dung khác sau khi draft đã rời review bị từ chối. Nếu TTS hoặc
+archive lỗi, job chuyển `failed`, giải phóng active slot và không dùng audio cũ.
+
+### 3. Queue và Station playback
+
+Mỗi Station chỉ có một TX job active. Claim là atomic để nhiều worker không thể
+cùng nhận một job. Station chỉ claim khi desired state vẫn running; queued job
+sẽ chờ nếu người dùng STOP trước lúc claim.
+
+TX worker thực hiện:
+
+1. claim job và lưu định danh cục bộ;
+2. tải source/output WAV;
+3. dừng RX hoàn toàn;
+4. báo `transmitting`;
+5. phát output WAV qua stable output device ID;
+6. lưu file/receipt và báo `completed` hoặc `failed`;
+7. chỉ resume RX nếu desired state mới nhất vẫn running.
+
+Nếu người dùng STOP trong lúc transmitting, Station phát hết job đã bắt đầu
+nhưng không resume RX. Nếu download, device hoặc playback lỗi, Station báo
+failed và tuyệt đối không tự phát lại.
+
+## Lưu trữ RX/TX
+
+Dữ liệu mới trên Station dùng cấu trúc:
+
+```text
+VHF_Storage/
+├── RX/
+│   ├── audio/YYYY/MM/DD/
+│   └── results/YYYY/MM/DD/
+└── TX/
+    ├── source/YYYY/MM/DD/
+    ├── output/YYYY/MM/DD/
+    └── results/YYYY/MM/DD/
+```
+
+RX và TX dùng logical stem `YYYYMMDD_HHMMSS_####`; TX sequence độc lập với RX.
+Source, output và result của một TX có cùng stem. Retry giữ logical filename và
+tăng `attempt`. Dữ liệu legacy ở layout cũ hoặc tên UUID vẫn đọc được và không
+bắt buộc migration.
+
+Cloud archive cũng tách prefix RX/TX và không đưa object path ra public API.
+Audio History được stream qua endpoint có xác thực và ownership check. Retention
+hiện hành áp dụng cho dữ liệu mới; cleanup không xóa job đang active.
+
+## History hợp nhất
+
+Route `/stations/:id/history` và nút History hiện tại được giữ nguyên. Màn hình
+có hai tab:
+
+- **RX** mặc định: ngày, search, transcript/translation và playback hiện tại.
+- **TX**: chỉ job đã confirm (`synthesizing` trở đi), hiển thị status,
+  source/target language, transcript, nội dung cuối, edited flag và attempt.
+
+TX output playback chỉ bật khi output đã tồn tại. Cả hai tab dùng cùng timezone
+và `history_unlock_delay_days`. Tab được giữ khi đi vào chi tiết ngày rồi quay
+lại; đóng History và mở lại luôn bắt đầu ở RX.
+
+## Public API và ranh giới tin cậy
+
+User TX API:
+
+```text
+POST   /v1/stations/{station_id}/tx/drafts
+GET    /v1/stations/{station_id}/tx/drafts/{draft_id}
+POST   /v1/stations/{station_id}/tx/drafts/{draft_id}/confirm
+DELETE /v1/stations/{station_id}/tx/drafts/{draft_id}
+POST   /v1/stations/{station_id}/tx/drafts/{draft_id}/retry
+GET    /v1/stations/{station_id}/tx/history/days
+GET    /v1/stations/{station_id}/tx/history/days/{date}/jobs
+GET    /v1/stations/{station_id}/tx/history/{job_id}/audio
+```
+
+Station TX API dùng Ed25519 cho claim, download source/output và update status.
+User endpoint dùng Firebase Authentication, active-account check và ownership.
+Không endpoint History/list nào trả Cloud object path.
+
+Firestore Rules chỉ cho owner đọc projection và chặn client write. API/Admin SDK
+dùng IAM. Private collections giữ station registry, nonce/idempotency, TX job,
+active TX state và counter filename.
 
 ## Web Admin và vận hành
 
-Web Admin có Dashboard, Users, Plans, Stations và Audit log:
+Web Admin giữ Dashboard, Users, Plans, Stations và Audit. Station detail hiển
+thị runtime/generation và các lỗi runtime cần thiết; mutation được bảo vệ bằng
+IAP, allowlist, CSRF và transaction/batch cùng audit.
 
-- IAP xác thực operator; production fail-closed nếu allowlist rỗng.
-- Mọi POST form dùng signed double-submit CSRF token gắn với operator.
-- Mutation và audit nằm trong cùng Firestore transaction/batch.
-- Audit lưu operator, action, target, before/after, request ID và timestamp.
-- Plan mặc định chỉ đọc; icon bút chì mở chỉnh sửa, Save chỉ bật khi form hợp
-  lệ và có thay đổi.
-- Station detail hiển thị runtime/generation; Stop gửi desired state. Transfer
-  yêu cầu Station idle, kiểm tra `max_stations` từ collection `plans` và xác
-  nhận lại email owner mới.
+Khách hàng chạy Station Windows bằng `enable_station_api.bat`; mặc định dùng
+Cloud API và không yêu cầu `gcloud`/ADC. `-LocalApi` chỉ dành cho developer.
+Linux/Pi dùng cùng Station contract, nhưng GPIO PTT chưa được triển khai.
 
-Cloud Run giữ stateless. CSRF signing secret nằm trong Secret Manager. Firestore
-giữ desired state, replay/idempotency, pairing, audit và indexes phục vụ bộ lọc.
+## Ranh giới Phase 2.1 và Phase tiếp theo
 
-## Triển khai và tài liệu kiểm thử
+Đã có trong Phase 2.1:
 
-- Generate label từ máy Windows tại thư mục dự án:
-  `generate_station_qr.bat`. PNG/SVG được lưu trong `stations/`.
-- Chạy Station Windows cho khách hàng:
-  `enable_station_api.bat`. Mặc định script dùng Cloud API và không yêu cầu
-  Google Cloud CLI, ADC hoặc cùng Wi-Fi với Android.
-- Chỉ khi phát triển backend local mới chạy
-  `gcloud auth application-default login`, sau đó
-  `enable_station_api.bat -LocalApi`.
-- Provision trực tiếp trên Pi:
-  `prana-station-provision --config apps/linux/config/default.toml --output ~/prana-station-label`
-- Chạy Station:
-  `prana-station --config apps/linux/config/default.toml`
-- Bootstrap plan sau deploy để luôn có `max_stations`, Live limit và History
-  delay.
-- Deploy Rules, TTL và composite indexes bằng Terraform.
-- Kịch bản QA Android + Web Admin:
-  [android-web-admin-test-scenarios.md](android-web-admin-test-scenarios.md).
-- Hướng dẫn E2E Windows/staging:
-  [staging-e2e-test-guide.md](staging-e2e-test-guide.md).
+- microphone HTT trên Android;
+- transcript/translation review và chỉnh nội dung;
+- Cloud TTS + silence + “Over”;
+- atomic queue, manual retry và half-duplex software interlock;
+- output playback trên Laptop Station;
+- lưu trữ và History RX/TX.
+
+Chưa có:
+
+- GPIO/serial PTT control;
+- pre-key/post-key timing cho VHF thật;
+- channel-busy sensing;
+- RF transmission và kiểm thử hai bộ VHF;
+- watchdog phần cứng bảo đảm nhả PTT khi runtime lỗi.
+
+Kịch bản kiểm thử tương ứng nằm tại
+[android-web-admin-test-scenarios.md](android-web-admin-test-scenarios.md).
+Hướng dẫn staging nằm tại [staging-e2e-test-guide.md](staging-e2e-test-guide.md).
