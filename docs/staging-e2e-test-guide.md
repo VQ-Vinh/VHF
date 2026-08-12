@@ -322,6 +322,24 @@ Thực hiện trên máy hoặc snapshot riêng:
 - Tài khoản không được cấp quyền bị từ chối, không xem được dữ liệu user.
 - Không có cơ chế đăng nhập Admin bằng tài khoản Firebase của khách hàng.
 
+### Khôi phục phiên IAP và đổi tài khoản
+
+- Dùng liên kết **Đăng xuất / Đổi tài khoản** cạnh thông tin operator để xóa riêng
+  phiên IAP của PRANA Admin. Thao tác này không đăng xuất Gmail và không xóa các
+  cookie khác của trình duyệt.
+- Nếu Brave mắc ở trang reauthentication trắng, mở trực tiếp Web Admin với query
+  `?gcp-iap-mode=CLEAR_LOGIN_COOKIE`, ví dụ:
+  `https://<WEB_ADMIN_HOST>/?gcp-iap-mode=CLEAR_LOGIN_COOKIE`.
+- Sau khi phiên IAP được xóa, mở lại URL Web Admin gốc và đăng nhập hoặc chọn tài
+  khoản cần dùng. Nếu chỉ có một tài khoản Google đang đăng nhập, IAP có thể chọn
+  lại tài khoản đó mà không hiển thị màn hình chọn tài khoản.
+- Không chụp ảnh, sao chép hoặc chia sẻ `reauth_token` xuất hiện trong URL trang
+  Google. Nếu Brave vẫn chặn luồng đăng nhập sạch, kiểm tra Shields/cookie bên thứ
+  ba và đối chiếu trên Chrome hoặc Edge.
+
+Khi kiểm thử đăng xuất, nhấn Back và xác nhận trình duyệt không hiển thị lại nội
+dung Admin đã cache.
+
 ### TC-ADM-02: Kiểm tra giao diện và ngôn ngữ
 
 1. Chuyển giữa EN và VI ở góc trên.
