@@ -1,9 +1,9 @@
 # Hướng dẫn kiểm thử Android App và Web Admin
 
-> **Chú ý phạm vi:** Tài liệu này chỉ kiểm thử phần RX (thu audio, nhận
-> dạng/dịch, hiển thị và phát giọng nói bản dịch). Không kiểm thử TX, PTT, phát
-> RF hoặc truyền audio từ App/Station trở lại máy vô tuyến vì các chức năng đó
-> chưa thuộc sản phẩm hiện tại.
+> **Chú ý phạm vi:** Tài liệu kiểm thử RX hoàn chỉnh và TX Phase 2.1 từ Android
+> đến audio output của Station. TX hiện chưa điều khiển GPIO/RF PTT, chưa sensing
+> channel busy và chưa phát qua máy VHF thật. Các case TX phải kiểm tra cổng
+> audio của Laptop Station, không được hiểu là kiểm thử phát sóng RF.
 
 ## 1. Mục đích
 
@@ -12,14 +12,14 @@ trường staging. Tester không cần đọc source code.
 
 Phạm vi gồm:
 
-- Android App: đăng ký, đăng nhập, ghép Station, điều khiển, xem Live, History,
-  Account và xử lý mất mạng.
+- Android App: đăng ký, đăng nhập, ghép Station, điều khiển, RX Live, HTT TX,
+  History RX/TX, Account và xử lý mất mạng.
 - Web Admin: đăng nhập, Dashboard, Users, Plans, Stations và Audit log.
-- Luồng xuyên hệ thống giữa Android App, Station và Web Admin.
+- Luồng xuyên hệ thống giữa Android App, Cloud, Station và Web Admin.
 
 Không sử dụng tài khoản, audio hoặc Station thật của khách hàng.
-Trong toàn bộ tài liệu, Start/Stop Station có nghĩa là Start/Stop thu và xử lý
-RX; không có nghĩa là điều khiển phát sóng.
+Trong toàn bộ tài liệu, Start cho phép Station chạy RX và nhận TX job. Stop dừng
+RX và ngăn claim TX mới; không có nghĩa là kích hoặc nhả PTT vật lý.
 
 ## 2. Cách ghi nhận kết quả
 
@@ -48,9 +48,11 @@ private key, CSRF token hay credential Google Cloud.
 ### 3.1. Thiết bị
 
 - Một điện thoại Android 10 trở lên đã cài APK staging mới nhất.
+- Cho phép microphone cho App; có thể thu hồi quyền để kiểm tra lỗi permission.
 - Có thể thay đổi múi giờ và cỡ chữ trên điện thoại.
 - Chrome hoặc Edge bản mới để kiểm thử Web Admin.
-- Một Laptop/Pi Station đã provision và có nguồn audio tiếng Việt/Anh.
+- Một Laptop Station đã provision, có audio input RX và audio output nghe được.
+- Một Raspberry Pi/Linux Station dùng cho RX regression; GPIO PTT chưa kết nối.
 - Laptop/Pi và điện thoại có thể kết nối hai mạng Internet khác nhau để xác
   nhận vận hành từ xa qua Cloud API.
 - Mạng có thể chủ động tắt/bật để kiểm tra offline.
@@ -75,8 +77,14 @@ Nhờ người quản trị staging chuẩn bị:
 - Nhiều session có log trong cùng một ngày.
 - Một session có log trước và sau 00:00.
 - Một ngày có hơn 1.000 log để kiểm tra phân trang.
-- Log có cả tiếng Việt, tiếng Anh, dấu phẩy và dấu ngoặc kép để test export.
+- Log có cả tiếng Việt, tiếng Anh, tiếng Trung, tiếng Nhật và tiếng Hàn.
+- Bộ audio VHF chuẩn gồm giọng rõ, giọng có nhiễu, đoạn im lặng, callsign, số kênh,
+  tần số và tọa độ; mỗi mẫu có transcript/bản dịch chuẩn để đối chiếu Gemini.
 - Một Station online, một Station offline và một Station có lỗi.
+- TX draft ở các trạng thái synthesizing, queued, transmitting, completed và
+  failed; có job đã chỉnh translation và job chưa có output WAV.
+- Một ngày có nhiều TX job, gồm hai job tạo trong cùng một giây để kiểm tra
+  logical filename/sequence.
 
 ### 3.4. Kiểm tra trước khi bắt đầu
 
@@ -88,6 +96,8 @@ Ghi lại:
 - Thời gian bắt đầu test.
 
 Xác nhận màn hình Station báo `API READY` và `ONLINE` trước các case cần thu âm.
+Chọn đúng `TX OUTPUT` trên Laptop và đặt âm lượng ở mức an toàn. Không nối output
+vào máy VHF/PTT khi chạy bộ case Phase 2.1.
 Ở luồng khách hàng, chạy `enable_station_api.bat` không được yêu cầu cài
 `gcloud`, đăng nhập ADC hoặc nhập credential Google Cloud.
 
@@ -334,6 +344,72 @@ Case này cần người quản trị hoặc công cụ test gửi lại cùng m
 - Hết quota thì không xử lý thêm và giải thích rõ lý do.
 - Live tuân theo giới hạn của từng plan; giá trị `0` được hiểu là không giới hạn.
 
+### AND-LIVE-07 — Giữ log khi Stop/Start nhiều lần trong ngày
+
+**Các bước**
+
+1. Start Station, tạo ít nhất hai log rồi Stop.
+2. Start lại trong cùng ngày và tạo thêm hai log.
+3. Lặp lại thêm một lần, sau đó đóng và mở lại màn hình Live.
+
+**Kết quả mong đợi**
+
+- Live chứa log của toàn bộ các lần Start trong ngày, không chỉ session mới nhất.
+- Không hiển thị session ID và không thiếu hoặc trùng log.
+- Thứ tự log đúng theo timestamp; icon loa của từng log vẫn hoạt động.
+
+### AND-LIVE-08 — Bật/tắt tự động phát audio
+
+**Các bước**
+
+1. Mở Live và xác nhận icon loa cạnh icon History đang bật.
+2. Tạo một log mới và nghe audio/bản dịch tự phát.
+3. Tắt icon loa rồi tạo thêm hai log.
+4. Bật lại icon loa và tạo một log mới khác.
+5. Chuyển sang màn hình khác trong lúc App vẫn foreground rồi tạo thêm một log.
+
+**Kết quả mong đợi**
+
+- Khi bật, mỗi log mới chỉ tự phát đúng một lần và đúng thứ tự.
+- Khi tắt, âm thanh đang phát dừng, hàng đợi bị xóa và log mới không tự phát.
+- Bật lại không phát bù các log sinh ra trong thời gian tắt; chỉ phát log mới tiếp theo.
+- Trạng thái icon, tooltip và semantics VI/EN thể hiện rõ đang bật hay tắt.
+- Khi đã mở Live của Station, tự phát tiếp tục trong các màn hình khác lúc App foreground.
+
+### AND-LIVE-09 — Nghe lại từng log và không phát lặp
+
+**Các bước**
+
+1. Mở Live đã có sẵn ít nhất 10 log và không thao tác trong ba vòng polling.
+2. Bấm icon loa trên một log; khi đang phát, bấm loa của log khác.
+3. Stop/Start Station, chuyển màn hình rồi quay lại Live.
+4. Đưa App xuống background trong lúc đang phát, chờ có log mới rồi foreground lại.
+5. Để App foreground thêm ba vòng polling mà không tạo log mới.
+
+**Kết quả mong đợi**
+
+- Snapshot ban đầu và polling lặp không tự phát 10 log cũ.
+- Bấm loa phát ngay đúng nội dung log; log thứ hai ngắt log thứ nhất.
+- Stop/Start, rebuild, đổi màn hình và resume không làm log cũ tự phát lại.
+- Khi background, âm thanh dừng và log phát sinh trong nền bị bỏ qua khi resume.
+- Sau resume, chỉ log thực sự mới phát một lần; không có audio tự phát ngẫu nhiên.
+
+### AND-LIVE-10 — Ngôn ngữ và dữ liệu giọng đọc Android
+
+**Các bước**
+
+1. Tạo lần lượt bản dịch đích Việt, Anh, Trung, Nhật và Hàn.
+2. Nghe tự động và bấm nghe lại từng log.
+3. Trên thiết bị test, gỡ hoặc tắt voice của một ngôn ngữ rồi thử lại.
+
+**Kết quả mong đợi**
+
+- App chọn locale tương ứng và phát đúng ngôn ngữ khi thiết bị có voice phù hợp.
+- Nếu ngôn ngữ nguồn trùng ngôn ngữ đích, App ưu tiên source audio; nếu tải source
+  audio lỗi thì chuyển sang TTS transcript.
+- Thiếu voice không làm App crash; App cảnh báo thân thiện và hướng dẫn cài dữ liệu
+  Text-to-Speech, không hiển thị exception nội bộ.
+
 ### AND-SET-01 — Cài đặt audio
 
 **Các bước**
@@ -352,7 +428,154 @@ Case này cần người quản trị hoặc công cụ test gửi lại cùng m
 
 ---
 
-## 7. Android App — History, export và Account
+## 7. Android App — TX Phase 2.1
+
+### AND-TX-01 — START gate, offline và command pending
+
+**Các bước**
+
+1. Khi Station đang STOP nhưng online, thử giữ HTT.
+2. Gửi lệnh START và thử HTT khi lệnh còn pending.
+3. Chờ START apply rồi giữ/nhả HTT để tạo draft.
+4. Đưa Station offline và thử lại.
+5. Dùng công cụ API staging thử create draft và confirm khi Station STOP.
+
+**Kết quả mong đợi**
+
+- Khi STOP, HTT disabled và hiển thị yêu cầu START Station.
+- Khi command pending hoặc offline, App không bắt đầu recording.
+- Sau khi START apply, recording và xử lý draft hoạt động bình thường.
+- API từ chối cả create và confirm khi desired state không running.
+- Không tạo source WAV, draft hoặc usage sai cho request bị từ chối.
+
+### AND-TX-02 — Quyền microphone, hold/release và giới hạn recording
+
+**Các bước**
+
+1. Thu hồi quyền microphone, giữ HTT và lần lượt từ chối/cấp quyền.
+2. Giữ HTT khoảng 2 giây rồi nhả; quan sát timer và trạng thái UI.
+3. Chạm rất nhanh để tạo đoạn ngắn dưới ngưỡng cho phép.
+4. Giữ đến hard limit 60 giây trên bản build/instrumentation phù hợp.
+5. Trong lúc recording, thử đổi TX language và nhấn HTT lần hai.
+
+**Kết quả mong đợi**
+
+- Thiếu quyền có thông báo rõ ràng, không crash hoặc tạo file giả.
+- Giữ bắt đầu thu, nhả dừng thu đúng một lần và chuyển sang processing.
+- Audio quá ngắn bị từ chối an toàn; người dùng có thể thử lại.
+- Đến 60 giây App tự kết thúc recording, không tạo audio vượt giới hạn.
+- TX language bị khóa và double gesture không tạo hai recording/draft.
+
+### AND-TX-03 — Target snapshot và màn review
+
+**Các bước**
+
+1. Chọn lần lượt các TX language được hỗ trợ và tạo draft.
+2. Sau khi enqueue nhưng trước khi có kết quả, đổi cấu hình ngôn ngữ Station bằng
+   một client test khác.
+3. Mở review, đối chiếu transcript, bản dịch, duration và target language.
+4. Thử chỉnh transcript; sau đó chỉnh translation thành nội dung hợp lệ.
+5. Xóa trắng translation và nhập nội dung dài hơn 2.000 ký tự.
+
+**Kết quả mong đợi**
+
+- Mỗi draft giữ target tại lúc bắt đầu recording, không bị config mới ghi đè.
+- Transcript chỉ đọc; translation chỉnh sửa được.
+- Duration và target hiển thị đúng; Unicode của năm ngôn ngữ không lỗi.
+- Nút Phát disabled khi nội dung trắng hoặc quá 2.000 ký tự.
+- Hủy review xóa draft khỏi UI và draft chưa confirm không vào TX History.
+
+### AND-TX-04 — Confirm, nội dung đã chỉnh và idempotency
+
+**Các bước**
+
+1. Tạo draft, ghi lại translation AI rồi chỉnh thành câu khác có từ “kênh 18”.
+2. Bấm Phát và theo dõi synthesizing → queued.
+3. Dùng công cụ test gửi lại confirm cùng nội dung/idempotency context.
+4. Gửi lại confirm với nội dung khác sau khi draft đã rời review.
+5. Nghe output WAV tại Station.
+
+**Kết quả mong đợi**
+
+- Metadata giữ `translation_original`, lưu nội dung cuối ở `translation` và đánh
+  dấu edited.
+- TTS đọc đúng nội dung đã chỉnh, không đọc bản AI cũ.
+- Output có khoảng lặng ngắn rồi clip “Over” tiếng Anh ở cuối.
+- Confirm lặp cùng nội dung không tạo WAV/job thứ hai.
+- Confirm lặp với nội dung khác bị từ chối và không thay đổi job đã tạo.
+
+### AND-TX-05 — Queue, claim và trạng thái trên App
+
+**Các bước**
+
+1. Confirm một draft và theo dõi queued trên App.
+2. STOP Station trước khi worker claim; chờ qua nhiều vòng polling.
+3. START lại và chờ Station claim job.
+4. Quan sát claimed/transmitting/completed trên App và heartbeat/Admin detail.
+5. Mô phỏng hai worker claim đồng thời trên staging test.
+
+**Kết quả mong đợi**
+
+- Queued job chờ khi Station STOP, không bị mất hoặc phát âm thanh.
+- START lại cho phép đúng một worker claim job.
+- App hội tụ đúng trạng thái, không cho double-submit trong terminal transition.
+- Chỉ một playback xảy ra và job completed đúng một lần.
+
+### AND-TX-06 — Half-duplex RX/TX trên Laptop
+
+**Các bước**
+
+1. START Station và xác nhận RX đang tạo Live result.
+2. Gửi một TX job có output đủ dài để quan sát.
+3. Theo dõi RX capture và audio output trong lúc TX transmitting.
+4. Lặp lại, nhưng bấm STOP khi TX đã transmitting.
+5. Lặp lại với thay đổi input/output setting trong lúc TX.
+
+**Kết quả mong đợi**
+
+- Station dừng RX hoàn toàn trước khi phát output WAV.
+- Trong lúc TX, desired-state loop không tự start RX.
+- TX kết thúc khi người dùng STOP giữa lượt, nhưng RX không resume.
+- Nếu vẫn running, RX chỉ resume sau khi playback kết thúc.
+- Cấu hình mới nhất được tôn trọng sau TX; không chạy đồng thời capture/playback.
+
+### AND-TX-07 — Lỗi output, retry thủ công và chống replay
+
+**Các bước**
+
+1. Mô phỏng lỗi TTS và lỗi archive khi confirm.
+2. Mô phỏng output device bị tháo trước claim và lỗi playback sau claim.
+3. Theo dõi trong ít nhất năm vòng polling sau mỗi lỗi.
+4. Bấm retry thủ công đúng một lần và khôi phục điều kiện gây lỗi.
+5. Stop/Start Station và khởi động lại process sau khi job failed.
+
+**Kết quả mong đợi**
+
+- Mỗi lỗi chuyển job sang failed, lưu mã lỗi và không đánh dấu completed.
+- TTS/archive lỗi giải phóng active slot và không dùng output cũ.
+- Failed job không tự replay qua polling, Stop/Start hoặc restart process.
+- Retry tạo attempt mới liên kết job trước, giữ logical filename và chỉ phát sau
+  thao tác rõ ràng của người dùng.
+
+### AND-TX-08 — Layout dock và accessibility
+
+**Các bước**
+
+1. Mở Live ở 360×800, 412×915 và text scale 1.3.
+2. Kiểm tra cụm trạng thái, HTT trung tâm và TX language.
+3. Mở menu ngôn ngữ ở idle và thử mở khi recording/processing.
+4. Dùng TalkBack đọc nút HTT, trạng thái và TX language.
+
+**Kết quả mong đợi**
+
+- Dock không overflow; HTT nằm đúng trung tâm.
+- TX language/chevron căn đều, touch target mở được toàn bộ hàng.
+- Menu đủ năm ngôn ngữ, có check ở ngôn ngữ hiện tại và bị khóa ngoài idle.
+- TalkBack đọc đúng enabled/disabled/recording và lý do chưa thể TX.
+
+---
+
+## 8. Android App — History RX/TX và Account
 
 ### AND-HIS-01 — Gộp lịch sử theo ngày
 
@@ -410,35 +633,35 @@ Case này cần người quản trị hoặc công cụ test gửi lại cùng m
 - Không thiếu, trùng hoặc đổi thứ tự bất thường.
 - App vẫn phản hồi khi cuộn và tìm kiếm.
 
-### AND-HIS-05 — Tìm kiếm và export
+### AND-HIS-05 — Tìm kiếm và trình bày log
 
 **Các bước**
 
 1. Tìm một từ trong transcript và một từ trong bản dịch.
-2. Export ngày dưới dạng TXT và CSV.
-3. Mở file bằng trình đọc text và phần mềm bảng tính.
+2. Xóa từ khóa và cuộn qua các log ngắn, dài, có lỗi và nhiều ngôn ngữ.
+3. So sánh thẻ log History với thẻ log ngoài Live.
 
 **Kết quả mong đợi**
 
 - Tìm kiếm áp dụng cho toàn bộ log trong ngày.
-- Tên file là `prana-YYYY-MM-DD.txt` hoặc `.csv`.
-- File có đủ log, đúng Unicode; CSV không vỡ cột khi nội dung có dấu phẩy hoặc
-  dấu ngoặc kép.
+- Log trình bày nhất quán với Live: transcript, bản dịch, thời gian và trạng thái
+  dễ đọc; nội dung dài tự xuống dòng, không bị cắt hoặc tràn màn hình.
+- Màn hình không có nút TXT, CSV, export hoặc **Ẩn khỏi màn hình**.
+- History không tự phát audio và không làm thay đổi hàng đợi phát của Live.
 
-### AND-HIS-06 — Ẩn log trên màn hình
+### AND-HIS-06 — Làm mới và trạng thái rỗng/lỗi
 
 **Các bước**
 
-1. Mở chi tiết một ngày và ghi lại tổng số log.
-2. Chọn ẩn một log.
-3. Tìm kiếm lại nội dung của log vừa ẩn.
-4. Đóng rồi mở lại ngày theo hành vi mà bản build đang công bố.
+1. Mở Station chưa có lịch sử.
+2. Mở Station có lịch sử rồi ngắt mạng trong lúc tải chi tiết ngày.
+3. Khôi phục mạng và thử lại.
 
 **Kết quả mong đợi**
 
-- Log bị ẩn khỏi danh sách và kết quả tìm kiếm hiện tại.
-- Các log khác không bị ảnh hưởng.
-- Chức năng ẩn chỉ thay đổi phạm vi UI được công bố, không xóa dữ liệu backend.
+- Trạng thái rỗng, loading và lỗi đều rõ ràng, song ngữ và không làm App crash.
+- Thử lại sau khi có mạng tải đúng danh sách, không nhân đôi log.
+- Không lộ URL nội bộ, token, stack trace hoặc exception SDK.
 
 ### AND-HIS-07 — Thời hạn lưu lịch sử
 
@@ -489,7 +712,59 @@ Case này cần người quản trị hoặc công cụ test gửi lại cùng m
 
 ---
 
-## 8. Android App — giao diện và lỗi mạng
+### AND-HIS-08 — Chuyển tab RX/TX và giữ trạng thái điều hướng
+
+**Các bước**
+
+1. Mở History mới và ghi nhận tab mặc định.
+2. Chuyển TX, mở một ngày rồi quay lại danh sách ngày.
+3. Đóng History, mở lại từ nút History hiện tại.
+4. Chuyển tab nhanh nhiều lần trong lúc loading.
+
+**Kết quả mong đợi**
+
+- History mới luôn mặc định RX; không có nút TX History riêng ở dock.
+- Khi đi vào/ra chi tiết ngày, tab TX vẫn được giữ.
+- Đóng và mở mới reset về RX.
+- RX/TX không tải nhầm endpoint, trộn dữ liệu hoặc nhân đôi item.
+
+### AND-HIS-09 — TX History, search và output playback
+
+**Các bước**
+
+1. Mở ngày có các trạng thái synthesizing, queued, transmitting, completed và failed.
+2. Tìm theo transcript và nội dung cuối đã phát.
+3. Đối chiếu status, source/target language, edited flag và attempt.
+4. Bấm loa ở completed job; thử bấm loa ở job chưa có output.
+5. Kiểm tra draft đã hủy trước confirm.
+
+**Kết quả mong đợi**
+
+- Chỉ job đã confirm xuất hiện; draft cancelled trước confirm bị loại.
+- Search áp dụng cho transcript và translation cuối.
+- Card hiển thị đúng metadata, nội dung dài không overflow.
+- Nút loa stream đúng output WAV và disabled khi output chưa tồn tại.
+- History không trả hoặc hiển thị Cloud object path.
+
+### AND-HIS-10 — Entitlement, timezone và ownership của TX History
+
+**Các bước**
+
+1. Kiểm tra cùng ngày TX bằng User Free và User Pro theo delay đã cấu hình.
+2. Đổi timezone điện thoại qua mốc nửa đêm và tải lại danh sách ngày.
+3. Dùng User B thử gọi days/jobs/audio của Station User A.
+4. Thử station/date/job ID sai và TX job legacy thiếu output.
+
+**Kết quả mong đợi**
+
+- RX và TX dùng cùng `history_unlock_delay_days`.
+- Grouping ngày theo timezone client, không làm đổi timestamp gốc.
+- User khác và identifier sai bị từ chối, không lộ sự tồn tại/object path.
+- Job legacy hoặc thiếu output trả trạng thái audio unavailable an toàn.
+
+---
+
+## 9. Android App — giao diện và lỗi mạng
 
 ### AND-UI-01 — Ngôn ngữ và khả năng truy cập
 
@@ -554,23 +829,105 @@ Case này cần người quản trị hoặc công cụ test gửi lại cùng m
 - API local không được khởi động trong luồng khách hàng.
 - `-LocalApi` được xem là chế độ developer riêng và mới được phép yêu cầu ADC.
 
+### OPS-RX-02 — Xử lý Gemini và chất lượng bản dịch VHF
+
+**Các bước**
+
+1. Lần lượt phát bộ audio chuẩn: rõ, nhiễu, im lặng, callsign, số kênh, tần số,
+   tọa độ và các ngôn ngữ đã chuẩn bị.
+2. Chọn từng ngôn ngữ đích được App hỗ trợ và ghi lại transcript/bản dịch.
+3. Gửi một audio vượt giới hạn cho phép và mô phỏng Gemini timeout trên staging.
+4. Đối chiếu request ID, quota và kết quả sau khi Retry.
+
+**Kết quả mong đợi**
+
+- Hệ thống dùng Gemini đã cấu hình để nhận dạng, khôi phục và dịch trong một lượt
+  xử lý; không gọi DeepSeek hoặc pipeline STT riêng.
+- Không tự bịa nội dung khi audio không rõ; số, callsign, tần số và tọa độ được bảo
+  toàn hoặc đánh dấu không chắc chắn theo quy ước sản phẩm.
+- Bản dịch đúng ngôn ngữ đích; khi nguồn trùng đích, bản dịch khớp transcript đã
+  khôi phục.
+- Audio không hợp lệ, timeout và lỗi model có thông báo an toàn, không trừ quota
+  hai lần và Retry không tạo log trùng.
+
+### OPS-RX-03 — Lưu local, GCS và dọn dữ liệu 14 ngày
+
+**Các bước**
+
+1. Tạo một RX result mới và ghi lại tên WAV/JSON local.
+2. Kiểm tra `VHF_Storage/RX/audio` và `VHF_Storage/RX/results`.
+3. Kiểm tra vùng RX tương ứng trong Cloud Storage bằng công cụ staging.
+4. Đối chiếu nhánh `RX/audio/YYYY/MM/DD` và `RX/result/YYYY/MM/DD`.
+5. Chạy lại cùng request để kiểm tra idempotency.
+6. Chuẩn bị file local quá 14 ngày và file chưa đủ 14 ngày, sau đó khởi động lại
+   bằng `enable_station_api.bat` và chờ chu kỳ dọn dữ liệu.
+
+**Kết quả mong đợi**
+
+- Dữ liệu RX mới nằm dưới `VHF_Storage/RX`; log/PID/runtime nằm ngoài vùng dữ
+  liệu nghiệp vụ.
+- WAV và JSON có cùng stem theo định dạng `YYYYMMDD_HHMMSS_NNNN`; JSON hợp lệ.
+- Object Cloud nằm đúng owner/Station, đúng ngày, tách RX audio/result và giữ
+  đúng tên local; API không trả object path cho App.
+- Retry cùng request không tạo object trùng; audio mới và audio lịch sử vẫn nghe được.
+- Chỉ dữ liệu local quá hạn 14 ngày bị xóa; dữ liệu còn hạn không bị ảnh hưởng.
+
+### OPS-TX-01 — Lưu source/output/result và logical filename
+
+**Các bước**
+
+1. Tạo hai TX job trong cùng một giây và hoàn tất playback.
+2. Kiểm tra `VHF_Storage/TX/source`, `output` và `results` theo ngày.
+3. Đối chiếu ba file của từng job và metadata attempt/translation.
+4. Kiểm tra vùng TX tương ứng trên Cloud bằng công cụ staging.
+5. Retry một failed job và kiểm tra tên file/attempt.
+
+**Kết quả mong đợi**
+
+- Tên theo `YYYYMMDD_HHMMSS_NNNN`; hai job cùng giây có sequence khác nhau.
+- Source WAV, output WAV và JSON của một job có cùng stem.
+- TX sequence độc lập RX; retry giữ logical filename và tăng attempt.
+- Cloud tách `TX/source`, `TX/output`, `TX/result` và giữ cùng basename.
+- Layout UUID cũ vẫn đọc được; không tự migration hoặc xóa archive cũ.
+
+### OPS-TX-02 — Output device và heartbeat TX
+
+**Các bước**
+
+1. Mở Station Settings và liệt kê input/output devices.
+2. Chọn một device không có output channel nếu công cụ test cho phép.
+3. Chọn output hợp lệ, lưu desired state và gửi TX.
+4. Trong claimed/transmitting, đối chiếu heartbeat và Station detail.
+5. Tháo output device rồi thử TX mới.
+
+**Kết quả mong đợi**
+
+- TX OUTPUT chỉ cho chọn device có `output_channels > 0` và lưu độc lập RX input.
+- Heartbeat báo đúng `tx_state`, job ID, active TX output device và lỗi TX.
+- Không tái sử dụng `capture_state` để biểu diễn TX.
+- Device mất/không hợp lệ làm job failed, không fallback âm thầm sang output sai.
+
 ---
 
-## 9. Web Admin
+## 10. Web Admin
 
 ### ADM-SEC-01 — Quyền truy cập
 
 **Các bước**
 
-1. Mở Web Admin khi chưa đăng nhập.
+1. Mở Web Admin trong cửa sổ ẩn danh khi chưa đăng nhập.
 2. Đăng nhập bằng Non-admin.
 3. Đăng nhập bằng Admin.
+4. Đóng cửa sổ, mở lại sau khi phiên IAP hết hạn và thử truy cập trực tiếp một URL
+   chi tiết đã lưu.
 
 **Kết quả mong đợi**
 
 - Người chưa đăng nhập được yêu cầu đăng nhập.
 - Non-admin nhận trang 403 và không thấy dữ liệu quản trị.
 - Admin truy cập Dashboard bình thường.
+- Khi không còn phiên hợp lệ, mọi URL đều yêu cầu xác thực lại; nút Back hoặc cache
+  trình duyệt không làm lộ nội dung Admin trước đó.
 
 ### ADM-SEC-02 — Chống giả mạo form quản trị
 
@@ -701,6 +1058,22 @@ Case này cần công cụ test HTTP hoặc DevTools theo hướng dẫn của q
 - Transfer hợp lệ đổi đúng owner; owner cũ mất quyền, owner mới thấy Station.
 - Target hết quota bị từ chối và ownership không thay đổi.
 
+### ADM-STA-03 — Release Station để ghép lại
+
+**Các bước**
+
+1. Mở User detail có Station inactive/locked và thử quét lại tem QR trên Android.
+2. Bấm Release trên Web Admin; lần đầu hủy dialog, lần sau xác nhận.
+3. Kiểm tra Audit rồi dùng User B quét lại đúng tem QR.
+
+**Kết quả mong đợi**
+
+- Trước khi release, App báo Station bị khóa và không cho ghép lại.
+- Hủy dialog không thay đổi dữ liệu; xác nhận release mở đúng Station, không ảnh
+  hưởng Station khác.
+- User B ghép lại thành công nhưng không được xem lịch sử riêng của owner cũ.
+- Audit ghi operator, Station, owner trước/sau, request ID và timestamp.
+
 ### ADM-AUD-01 — Audit log
 
 **Các bước**
@@ -745,12 +1118,14 @@ Case này chỉ chạy khi quản trị viên bật failure injection an toàn t
 
 - Ngôn ngữ được giữ, giao diện không tràn và focus nhìn thấy rõ.
 - Dialog dùng được bằng bàn phím.
+- Sidebar dùng đúng logo PRANA ELEX; avatar giữ màu/ảnh từ danh tính Google thay vì
+  bị thay bằng màu mặc định không nhất quán.
 - Trang 403/404/409/422/500 song ngữ, đúng mã lỗi và không lộ exception,
   stack trace hay secret.
 
 ---
 
-## 10. Kiểm thử xuyên hệ thống
+## 11. Kiểm thử xuyên hệ thống
 
 ### E2E-01 — Admin đổi plan, Android nhận quyền mới
 
@@ -801,18 +1176,55 @@ ghi trùng; hệ thống phục hồi mà không cần xóa dữ liệu App.
 User B không bị ảnh hưởng hoặc lộ cho User A; sau reactivate, User A giữ plan
 hợp lệ trước đó và có thể tiếp tục sau khi refresh.
 
-### E2E-RX-01 — Xác nhận không có hành vi TX
+### E2E-06 — Một RX result xuyên suốt toàn hệ thống
 
-1. Thực hiện Start/Stop, đổi ngôn ngữ, Live, nghe lại bản dịch và History.
-2. Theo dõi cổng audio output, PTT/GPIO và thiết bị vô tuyến test trong suốt
-   quá trình.
+1. Android Start RX và phát một mẫu VHF có request ID xác định.
+2. Theo dõi Station upload, Gemini xử lý, Live hiển thị và tự phát bản dịch.
+3. Stop/Start lại trong ngày, mở History khi entitlement cho phép.
+4. Đối chiếu local, Firestore/GCS bằng công cụ staging và usage trên Account/Admin.
 
-**Mong đợi:** hệ thống chỉ thu/xử lý RX và phát TTS trên điện thoại; không kích
-PTT, không phát RF và không gửi audio bản dịch trở lại thiết bị vô tuyến.
+**Mong đợi:** chỉ có một result cho request ID; transcript/bản dịch giống nhau ở
+Live và History; log vẫn còn sau Stop/Start; usage chỉ tăng một lần; WAV/JSON local
+và GCS cùng tên, đúng Station/ngày; không có audio tự phát lặp ngoài lần phát mới.
+
+### E2E-07 — Một TX job xuyên suốt toàn hệ thống
+
+1. Android START Station, chọn TX language và thu câu “Vui lòng chuyển qua kênh
+   18 VHF” bằng HTT.
+2. Đối chiếu transcript/translation, chỉnh nội dung rồi bấm Phát.
+3. Theo dõi synthesizing, archive, queued, Station claim và playback.
+4. Nghe nội dung cuối và “Over” trên output Laptop; chờ completed.
+5. Mở History TX và đối chiếu local/Cloud metadata bằng công cụ staging.
+
+**Mong đợi:** source chỉ upload một lần; nội dung chỉnh được TTS đúng; output có
+“Over”; RX dừng trước playback và resume sau đó; App đạt completed; History có
+đúng một job với edited flag/attempt; source/output/result cùng logical stem và
+không lộ Cloud path.
+
+### E2E-08 — Admin STOP trong vòng đời TX
+
+1. User A confirm TX và để job queued, sau đó Admin gửi STOP.
+2. Xác nhận job chưa claim trong khi Station STOP.
+3. START lại, chờ job transmitting rồi Admin gửi STOP lần nữa.
+4. Theo dõi playback, RX state và Audit.
+
+**Mong đợi:** queued job chờ đến lần START tiếp theo; transmitting job phát hết
+nhưng RX không resume; Android/Station/Admin cuối cùng cùng hội tụ về stopped;
+Audit chỉ ghi thao tác Admin, không ghi completed giả hoặc replay job.
+
+### E2E-TX-BOUNDARY-01 — Xác nhận ranh giới chưa có GPIO/RF PTT
+
+1. Ngắt hoặc không lắp GPIO/serial PTT và không nối output Station vào VHF TX.
+2. Chạy đầy đủ RX, HTT, confirm và Station TX playback.
+3. Theo dõi cổng audio output, GPIO/PTT và máy VHF test trong suốt quá trình.
+
+**Mong đợi:** output WAV chỉ phát tại audio output Laptop; không có GPIO/serial
+PTT, không key máy VHF và không phát RF. Việc thiếu PTT không làm pipeline phần
+mềm crash hoặc báo completed sai cho audio playback.
 
 ---
 
-## 11. Tiêu chí nghiệm thu
+## 12. Tiêu chí nghiệm thu
 
 Bản phát hành chỉ được đề xuất nghiệm thu khi:
 
@@ -821,6 +1233,11 @@ Bản phát hành chỉ được đề xuất nghiệm thu khi:
 - Không có crash, mất dữ liệu, lộ secret hoặc người dùng xem được dữ liệu không
   thuộc quyền.
 - Các case vận hành từ xa, không ADC và ranh giới RX/TX đều PASS.
+- Toàn bộ case TX START gate, recording/review, TTS + “Over”, queue, interlock,
+  retry thủ công, lưu trữ và History TX đều PASS trên Laptop Station.
+- Các case Gemini, tự phát/nghe lại audio, lưu local/GCS và dọn dữ liệu 14 ngày đều
+  PASS trên ít nhất một Station Windows và một Station Raspberry Pi/Linux.
+- Không có TX job tự replay; Phase 2.1 không kích GPIO/PTT hoặc phát RF.
 - Các lỗi còn lại đều có ticket, mức độ ưu tiên, người phụ trách và quyết định
   có chấp nhận phát hành hay không.
 - Báo cáo test đính kèm phiên bản APK, API, Admin, Station và danh sách case
