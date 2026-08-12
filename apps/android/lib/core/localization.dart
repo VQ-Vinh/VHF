@@ -47,6 +47,9 @@ abstract final class AppText {
       'empty_title': 'Đang chờ tín hiệu thoại',
       'empty_body': 'Bắt đầu thu để nhận transcript và bản dịch.',
       'retry': 'Thử lại',
+      'rx_audio_input_not_found':
+          'Không tìm thấy USB SoundCard đầu vào. Hãy kết nối thiết bị rồi thử lại.',
+      'rx_start_failed': 'Station không thể khởi động RX.',
       'offline': 'Offline quá 15 giây',
       'api_ready': 'API READY',
       'api_error': 'API ERROR',
@@ -267,6 +270,9 @@ abstract final class AppText {
       'empty_title': 'Waiting for speech',
       'empty_body': 'Start capture to receive transcript and translation.',
       'retry': 'Retry',
+      'rx_audio_input_not_found':
+          'No USB SoundCard input was found. Connect the device and try again.',
+      'rx_start_failed': 'The Station could not start RX.',
       'offline': 'Offline for more than 15 seconds',
       'api_ready': 'API READY',
       'api_error': 'API ERROR',

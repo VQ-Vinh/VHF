@@ -114,6 +114,8 @@ class StationModel {
     required this.captureState,
     required this.desired,
     required this.observedGeneration,
+    this.commandFailedGeneration = 0,
+    this.commandError,
     required this.sessionId,
     required this.sequence,
     required this.lastSeenAt,
@@ -137,6 +139,8 @@ class StationModel {
   final String captureState;
   final DesiredState desired;
   final int observedGeneration;
+  final int commandFailedGeneration;
+  final String? commandError;
   final String sessionId;
   final int sequence;
   final DateTime? lastSeenAt;
@@ -173,6 +177,8 @@ class StationModel {
         Map<String, dynamic>.from(map['desired_state'] as Map? ?? const {}),
       ),
       observedGeneration: map['observed_generation'] as int? ?? 0,
+      commandFailedGeneration: map['command_failed_generation'] as int? ?? 0,
+      commandError: map['command_error'] as String?,
       sessionId: map['session_id'] as String? ?? '',
       sequence: map['sequence'] as int? ?? 0,
       lastSeenAt: (map['last_seen_at'] as Timestamp?)?.toDate(),

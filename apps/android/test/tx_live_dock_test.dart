@@ -162,6 +162,19 @@ void main() {
     );
   });
 
+  test('failed START unlocks the station toggle while command is pending', () {
+    expect(
+      canToggleLiveStation(
+        online: true,
+        running: true,
+        busy: false,
+        commandPending: true,
+        commandFailed: true,
+      ),
+      isTrue,
+    );
+  });
+
   testWidgets('recording counter renders a dynamic two-minute limit', (
     tester,
   ) async {

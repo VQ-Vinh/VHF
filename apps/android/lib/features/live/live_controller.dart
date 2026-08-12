@@ -74,6 +74,17 @@ class LiveUxController extends ChangeNotifier {
     var next = state;
     if (!online && state.phase != LiveCommandPhase.offline) {
       next = next.copyWith(phase: LiveCommandPhase.offline);
+    } else if (station.commandError != null &&
+        station.commandFailedGeneration >= station.desired.generation &&
+        (state.phase != LiveCommandPhase.failed ||
+            state.error != _commandErrorKey(station.commandError!) ||
+            state.pendingRunning != null)) {
+      next = next.copyWith(
+        phase: LiveCommandPhase.failed,
+        error: _commandErrorKey(station.commandError!),
+        clearOptimisticLanguage: true,
+        clearPendingRunning: true,
+      );
     } else if (state.phase == LiveCommandPhase.awaitingStation &&
         station.observedGeneration >= station.desired.generation &&
         station.desired.generation > (state.baselineGeneration ?? -1)) {
@@ -169,6 +180,11 @@ class LiveUxController extends ChangeNotifier {
     notifyListeners();
   }
 }
+
+String _commandErrorKey(String code) => switch (code) {
+  'AUDIO_INPUT_DEVICE_NOT_FOUND' => 'rx_audio_input_not_found',
+  _ => 'rx_start_failed',
+};
 
 final liveUxControllerProvider = ChangeNotifierProvider.autoDispose
     .family<LiveUxController, String>((ref, stationId) {
