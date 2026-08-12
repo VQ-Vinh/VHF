@@ -324,6 +324,9 @@ Thực hiện trên máy hoặc snapshot riêng:
 
 ### Khôi phục phiên IAP và đổi tài khoản
 
+- PRANA Admin không áp dụng periodic reauthentication ở cấp service. Phiên truy
+  cập tuân theo phiên Google/IAP tiêu chuẩn; IAP, IAM và Admin allowlist vẫn được
+  kiểm tra như trước.
 - Dùng liên kết **Đăng xuất / Đổi tài khoản** cạnh thông tin operator để xóa riêng
   phiên IAP của PRANA Admin. Thao tác này không đăng xuất Gmail và không xóa các
   cookie khác của trình duyệt.
