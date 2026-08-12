@@ -11,6 +11,7 @@ from starlette.requests import Request
 from services.prana_admin.main import (
     CSRF_COOKIE,
     _decode_cursor,
+    _error_response,
     _operator,
     _render,
     _csrf_token,
@@ -140,6 +141,13 @@ class AdminUiTests(unittest.TestCase):
         )
         self.assertIn('src="/static/logo_mark.png"', english_html)
         self.assertIn("operator-avatar", english_html)
+        self.assertIn("Sign out / Switch account", english_html)
+        self.assertIn("Clear only the PRANA Admin IAP session", english_html)
+        self.assertIn(
+            'href="/?gcp-iap-mode=CLEAR_LOGIN_COOKIE"',
+            english_html,
+        )
+        self.assertEqual(english.headers["cache-control"], "no-store")
 
         logo = (
             Path(__file__).resolve().parents[2]
@@ -155,7 +163,13 @@ class AdminUiTests(unittest.TestCase):
         vietnamese = _render(Request(vietnamese_scope), "dashboard.html", "operator@example.com", "Dashboard",
                              "dashboard", metrics={"total": 1, "active": 1, "pending": 0, "audio_minutes": 2.5},
                              attention=[], activity=[])
-        self.assertIn("Tổng quan vận hành", vietnamese.body.decode())
+        vietnamese_html = vietnamese.body.decode()
+        self.assertIn("Tổng quan vận hành", vietnamese_html)
+        self.assertIn("Đăng xuất / Đổi tài khoản", vietnamese_html)
+        self.assertIn("Chỉ làm mới phiên IAP của PRANA Admin", vietnamese_html)
+
+        error = _error_response(Request(scope), 404, "missing")
+        self.assertEqual(error.headers["cache-control"], "no-store")
 
     def test_admin_theme_matches_android_brand_palette(self) -> None:
         css = (
