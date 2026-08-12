@@ -699,7 +699,7 @@ resource "google_iap_settings" "admin_reauthentication" {
   access_settings {
     reauth_settings {
       method      = "LOGIN"
-      max_age     = "300s"
+      max_age     = "28800s"
       policy_type = "MINIMUM"
     }
   }
