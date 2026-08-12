@@ -692,21 +692,6 @@ resource "google_iap_web_cloud_run_service_iam_member" "admin_access" {
   member                 = each.value
 }
 
-resource "google_iap_settings" "admin_reauthentication" {
-  count = var.deploy_services ? 1 : 0
-  name  = "projects/${data.google_project.current.number}/iap_web/cloud_run-${var.region}/services/${google_cloud_run_v2_service.admin[0].name}"
-
-  access_settings {
-    reauth_settings {
-      method      = "LOGIN"
-      max_age     = "28800s"
-      policy_type = "MINIMUM"
-    }
-  }
-
-  depends_on = [google_cloud_run_v2_service.admin]
-}
-
 resource "google_billing_budget" "production" {
   billing_account = var.billing_account
   display_name    = "PRANA ELEX ${var.environment}"
