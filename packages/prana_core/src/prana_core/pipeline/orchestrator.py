@@ -12,6 +12,7 @@ from typing import Callable
 
 from prana_core.audio.recorder import AudioRecorder
 from prana_core.audio.base import AudioBackend
+from prana_core.audio.exceptions import AudioDeviceNotFoundError
 from prana_core.config.schema import AppConfig
 from prana_core.backend.client import BackendApiError, BackendClient
 from prana_core.pipeline.audio_utils import split_audio_buffer
@@ -76,6 +77,7 @@ class PipelineOrchestrator:
         self._job_queue: queue.Queue[SegmentJob | None] = queue.Queue(maxsize=32)
         self._executor: ThreadPoolExecutor | None = None
         self._worker_futures: list = []
+        self._startup_error: str | None = None
         self._cleanup_timer: threading.Timer | None = None
         self._shutdown_event = threading.Event()
         # Retention belongs to the Station process lifecycle, not to capture.
@@ -125,6 +127,7 @@ class PipelineOrchestrator:
             logger.warning("Cannot start: state=%s", self.state.name)
             return
         logger.info("start() called")
+        self._startup_error = None
         self._stop_event.clear()
         self._set_state(PipelineState.STARTING, "Starting...")
         threading.Thread(target=self._do_start, daemon=True).start()
@@ -170,6 +173,7 @@ class PipelineOrchestrator:
             event_bus.emit("pipeline_started")
         except BackendApiError as e:
             logger.error("Start failed", exc_info=e)
+            self._startup_error = e.code
             self._cleanup_failed_start()
             if e.code in {"AUTH_REQUIRED", "EMAIL_NOT_VERIFIED", "SUBSCRIPTION_INACTIVE", "DEVICE_REVOKED", "DEVICE_LIMIT_REACHED", "STATION_REVOKED", "STATION_NOT_PAIRED"}:
                 event_bus.emit("access_denied", e.code, str(e))
@@ -179,6 +183,11 @@ class PipelineOrchestrator:
             event_bus.emit("error_occurred", str(e))
         except Exception as e:
             logger.error("Start failed", exc_info=e)
+            self._startup_error = (
+                "AUDIO_INPUT_DEVICE_NOT_FOUND"
+                if isinstance(e, AudioDeviceNotFoundError)
+                else "STATION_RX_START_FAILED"
+            )
             self._cleanup_failed_start()
             with self._state_lock:
                 self._state = PipelineState.ERROR
@@ -439,6 +448,7 @@ class PipelineOrchestrator:
             "backend_enabled": bool(self._config.backend.api_url),
             "backend_ready": self._backend.ready,
             "backend_error": self._segment_processor.backend_error,
+            "startup_error": self._startup_error,
             "backend_last_request_ok": self._segment_processor.last_backend_ok,
             **retry_status,
         }

@@ -294,6 +294,8 @@ class StationHeartbeat(BaseModel):
     sequence: int = Field(default=0, ge=0)
     app_version: str = Field(default="", max_length=40)
     observed_generation: int = Field(default=0, ge=0)
+    command_failed_generation: int = Field(default=0, ge=0)
+    command_error: str | None = Field(default=None, max_length=80)
     target_language: Literal["vi", "en", "zh", "ja", "ko"] = "en"
     # Kept only to verify signatures from older Station builds. It has no
     # persistence or capture behavior and new builds no longer send it.
@@ -319,6 +321,8 @@ class Station(BaseModel):
     capture_state: str = "idle"
     desired_state: StationDesiredState = Field(default_factory=StationDesiredState)
     observed_generation: int = 0
+    command_failed_generation: int = 0
+    command_error: str | None = None
     session_id: str = ""
     sequence: int = 0
     last_seen_at: datetime | None = None

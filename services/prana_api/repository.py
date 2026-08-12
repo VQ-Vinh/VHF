@@ -791,6 +791,8 @@ class FirestoreRepository:
             "sequence": heartbeat.sequence,
             "app_version": heartbeat.app_version,
             "observed_generation": heartbeat.observed_generation,
+            "command_failed_generation": heartbeat.command_failed_generation,
+            "command_error": heartbeat.command_error,
             "target_language": heartbeat.target_language,
             "active_capture_mode": heartbeat.active_capture_mode,
             "active_audio_device_id": heartbeat.active_audio_device_id,
