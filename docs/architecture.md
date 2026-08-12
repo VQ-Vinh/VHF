@@ -28,8 +28,13 @@ qasync hay qtawesome.
 - Windows Desktop dùng Firebase user session và Ed25519 device identity.
 - Windows Station và Linux Station không giữ Firebase user session; chúng dùng
   Ed25519 station identity, poll desired state và gửi heartbeat/audio tới API.
-- Android dùng REST cho mutation và Firestore listener cho trạng thái/kết quả.
+- Android dùng REST cho mutation, Live/History/TX và Firestore projection cho
+  trạng thái Station thuộc owner.
 - API/Admin là các deployment độc lập và không import client packages.
+
+RX và TX dùng worker riêng tại Station. TX worker claim job từ API, dừng RX qua
+software interlock, phát final WAV trên output được chọn và chỉ resume RX khi
+desired state vẫn running. Phase hiện tại chưa điều khiển GPIO/RF PTT.
 
 Client không chứa service-account JSON và không gọi Vertex AI hoặc Cloud Storage
 trực tiếp. Firebase Web API key/OAuth client ID trong Windows hoặc Android là
