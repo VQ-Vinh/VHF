@@ -31,7 +31,8 @@ bool canToggleLiveStation({
   required bool running,
   required bool busy,
   required bool commandPending,
-}) => (online || running) && !busy && !commandPending;
+  bool commandFailed = false,
+}) => (online || running) && !busy && (!commandPending || commandFailed);
 
 class _LiveScreenState extends ConsumerState<LiveScreen> {
   String? _dismissedProcessingError;
@@ -177,6 +178,9 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
           online: online,
           ux: ux,
         );
+        final commandFailed =
+            station.commandError != null &&
+            station.commandFailedGeneration >= station.desired.generation;
         final results = ref.watch(
           liveResultsProvider((
             stationId: widget.stationId,
@@ -213,6 +217,19 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
               _CommandErrorBanner(
                 error: AppText.of(context, ux.error!),
                 onDismiss: controller.dismissError,
+                showDismiss: !commandFailed,
+                actionLabel:
+                    commandFailed ? AppText.of(context, 'retry') : null,
+                onAction:
+                    commandFailed && online && !controller.state.busy
+                        ? () => controller.retry(station)
+                        : null,
+                secondaryActionLabel:
+                    commandFailed ? AppText.of(context, 'stop') : null,
+                onSecondaryAction:
+                    commandFailed && online && !controller.state.busy
+                        ? () => controller.setRunning(station, false)
+                        : null,
               ),
             if (showProcessingError)
               _CommandErrorBanner(
@@ -281,6 +298,7 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
                         running: station.desired.running,
                         busy: ux.busy,
                         commandPending: station.commandPending,
+                        commandFailed: commandFailed,
                       )
                       ? () => controller.setRunning(
                         station,
@@ -469,6 +487,10 @@ String liveStationDisplayState({
   required LiveUxState ux,
 }) {
   if (!online) return 'OFF';
+  if (station.commandError != null &&
+      station.commandFailedGeneration >= station.desired.generation) {
+    return 'ERROR';
+  }
   if (ux.busy || station.commandPending) {
     final pendingRunning = ux.pendingRunning ?? station.desired.running;
     return pendingRunning ? 'STARTING' : 'STOPPING';
@@ -882,11 +904,17 @@ class _CommandErrorBanner extends StatelessWidget {
     required this.onDismiss,
     this.actionLabel,
     this.onAction,
+    this.secondaryActionLabel,
+    this.onSecondaryAction,
+    this.showDismiss = true,
   });
   final String error;
   final VoidCallback onDismiss;
   final String? actionLabel;
   final VoidCallback? onAction;
+  final String? secondaryActionLabel;
+  final VoidCallback? onSecondaryAction;
+  final bool showDismiss;
 
   @override
   Widget build(BuildContext context) => MaterialBanner(
@@ -895,7 +923,13 @@ class _CommandErrorBanner extends StatelessWidget {
     actions: [
       if (actionLabel != null && onAction != null)
         TextButton(onPressed: onAction, child: Text(actionLabel!)),
-      TextButton(onPressed: onDismiss, child: const Text('OK')),
+      if (secondaryActionLabel != null && onSecondaryAction != null)
+        TextButton(
+          onPressed: onSecondaryAction,
+          child: Text(secondaryActionLabel!),
+        ),
+      if (showDismiss)
+        TextButton(onPressed: onDismiss, child: const Text('OK')),
     ],
   );
 }

@@ -9,6 +9,8 @@ void main() {
     int observedGeneration = 1,
     String language = 'en',
     String? lastError,
+    int commandFailedGeneration = 0,
+    String? commandError,
   }) => StationModel(
     id: 'station-1',
     name: 'Station',
@@ -26,6 +28,8 @@ void main() {
     sequence: 1,
     lastSeenAt: DateTime.now(),
     lastError: lastError,
+    commandFailedGeneration: commandFailedGeneration,
+    commandError: commandError,
   );
 
   test(
@@ -107,5 +111,28 @@ void main() {
 
     expect(controller.state.phase, LiveCommandPhase.idle);
     expect(controller.state.error, isNull);
+  });
+
+  test('failed start exits pending state with input device error', () async {
+    final controller = LiveUxController(
+      stationId: 'station-1',
+      send: ({running, targetLanguage, retry = false}) async {},
+    );
+
+    await controller.setRunning(station(), true);
+    controller.synchronize(
+      station(
+        running: true,
+        desiredGeneration: 2,
+        observedGeneration: 1,
+        commandFailedGeneration: 2,
+        commandError: 'AUDIO_INPUT_DEVICE_NOT_FOUND',
+      ),
+      online: true,
+    );
+
+    expect(controller.state.phase, LiveCommandPhase.failed);
+    expect(controller.state.pendingRunning, isNull);
+    expect(controller.state.error, 'rx_audio_input_not_found');
   });
 }

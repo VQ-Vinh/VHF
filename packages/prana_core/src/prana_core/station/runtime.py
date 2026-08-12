@@ -47,6 +47,8 @@ class StationRuntime:
         self._station_error: str | None = None
         self._failed_audio_generation = -1
         self._last_start_attempt: tuple[int, int] | None = None
+        self._command_failed_generation = 0
+        self._command_error: str | None = None
         self._audio_backend_factory = audio_backend_factory
         self._desired_running = False
         self._tx_active = False
@@ -120,6 +122,8 @@ class StationRuntime:
 
     def _apply(self, desired: dict) -> None:
         generation = int(desired.get("generation", 0))
+        if generation != getattr(self, "_command_failed_generation", 0):
+            self._command_error = None
         target = str(desired.get("target_language", "en"))
         if target != self.config.translation.target_language:
             self.config.translation.target_language = target
@@ -210,8 +214,20 @@ class StationRuntime:
         )
         if applied:
             self.observed_generation = generation
-            if hasattr(self, "_station_error"):
-                self._station_error = None
+            self._command_failed_generation = 0
+            self._command_error = None
+            self._station_error = None
+        elif (
+            should_run
+            and self.observed_generation < generation
+            and self.orchestrator.state == PipelineState.ERROR
+            and self._last_start_attempt == start_attempt
+        ):
+            status = self.orchestrator.get_status()
+            self._command_failed_generation = generation
+            self._command_error = str(
+                status.get("startup_error") or "STATION_RX_START_FAILED"
+            )
 
     def _heartbeat_payload(self) -> dict:
         status = self.orchestrator.get_status()
@@ -225,6 +241,10 @@ class StationRuntime:
             "sequence": status["sequences_processed"],
             "app_version": _app_version(),
             "observed_generation": self.observed_generation,
+            "command_failed_generation": getattr(
+                self, "_command_failed_generation", 0
+            ),
+            "command_error": getattr(self, "_command_error", None),
             "target_language": self.config.translation.target_language,
             "active_capture_mode": self.config.audio.capture_mode,
             "active_audio_device_id": next(

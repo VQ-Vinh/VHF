@@ -342,6 +342,9 @@ class StationModeTests(unittest.TestCase):
             def retry_last_failed(self):
                 return False
 
+            def get_status(self):
+                return {"startup_error": "AUDIO_INPUT_DEVICE_NOT_FOUND"}
+
         runtime = StationRuntime.__new__(StationRuntime)
         runtime.config = SimpleNamespace(
             translation=SimpleNamespace(target_language="en"),
@@ -367,6 +370,11 @@ class StationModeTests(unittest.TestCase):
         runtime._apply(desired)
 
         self.assertEqual(runtime.orchestrator.starts, 1)
+        self.assertEqual(runtime.observed_generation, 0)
+        self.assertEqual(runtime._command_failed_generation, 3)
+        self.assertEqual(
+            runtime._command_error, "AUDIO_INPUT_DEVICE_NOT_FOUND"
+        )
 
     def test_tx_files_share_rx_style_filename_and_date_tree(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

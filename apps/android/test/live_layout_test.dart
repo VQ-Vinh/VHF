@@ -47,24 +47,32 @@ class _NoopSourceAudioEngine implements SourceAudioEngine {
 }
 
 void main() {
-  StationModel station({String name = 'VINH', bool running = true}) =>
-      StationModel(
-        id: 'station-1',
-        name: name,
-        platform: 'windows',
-        active: true,
-        captureState: running ? 'listening' : 'idle',
-        desired: DesiredState(
-          running: running,
-          targetLanguage: 'vi',
-          retryGeneration: 0,
-          generation: 1,
-        ),
-        observedGeneration: 1,
-        sessionId: 'session-1',
-        sequence: 2,
-        lastSeenAt: DateTime.now(),
-      );
+  StationModel station({
+    String name = 'VINH',
+    bool running = true,
+    int desiredGeneration = 1,
+    int observedGeneration = 1,
+    int commandFailedGeneration = 0,
+    String? commandError,
+  }) => StationModel(
+    id: 'station-1',
+    name: name,
+    platform: 'windows',
+    active: true,
+    captureState: running ? 'listening' : 'idle',
+    desired: DesiredState(
+      running: running,
+      targetLanguage: 'vi',
+      retryGeneration: 0,
+      generation: desiredGeneration,
+    ),
+    observedGeneration: observedGeneration,
+    commandFailedGeneration: commandFailedGeneration,
+    commandError: commandError,
+    sessionId: 'session-1',
+    sequence: 2,
+    lastSeenAt: DateTime.now(),
+  );
 
   Widget harness({
     required Size size,
@@ -255,6 +263,27 @@ void main() {
         ux: const LiveUxState(),
       ),
       'LISTENING',
+    );
+  });
+
+  test('command failure takes precedence over pending START', () {
+    final failedStation = station(
+      desiredGeneration: 2,
+      observedGeneration: 1,
+      commandFailedGeneration: 2,
+      commandError: 'AUDIO_INPUT_DEVICE_NOT_FOUND',
+    );
+
+    expect(
+      liveStationDisplayState(
+        station: failedStation,
+        online: true,
+        ux: const LiveUxState(
+          phase: LiveCommandPhase.failed,
+          error: 'rx_audio_input_not_found',
+        ),
+      ),
+      'ERROR',
     );
   });
 

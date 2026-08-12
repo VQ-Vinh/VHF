@@ -78,6 +78,8 @@ class FirestoreRepositoryTests(unittest.TestCase):
                 capture_state="listening",
                 app_version="1.2.3",
                 observed_generation=7,
+                command_failed_generation=8,
+                command_error="AUDIO_INPUT_DEVICE_NOT_FOUND",
             ),
         )
 
@@ -96,6 +98,10 @@ class FirestoreRepositoryTests(unittest.TestCase):
             self.assertTrue(value["online"])
             self.assertEqual(value["capture_state"], "listening")
             self.assertEqual(value["app_version"], "1.2.3")
+            self.assertEqual(value["command_failed_generation"], 8)
+            self.assertEqual(
+                value["command_error"], "AUDIO_INPUT_DEVICE_NOT_FOUND"
+            )
             self.assertIs(value["last_seen_at"], firestore.SERVER_TIMESTAMP)
 
 
