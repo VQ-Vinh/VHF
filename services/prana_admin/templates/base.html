@@ -25,6 +25,7 @@
       <div class="operator">
         <span class="operator-avatar" aria-hidden="true">{{ operator[:1]|upper }}</span>
         <span class="operator-copy"><small>{{ t('nav.signed_in') }}</small><strong title="{{ operator }}">{{ operator }}</strong></span>
+        <a class="operator-signout" href="/?gcp-iap-mode=CLEAR_LOGIN_COOKIE" title="{{ t('nav.sign_out_hint') }}">{{ t('nav.sign_out') }}</a>
       </div>
     </aside>
     <button class="sidebar-scrim" type="button" aria-label="{{ t('nav.close') }}" data-sidebar-scrim></button>

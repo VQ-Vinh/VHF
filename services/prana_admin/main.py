@@ -37,7 +37,7 @@ templates = Jinja2Templates(directory=BASE_DIR / "templates")
 def _error_response(request: Request, status: int, detail: str = ""):
     locale = _locale(request)
     safe_status = status if status in {403, 404, 409, 422, 500, 503} else 500
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request=request,
         name="error.html",
         status_code=status,
@@ -48,6 +48,8 @@ def _error_response(request: Request, status: int, detail: str = ""):
             "detail": detail if safe_status < 500 else "",
         },
     )
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.exception_handler(HTTPException)
@@ -273,6 +275,7 @@ def _render(request: Request, template: str, operator: str, title: str, active_n
         secure=True,
         samesite="strict",
     )
+    response.headers["Cache-Control"] = "no-store"
     return response
 
 
