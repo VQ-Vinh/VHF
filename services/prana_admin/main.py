@@ -311,6 +311,7 @@ def _plan_rows(db) -> list[dict]:
         item.setdefault("sort_order", 0)
         item.setdefault("max_stations", 2)
         item.setdefault("live_log_limit", 10 if snap.id == "free" else 0)
+        item.setdefault("tx_max_recording_seconds", 60)
         item.setdefault(
             "history_unlock_delay_days",
             1 if snap.id == "free" else 0,
@@ -1003,6 +1004,7 @@ def update_plan(
     max_stations: int = Form(2),
     live_log_limit: int | None = Form(None),
     history_unlock_delay_days: int | None = Form(None),
+    tx_max_recording_seconds: int = Form(60),
     sort_order: int = Form(...),
     csrf_token: str = Form(),
     operator: str = Header(default=None, alias="X-Goog-Authenticated-User-Email"),
@@ -1030,6 +1032,7 @@ def update_plan(
             0,
             30,
         ),
+        "tx_max_recording_seconds": (tx_max_recording_seconds, 5, 120),
         "sort_order": (sort_order, 0, 1_000),
     }
     for field, (value, minimum, maximum) in limits.items():
@@ -1055,6 +1058,7 @@ def update_plan(
         "max_stations": max_stations,
         "live_log_limit": live_log_limit,
         "history_unlock_delay_days": history_unlock_delay_days,
+        "tx_max_recording_seconds": tx_max_recording_seconds,
         "sort_order": sort_order,
         "updated_at": firestore.SERVER_TIMESTAMP,
         "updated_by": email,

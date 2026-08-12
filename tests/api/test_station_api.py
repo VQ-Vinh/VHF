@@ -23,13 +23,13 @@ from services.prana_api.security import canonical_request, canonical_station_req
 from services.prana_api.tx_repository import MemoryTxRepository
 
 
-def wav_bytes() -> bytes:
+def wav_bytes(seconds: float = 1) -> bytes:
     output = io.BytesIO()
     with wave.open(output, "wb") as wav:
         wav.setnchannels(1)
         wav.setsampwidth(2)
         wav.setframerate(16000)
-        wav.writeframes(b"\0" * 32000)
+        wav.writeframes(b"\0" * round(32000 * seconds))
     return output.getvalue()
 
 
@@ -1054,6 +1054,39 @@ class StationApiTests(unittest.TestCase):
             )
             self.assertEqual(confirm.status_code, 409, confirm.text)
             self.assertEqual(confirm.json()["detail"]["code"], "TX_NOT_STARTED")
+
+    def test_tx_draft_enforces_current_plan_recording_limit(self):
+        self.create_and_claim()
+        self.repo.update_station_desired_state(
+            self.identity.uid, self.station_id, {"running": True}
+        )
+        self.repo.plans["free"] = self.repo.plans["free"].model_copy(
+            update={"tx_max_recording_seconds": 5}
+        )
+        archive = Archive()
+        with patch("services.prana_api.main.get_processor", return_value=Processor()), patch(
+            "services.prana_api.main.get_archive", return_value=archive
+        ):
+            accepted = self.client.post(
+                f"/v1/stations/{self.station_id}/tx/drafts",
+                data={"target_language": "vi"},
+                files={"audio": ("phone.wav", wav_bytes(5), "audio/wav")},
+                headers={"X-Request-ID": str(uuid.uuid4())},
+            )
+            rejected_id = str(uuid.uuid4())
+            rejected = self.client.post(
+                f"/v1/stations/{self.station_id}/tx/drafts",
+                data={"target_language": "vi"},
+                files={"audio": ("phone.wav", wav_bytes(5.1), "audio/wav")},
+                headers={"X-Request-ID": rejected_id},
+            )
+
+        self.assertEqual(accepted.status_code, 200, accepted.text)
+        self.assertEqual(rejected.status_code, 413, rejected.text)
+        self.assertEqual(rejected.json()["detail"]["code"], "TX_AUDIO_TOO_LONG")
+        self.assertEqual(rejected.json()["detail"]["max_seconds"], 5)
+        self.assertIsNone(self.tx_repo.get(rejected_id))
+        self.assertEqual(len(archive.audio), 1)
 
 
 if __name__ == "__main__":

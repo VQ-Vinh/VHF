@@ -38,6 +38,10 @@ class SubscriptionPlanTests(unittest.TestCase):
             [plan.history_unlock_delay_days for plan in PLAN_CATALOG],
             [1, 0, 0],
         )
+        self.assertEqual(
+            [plan.tx_max_recording_seconds for plan in PLAN_CATALOG],
+            [60, 60, 60],
+        )
         legacy_free = Plan(
             id="free",
             name="Free",
@@ -46,6 +50,7 @@ class SubscriptionPlanTests(unittest.TestCase):
         )
         self.assertEqual(legacy_free.live_log_limit, 10)
         self.assertEqual(legacy_free.history_unlock_delay_days, 1)
+        self.assertEqual(legacy_free.tx_max_recording_seconds, 60)
         now = datetime(2026, 7, 20, 23, 59, 59, tzinfo=timezone.utc)
         self.assertEqual(usage_period(PLAN_BY_ID["free"], now), "2026-07-20")
         self.assertEqual(
@@ -171,6 +176,7 @@ class SubscriptionPlanApiTests(unittest.TestCase):
                 "live_log_limit": 10,
                 "history_unlock_delay_days": 1,
                 "max_concurrency": 2,
+                "tx_max_recording_seconds": 60,
             },
         )
         unavailable = self.client.post(

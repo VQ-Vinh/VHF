@@ -320,6 +320,9 @@ def me(identity: Identity = Depends(require_identity), repo: Repository = Depend
             plan.history_unlock_delay_days if plan else 1
         ),
         "max_concurrency": plan.max_concurrency if plan else 2,
+        "tx_max_recording_seconds": (
+            plan.tx_max_recording_seconds if plan else 60
+        ),
     }
     return MeResponse(
         **account.model_dump(),
@@ -354,6 +357,7 @@ def select_subscription(
             "live_log_limit": plan.live_log_limit,
             "history_unlock_delay_days": plan.history_unlock_delay_days,
             "max_concurrency": plan.max_concurrency,
+            "tx_max_recording_seconds": plan.tx_max_recording_seconds,
         },
     )
 
@@ -537,7 +541,7 @@ def list_stations(
     identity: Identity = Depends(require_identity),
     repo: Repository = Depends(get_repository),
 ):
-    active_account(identity, repo)
+    _account, plan = active_account(identity, repo)
     return repo.list_stations(identity.uid)
 
 
@@ -1124,7 +1128,7 @@ def create_tx_draft(
     _validate_request_id(request_id)
     if target_language not in {"vi", "en", "zh", "ja", "ko"}:
         raise api_error(422, "INVALID_REQUEST", "Unsupported target language")
-    active_account(identity, repo)
+    _account, plan = active_account(identity, repo)
     station = _owned_tx_station(repo, identity.uid, station_id)
     _require_tx_running(station)
     existing = tx_repo.get(request_id)
@@ -1134,7 +1138,12 @@ def create_tx_draft(
         return TxDraft.model_validate(existing)
     settings = get_settings()
     source = audio.file.read(settings.max_audio_bytes + 1)
-    info = validate_wav(source, settings.max_audio_bytes, min(60, settings.max_audio_seconds))
+    info = validate_wav(
+        source,
+        settings.max_audio_bytes,
+        min(plan.tx_max_recording_seconds, settings.max_audio_seconds),
+        too_long_code="TX_AUDIO_TOO_LONG",
+    )
     if info.seconds < 0.3:
         raise api_error(422, "AUDIO_TOO_SHORT", "Hold to talk for at least 300 ms")
     model = get_processor().process(source, target_language, f"tx-{request_id}", 0, request_id).response

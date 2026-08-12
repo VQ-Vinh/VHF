@@ -23,6 +23,7 @@ class Plan(BaseModel):
     # by plan ID so the Free policy takes effect before an admin saves it.
     live_log_limit: int = Field(default=0, ge=0, le=1_000)
     history_unlock_delay_days: int = Field(default=0, ge=0, le=30)
+    tx_max_recording_seconds: int = Field(default=60, ge=5, le=120)
 
     @model_validator(mode="before")
     @classmethod
@@ -37,6 +38,7 @@ class Plan(BaseModel):
             data["live_log_limit"] = 10 if data.get("id") == "free" else 0
         if "history_unlock_delay_days" not in data:
             data["history_unlock_delay_days"] = 1 if data.get("id") == "free" else 0
+        data.setdefault("tx_max_recording_seconds", 60)
         return data
 
 
@@ -118,6 +120,7 @@ class PlanEntitlements(BaseModel):
     live_log_limit: int = Field(default=10, ge=0, le=1_000)
     history_unlock_delay_days: int = Field(default=1, ge=0, le=30)
     max_concurrency: int = Field(default=2, ge=1, le=10)
+    tx_max_recording_seconds: int = Field(default=60, ge=5, le=120)
 
 
 class MeResponse(BaseModel):
@@ -336,7 +339,7 @@ class TxDraft(BaseModel):
     id: str
     station_id: str
     status: Literal["review_ready", "synthesizing", "queued", "claimed", "transmitting", "completed", "failed", "cancelled"]
-    duration_ms: int = Field(ge=1, le=60_000)
+    duration_ms: int = Field(ge=1, le=120_000)
     target_language: Literal["vi", "en", "zh", "ja", "ko"]
     detected_language: str = ""
     transcript: str
