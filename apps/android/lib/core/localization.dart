@@ -217,6 +217,7 @@ abstract final class AppText {
       'tx_recording': 'Đang thu giọng nói',
       'tx_ptt_hint': 'Giữ nút trong khi nói. Nhả nút để tạo bản dịch.',
       'tx_max_duration': 'Tối đa {seconds} giây mỗi lần.',
+      'tx_max_duration_short': 'TỐI ĐA {seconds}s',
       'tx_processing': 'Đang tạo bản dịch',
       'tx_processing_body':
           'PRANA đang nhận dạng, dịch và chuẩn bị giọng phát mẫu.',
@@ -243,6 +244,8 @@ abstract final class AppText {
       'tx_channel_busy': 'Kênh VHF đang bận. Bản phát đã được hủy.',
       'tx_expired': 'Phiên TX đã hết hạn. Vui lòng thu lại.',
       'tx_processing_failed': 'Không thể tạo bản dịch. Vui lòng thử lại.',
+      'tx_audio_too_long':
+          'Bản thu vượt quá thời lượng cho phép. Vui lòng thu lại.',
       'tx_transmission_failed': 'Station không thể phát bản dịch.',
       'tx_discard_title': 'Hủy bản TX hiện tại?',
       'tx_discard_body': 'Bản thu hoặc bản dịch chưa phát sẽ bị xóa.',
@@ -442,6 +445,7 @@ abstract final class AppText {
       'tx_ptt_hint':
           'Hold the button while speaking. Release it to create a translation.',
       'tx_max_duration': 'Maximum {seconds} seconds per transmission.',
+      'tx_max_duration_short': 'MAX {seconds}s',
       'tx_processing': 'Preparing translation',
       'tx_processing_body':
           'PRANA is transcribing, translating, and preparing a sample voice.',
@@ -472,6 +476,8 @@ abstract final class AppText {
       'tx_expired': 'The TX session expired. Please record it again.',
       'tx_processing_failed':
           'The translation could not be prepared. Please try again.',
+      'tx_audio_too_long':
+          'The recording exceeds the allowed duration. Please record it again.',
       'tx_transmission_failed':
           'The Station could not transmit the translation.',
       'tx_discard_title': 'Discard the current TX draft?',

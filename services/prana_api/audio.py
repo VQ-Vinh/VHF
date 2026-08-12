@@ -14,7 +14,13 @@ class AudioInfo:
     exact_seconds: float
 
 
-def validate_wav(data: bytes, max_bytes: int, max_seconds: int) -> AudioInfo:
+def validate_wav(
+    data: bytes,
+    max_bytes: int,
+    max_seconds: int,
+    *,
+    too_long_code: str = "AUDIO_TOO_LARGE",
+) -> AudioInfo:
     if len(data) > max_bytes:
         raise api_error(413, "AUDIO_TOO_LARGE", f"Audio exceeds {max_bytes} bytes")
     try:
@@ -31,5 +37,10 @@ def validate_wav(data: bytes, max_bytes: int, max_seconds: int) -> AudioInfo:
     if exact < 0.1:
         raise api_error(422, "INVALID_AUDIO", "Audio must be at least 100 ms")
     if exact > max_seconds:
-        raise api_error(413, "AUDIO_TOO_LARGE", f"Audio exceeds {max_seconds} seconds")
+        raise api_error(
+            413,
+            too_long_code,
+            f"Audio exceeds {max_seconds} seconds",
+            max_seconds=max_seconds,
+        )
     return AudioInfo(seconds=max(1, math.ceil(exact)), exact_seconds=exact)

@@ -18,6 +18,7 @@ PLAN_CATALOG = (
         max_stations=2,
         live_log_limit=10,
         history_unlock_delay_days=1,
+        tx_max_recording_seconds=60,
     ),
     Plan(
         id="plus",
@@ -33,6 +34,7 @@ PLAN_CATALOG = (
         max_stations=2,
         live_log_limit=0,
         history_unlock_delay_days=0,
+        tx_max_recording_seconds=60,
     ),
     Plan(
         id="pro",
@@ -48,6 +50,7 @@ PLAN_CATALOG = (
         max_stations=2,
         live_log_limit=0,
         history_unlock_delay_days=0,
+        tx_max_recording_seconds=60,
     ),
 )
 

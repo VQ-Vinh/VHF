@@ -14,15 +14,20 @@ class TxController extends ChangeNotifier {
     required this.stationId,
     required TxRepository repository,
     TxRecorder? recorder,
-    this.maximumDuration = const Duration(seconds: 60),
+    Duration maximumDuration = const Duration(seconds: 60),
     this.queuePreviewDuration = const Duration(seconds: 1),
   }) : _repository = repository,
-       _recorder = recorder;
+       _recorder = recorder,
+       _maximumDuration = maximumDuration,
+       _recordingMaximumDuration = maximumDuration;
 
   final String stationId;
   final TxRepository _repository;
   final TxRecorder? _recorder;
-  final Duration maximumDuration;
+  Duration _maximumDuration;
+  Duration _recordingMaximumDuration;
+  Duration get maximumDuration => _maximumDuration;
+  Duration get recordingMaximumDuration => _recordingMaximumDuration;
   final Duration queuePreviewDuration;
 
   TxState state = const TxState();
@@ -92,6 +97,17 @@ class TxController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setMaximumDuration(Duration value) {
+    final seconds = value.inSeconds.clamp(5, 120);
+    final normalized = Duration(seconds: seconds);
+    if (_maximumDuration == normalized) return;
+    _maximumDuration = normalized;
+    if (state.phase != TxPhase.recording) {
+      _recordingMaximumDuration = normalized;
+    }
+    notifyListeners();
+  }
+
   void startRecording() {
     if (!_stationOnline) {
       _fail(TxFailure.stationOffline, TxPhase.stationOffline);
@@ -99,6 +115,7 @@ class TxController extends ChangeNotifier {
     }
     if (!canStartRecording) return;
     _recordingStartedAt = DateTime.now();
+    _recordingMaximumDuration = _maximumDuration;
     state = state.copyWith(
       phase: TxPhase.recording,
       duration: Duration.zero,
@@ -116,11 +133,10 @@ class TxController extends ChangeNotifier {
       final started = _recordingStartedAt;
       if (started == null) return;
       final elapsed = DateTime.now().difference(started);
-      state = state.copyWith(
-        duration: elapsed > maximumDuration ? maximumDuration : elapsed,
-      );
+      final limit = _recordingMaximumDuration;
+      state = state.copyWith(duration: elapsed > limit ? limit : elapsed);
       notifyListeners();
-      if (elapsed >= maximumDuration) {
+      if (elapsed >= limit) {
         unawaited(stopRecording());
       }
     });
@@ -156,6 +172,11 @@ class TxController extends ChangeNotifier {
       if (_disposed || state.phase != TxPhase.processing) return;
       state = state.copyWith(phase: TxPhase.reviewReady, draft: draft);
       notifyListeners();
+    } on TxRecordingTooLong catch (error) {
+      if (!_disposed) {
+        setMaximumDuration(Duration(seconds: error.maximumSeconds));
+        _fail(TxFailure.recordingTooLong, TxPhase.failed);
+      }
     } catch (_) {
       if (!_disposed) {
         _fail(TxFailure.processingFailed, TxPhase.failed);

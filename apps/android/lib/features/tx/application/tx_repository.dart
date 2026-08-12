@@ -1,5 +1,11 @@
 import '../domain/tx_draft.dart';
 
+class TxRecordingTooLong implements Exception {
+  const TxRecordingTooLong(this.maximumSeconds);
+
+  final int maximumSeconds;
+}
+
 abstract interface class TxRepository {
   Future<TxDraft> processRecording(TxRecordingInput input);
 

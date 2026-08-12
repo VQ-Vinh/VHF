@@ -34,16 +34,13 @@ class TxLiveDock extends StatelessWidget {
         key: const ValueKey('tx-live-dock'),
         constraints: const BoxConstraints(minHeight: 88),
         decoration: BoxDecoration(
-          color:
-              recording ? const Color(0xFFFFF3F4) : const Color(0xFFDCE9ED),
+          color: recording ? const Color(0xFFFFF3F4) : const Color(0xFFDCE9ED),
         ),
         foregroundDecoration: BoxDecoration(
           border: Border(
             top: BorderSide(
               color:
-                  recording
-                      ? const Color(0xFFC33F4F)
-                      : const Color(0xFFC5DADF),
+                  recording ? const Color(0xFFC33F4F) : const Color(0xFFC5DADF),
               width: recording ? 2 : 1,
             ),
           ),
@@ -53,7 +50,10 @@ class TxLiveDock extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (recording) ...[
-              _RecordingStatus(duration: state.duration),
+              _RecordingStatus(
+                duration: state.duration,
+                maximumDuration: controller.recordingMaximumDuration,
+              ),
               const SizedBox(height: 4),
             ],
             if (state.failure == TxFailure.stationOfflineDuringTx) ...[
@@ -184,6 +184,7 @@ class _CenterControl extends StatelessWidget {
         onHoldEnd: controller.stopRecording,
         disabledTextKey:
             controller.startRequired ? 'tx_start_required_short' : null,
+        maximumSeconds: controller.recordingMaximumDuration.inSeconds,
       );
     }
     if (state.phase == TxPhase.reviewReady) {
@@ -279,20 +280,26 @@ class _DockAction extends StatelessWidget {
 }
 
 class _RecordingStatus extends StatelessWidget {
-  const _RecordingStatus({required this.duration});
+  const _RecordingStatus({
+    required this.duration,
+    required this.maximumDuration,
+  });
 
   final Duration duration;
+  final Duration maximumDuration;
 
   String _clock(Duration value) {
-    final seconds = value.inSeconds.clamp(0, 60);
-    return '00:${seconds.toString().padLeft(2, '0')}';
+    final seconds = value.inSeconds.clamp(0, 120);
+    final minutes = seconds ~/ 60;
+    final remainder = seconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${remainder.toString().padLeft(2, '0')}';
   }
 
   @override
   Widget build(BuildContext context) => Semantics(
     liveRegion: true,
     label:
-        '${AppText.of(context, 'tx_recording_short')} ${_clock(duration)} / 01:00',
+        '${AppText.of(context, 'tx_recording_short')} ${_clock(duration)} / ${_clock(maximumDuration)}',
     child: Container(
       key: const ValueKey('tx-recording-status'),
       height: 24,
@@ -304,11 +311,15 @@ class _RecordingStatus extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.fiber_manual_record, size: 11, color: Color(0xFFC33F4F)),
+          const Icon(
+            Icons.fiber_manual_record,
+            size: 11,
+            color: Color(0xFFC33F4F),
+          ),
           const SizedBox(width: 5),
           Flexible(
             child: Text(
-              '${AppText.of(context, 'tx_recording_short')} • ${_clock(duration)} / 01:00  ·  ${AppText.of(context, 'tx_release_hint')}',
+              '${AppText.of(context, 'tx_recording_short')} • ${_clock(duration)} / ${_clock(maximumDuration)} · ${AppText.of(context, 'tx_release_hint')}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(

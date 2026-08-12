@@ -5,6 +5,7 @@ enum TxFailure {
   channelBusy,
   expired,
   processingFailed,
+  recordingTooLong,
   transmissionFailed,
 }
 
@@ -16,6 +17,7 @@ extension TxFailureTextKey on TxFailure {
     TxFailure.channelBusy => 'tx_channel_busy',
     TxFailure.expired => 'tx_expired',
     TxFailure.processingFailed => 'tx_processing_failed',
+    TxFailure.recordingTooLong => 'tx_audio_too_long',
     TxFailure.transmissionFailed => 'tx_transmission_failed',
   };
 }

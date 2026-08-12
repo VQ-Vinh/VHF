@@ -134,6 +134,39 @@ void main() {
     await subject.cancelDraft();
   });
 
+  test('recording snapshots the configured maximum duration', () async {
+    final subject = controller();
+    addTearDown(subject.dispose);
+    subject.setMaximumDuration(const Duration(seconds: 120));
+
+    subject.startRecording();
+    expect(subject.recordingMaximumDuration, const Duration(seconds: 120));
+
+    subject.setMaximumDuration(const Duration(seconds: 5));
+    expect(subject.maximumDuration, const Duration(seconds: 5));
+    expect(subject.recordingMaximumDuration, const Duration(seconds: 120));
+
+    await subject.stopRecording();
+    subject.reset();
+    subject.startRecording();
+    expect(subject.recordingMaximumDuration, const Duration(seconds: 5));
+    await subject.stopRecording();
+  });
+
+  test('server recording limit becomes a retryable TX failure', () async {
+    final subject = controller(processingError: const TxRecordingTooLong(5));
+    addTearDown(subject.dispose);
+
+    subject.startRecording();
+    await subject.stopRecording();
+
+    expect(subject.state.phase, TxPhase.failed);
+    expect(subject.state.failure, TxFailure.recordingTooLong);
+    expect(subject.maximumDuration, const Duration(seconds: 5));
+    await subject.retry();
+    expect(subject.canStartRecording, isTrue);
+  });
+
   test('confirm cannot be submitted twice', () async {
     final subject = controller();
     addTearDown(subject.dispose);

@@ -270,6 +270,7 @@ class AdminUiTests(unittest.TestCase):
         self.assertIn('name="daily_minutes"', plan_html)
         self.assertIn('name="live_log_limit"', plan_html)
         self.assertIn('name="history_unlock_delay_days"', plan_html)
+        self.assertIn('name="tx_max_recording_seconds"', plan_html)
         self.assertIn("data-plan-edit", plan_html)
         self.assertIn("data-plan-form", plan_html)
         self.assertIn('type="submit" data-plan-preview disabled', plan_html)
@@ -287,6 +288,7 @@ class AdminUiTests(unittest.TestCase):
                     "requests_per_minute": 45, "max_concurrency": 3,
                     "max_devices": 2, "sort_order": 10,
                     "live_log_limit": 10, "history_unlock_delay_days": 1,
+                    "tx_max_recording_seconds": 120,
                     "csrf_token": self.csrf(),
                 },
                 follow_redirects=False,
@@ -297,6 +299,11 @@ class AdminUiTests(unittest.TestCase):
         self.assertEqual(db.plan_ref.data["quota_period"], "daily")
         self.assertEqual(db.plan_ref.data["live_log_limit"], 10)
         self.assertEqual(db.plan_ref.data["history_unlock_delay_days"], 1)
+        self.assertEqual(db.plan_ref.data["tx_max_recording_seconds"], 120)
+        self.assertEqual(
+            db.audit[0]["details"]["after"]["tx_max_recording_seconds"],
+            120,
+        )
         self.assertEqual(db.audit[0]["action"], "plan.update")
 
         with patch("services.prana_admin.main._db", return_value=db):
@@ -312,6 +319,21 @@ class AdminUiTests(unittest.TestCase):
             )
         self.assertEqual(invalid_limit.status_code, 422)
         self.assertEqual(db.plan_ref.data["max_concurrency"], 3)
+
+        with patch("services.prana_admin.main._db", return_value=db):
+            invalid_tx_duration = self.client.post(
+                "/plans/free",
+                headers=headers,
+                data={
+                    "name": "Free", "daily_minutes": 10,
+                    "requests_per_minute": 30, "max_concurrency": 3,
+                    "max_devices": 2, "sort_order": 10,
+                    "tx_max_recording_seconds": 121,
+                    "csrf_token": self.csrf(),
+                },
+            )
+        self.assertEqual(invalid_tx_duration.status_code, 422)
+        self.assertEqual(db.plan_ref.data["tx_max_recording_seconds"], 120)
 
         invalid = self.client.post(
             "/plans/not-editable",
