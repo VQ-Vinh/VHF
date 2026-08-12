@@ -3,11 +3,13 @@ class PlanEntitlements {
     required this.liveLogLimit,
     required this.historyUnlockDelayDays,
     required this.maxConcurrency,
+    required this.txMaxRecordingSeconds,
   });
 
   final int liveLogLimit;
   final int historyUnlockDelayDays;
   final int maxConcurrency;
+  final int txMaxRecordingSeconds;
 
   int? get firestoreLiveLimit => liveLogLimit <= 0 ? null : liveLogLimit;
 
@@ -19,8 +21,9 @@ class PlanEntitlements {
       liveLogLimit: (values['live_log_limit'] as num?)?.toInt() ?? 10,
       historyUnlockDelayDays:
           (values['history_unlock_delay_days'] as num?)?.toInt() ?? 1,
-      maxConcurrency:
-          (values['max_concurrency'] as num?)?.toInt() ?? 2,
+      maxConcurrency: (values['max_concurrency'] as num?)?.toInt() ?? 2,
+      txMaxRecordingSeconds:
+          (values['tx_max_recording_seconds'] as num?)?.toInt() ?? 60,
     );
   }
 

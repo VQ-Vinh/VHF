@@ -318,18 +318,22 @@ class PranaApi {
     String targetLanguage,
   ) async {
     final requestId = const Uuid().v4();
-    final response = await _dio.post<Map<String, dynamic>>(
-      '/v1/stations/$stationId/tx/drafts',
-      data: FormData.fromMap({
-        'target_language': targetLanguage,
-        'audio': await MultipartFile.fromFile(
-          audioPath,
-          filename: File(audioPath).uri.pathSegments.last,
-        ),
-      }),
-      options: Options(headers: {'X-Request-ID': requestId}),
-    );
-    return TxDraft.fromMap(response.data ?? const {});
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/v1/stations/$stationId/tx/drafts',
+        data: FormData.fromMap({
+          'target_language': targetLanguage,
+          'audio': await MultipartFile.fromFile(
+            audioPath,
+            filename: File(audioPath).uri.pathSegments.last,
+          ),
+        }),
+        options: Options(headers: {'X-Request-ID': requestId}),
+      );
+      return TxDraft.fromMap(response.data ?? const {});
+    } on DioException catch (error) {
+      throw PranaApiFailure.fromDio(error);
+    }
   }
 
   Future<TxDraft> txDraft(String stationId, String draftId) async {
@@ -363,9 +367,11 @@ class PranaApi {
 }
 
 class PranaApiFailure implements Exception {
-  const PranaApiFailure(this.messageKey);
+  const PranaApiFailure(this.messageKey, {this.code, this.maxSeconds});
 
   final String messageKey;
+  final String? code;
+  final int? maxSeconds;
 
   factory PranaApiFailure.fromDio(DioException error) {
     switch (error.type) {
@@ -381,6 +387,14 @@ class PranaApiFailure implements Exception {
         if (data is Map) {
           final detail = data['detail'];
           if (detail is Map) {
+            final code = detail['code']?.toString();
+            if (code == 'TX_AUDIO_TOO_LONG') {
+              return PranaApiFailure(
+                'tx_audio_too_long',
+                code: code,
+                maxSeconds: (detail['max_seconds'] as num?)?.toInt(),
+              );
+            }
             const codeKeys = {
               'STATION_NOT_PAIRED': 'error_station_not_paired',
               'STATION_REVOKED': 'error_station_revoked',
@@ -388,8 +402,8 @@ class PranaApiFailure implements Exception {
               'ACTIVATION_INVALID': 'error_activation_invalid',
               'STATION_ALREADY_CLAIMED': 'error_station_already_claimed',
             };
-            final key = codeKeys[detail['code']?.toString()];
-            if (key != null) return PranaApiFailure(key);
+            final key = codeKeys[code];
+            if (key != null) return PranaApiFailure(key, code: code);
             if (detail['message'] is String) {
               return PranaApiFailure(detail['message'] as String);
             }

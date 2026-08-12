@@ -30,7 +30,10 @@ void main() {
     lastSeenAt: DateTime.now(),
   );
 
-  TxController controller({bool running = true}) {
+  TxController controller({
+    bool running = true,
+    Duration maximumDuration = const Duration(seconds: 60),
+  }) {
     final subject = TxController(
       stationId: 'station-1',
       repository: FakeTxRepository(
@@ -38,6 +41,7 @@ void main() {
         transmissionDelay: Duration.zero,
       ),
       queuePreviewDuration: Duration.zero,
+      maximumDuration: maximumDuration,
     );
     subject.setStationAvailability(
       online: true,
@@ -90,6 +94,7 @@ void main() {
     expect(find.text('RX IDLE'), findsOneWidget);
     expect(find.text('API READY'), findsOneWidget);
     expect(find.text('TX LANGUAGE'), findsOneWidget);
+    expect(find.text('MAX 60s'), findsOneWidget);
     final regionCenter =
         tester.getCenter(find.byKey(const ValueKey('tx-language-region'))).dx;
     final controlCenter =
@@ -155,6 +160,23 @@ void main() {
       ),
       isFalse,
     );
+  });
+
+  testWidgets('recording counter renders a dynamic two-minute limit', (
+    tester,
+  ) async {
+    final subject = controller(maximumDuration: const Duration(seconds: 120));
+    addTearDown(subject.dispose);
+    await tester.pumpWidget(harness(subject));
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byKey(const ValueKey('tx-ptt-button'))),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.textContaining('/ 02:00'), findsOneWidget);
+    await gesture.up();
+    await tester.pumpAndSettle();
   });
 
   testWidgets('dock fits a 360dp screen at 1.3 text scale', (tester) async {

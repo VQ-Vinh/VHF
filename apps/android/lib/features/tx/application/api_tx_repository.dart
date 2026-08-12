@@ -8,15 +8,23 @@ class ApiTxRepository implements TxRepository {
   final Map<String, String> _stationByDraft = {};
 
   @override
-  Future<TxDraft> processRecording(TxRecordingInput input) {
+  Future<TxDraft> processRecording(TxRecordingInput input) async {
     final path = input.audioPath;
     if (path == null || path.isEmpty) throw StateError('TX_AUDIO_MISSING');
-    return api.createTxDraft(input.stationId, path, input.targetLanguage).then((
-      draft,
-    ) {
+    try {
+      final draft = await api.createTxDraft(
+        input.stationId,
+        path,
+        input.targetLanguage,
+      );
       _stationByDraft[draft.id] = input.stationId;
       return draft;
-    });
+    } on PranaApiFailure catch (error) {
+      if (error.code == 'TX_AUDIO_TOO_LONG') {
+        throw TxRecordingTooLong(error.maxSeconds ?? 60);
+      }
+      rethrow;
+    }
   }
 
   @override

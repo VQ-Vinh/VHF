@@ -31,8 +31,7 @@ bool canToggleLiveStation({
   required bool running,
   required bool busy,
   required bool commandPending,
-}) =>
-    (online || running) && !busy && !commandPending;
+}) => (online || running) && !busy && !commandPending;
 
 class _LiveScreenState extends ConsumerState<LiveScreen> {
   String? _dismissedProcessingError;
@@ -51,6 +50,7 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
     _txController.addListener(_onTxChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      ref.invalidate(accountProvider);
       ref.read(activeSpeechStationProvider.notifier).state = widget.stationId;
     });
   }
@@ -158,6 +158,7 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
         final controller = ref.watch(
           liveUxControllerProvider(widget.stationId),
         );
+        final entitlements = ref.watch(planEntitlementsProvider);
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           controller.synchronize(station, online: online);
@@ -166,6 +167,9 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
             running: station.desired.running,
             commandPending: station.commandPending || controller.state.busy,
           );
+          _txController.setMaximumDuration(
+            Duration(seconds: entitlements.txMaxRecordingSeconds),
+          );
         });
         final ux = controller.state;
         final stationDisplayState = liveStationDisplayState(
@@ -173,7 +177,6 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
           online: online,
           ux: ux,
         );
-        final entitlements = ref.watch(planEntitlementsProvider);
         final results = ref.watch(
           liveResultsProvider((
             stationId: widget.stationId,

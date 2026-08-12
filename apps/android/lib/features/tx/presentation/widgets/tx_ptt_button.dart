@@ -12,6 +12,7 @@ class TxPttButton extends StatefulWidget {
     required this.onHoldEnd,
     this.compact = false,
     this.disabledTextKey,
+    this.maximumSeconds = 60,
   });
 
   final bool enabled;
@@ -20,6 +21,7 @@ class TxPttButton extends StatefulWidget {
   final VoidCallback onHoldEnd;
   final bool compact;
   final String? disabledTextKey;
+  final int maximumSeconds;
 
   @override
   State<TxPttButton> createState() => _TxPttButtonState();
@@ -55,7 +57,8 @@ class _TxPttButtonState extends State<TxPttButton>
   }
 
   void _syncPulse() {
-    final reduceMotion = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    final reduceMotion =
+        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
     if (widget.recording && !reduceMotion) {
       if (!_pulseController.isAnimating) {
         _pulseController.repeat(reverse: true);
@@ -84,6 +87,9 @@ class _TxPttButtonState extends State<TxPttButton>
         context,
         widget.recording ? 'tx_recording' : 'tx_hold_to_talk',
       ),
+      hint: AppText.format(context, 'tx_max_duration', {
+        'seconds': widget.maximumSeconds.toString(),
+      }),
       child: Listener(
         key: const ValueKey('tx-ptt-button'),
         onPointerDown: widget.enabled ? (_) => widget.onHoldStart() : null,
@@ -123,32 +129,60 @@ class _TxPttButtonState extends State<TxPttButton>
                       ]
                       : null,
             ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+            child: Stack(
               children: [
-                Icon(
-                  widget.recording ? Icons.mic : Icons.mic_none,
-                  color: Colors.white,
-                  size: widget.compact ? 20 : 42,
-                ),
-                SizedBox(height: widget.compact ? 3 : 8),
-                Text(
-                  AppText.of(
-                    context,
-                    widget.recording
-                        ? 'tx_release_to_stop'
-                        : !widget.enabled && widget.disabledTextKey != null
-                        ? widget.disabledTextKey!
-                        : 'tx_hold_to_talk',
+                Positioned.fill(
+                  bottom: widget.recording ? 0 : (widget.compact ? 8 : 14),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        widget.recording ? Icons.mic : Icons.mic_none,
+                        color: Colors.white,
+                        size: widget.compact ? 20 : 42,
+                      ),
+                      SizedBox(height: widget.compact ? 3 : 8),
+                      Text(
+                        AppText.of(
+                          context,
+                          widget.recording
+                              ? 'tx_release_to_stop'
+                              : !widget.enabled &&
+                                  widget.disabledTextKey != null
+                              ? widget.disabledTextKey!
+                              : 'tx_hold_to_talk',
+                        ),
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: widget.compact ? 9 : 13,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: .4,
+                        ),
+                      ),
+                    ],
                   ),
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: widget.compact ? 9 : 13,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: .4,
-                  ),
                 ),
+                if (!widget.recording)
+                  Positioned(
+                    left: 2,
+                    right: 2,
+                    bottom: widget.compact ? 2 : 6,
+                    child: Text(
+                      AppText.format(context, 'tx_max_duration_short', {
+                        'seconds': widget.maximumSeconds.toString(),
+                      }),
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: .82),
+                        fontSize: widget.compact ? 7 : 10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
