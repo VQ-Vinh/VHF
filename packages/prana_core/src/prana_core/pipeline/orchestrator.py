@@ -29,6 +29,7 @@ from prana_core.pipeline.events import event_bus
 logger = get_logger(__name__)
 
 SpeechBuffer = list[np.ndarray]
+CAPTURE_QUEUE_FRAMES = 256
 
 
 def effective_worker_count(configured: int, profile: dict) -> int:
@@ -72,6 +73,11 @@ class PipelineOrchestrator:
         self._samples_since_speech = 0
         self._speech_frame_count = 0
         self._recorder: AudioRecorder | None = None
+        self._capture_queue: queue.Queue[np.ndarray] = queue.Queue(
+            maxsize=CAPTURE_QUEUE_FRAMES
+        )
+        self._capture_thread: threading.Thread | None = None
+        self._capture_dropped_frames = 0
 
         self._num_workers = config.general.num_workers
         self._job_queue: queue.Queue[SegmentJob | None] = queue.Queue(maxsize=32)
@@ -134,6 +140,9 @@ class PipelineOrchestrator:
 
     def _do_start(self) -> None:
         logger.info("_do_start entered")
+        self._capture_queue = queue.Queue(maxsize=CAPTURE_QUEUE_FRAMES)
+        self._capture_thread = None
+        self._capture_dropped_frames = 0
         self._vad_buffer.clear()
         self._vad_sample_count = 0
         self._recording = False
@@ -165,6 +174,12 @@ class PipelineOrchestrator:
                 callback=self._audio_callback,
                 backend_factory=self._audio_backend_factory,
             )
+            self._capture_thread = threading.Thread(
+                target=self._capture_loop,
+                name="prana-capture-vad",
+                daemon=True,
+            )
+            self._capture_thread.start()
             self._recorder.start()
 
             with self._state_lock:
@@ -203,6 +218,7 @@ class PipelineOrchestrator:
             except Exception as exc:
                 logger.warning("Failed-start recorder cleanup failed: %s", exc)
             self._recorder = None
+        self._join_capture_thread()
         if self._executor is not None:
             self._executor.shutdown(wait=True)
             self._executor = None
@@ -230,6 +246,8 @@ class PipelineOrchestrator:
             if self._recorder is not None:
                 self._recorder.stop()
                 self._recorder = None
+
+            self._join_capture_thread()
 
             if self._executor is not None:
                 self._executor.shutdown(wait=True)
@@ -295,10 +313,52 @@ class PipelineOrchestrator:
 
     # ── Audio callback ──────────────────────────────────────────────
     def _audio_callback(self, audio: np.ndarray) -> None:
+        """Copy PCM out of PortAudio without running VAD on its callback thread."""
         with self._state_lock:
             if self._state != PipelineState.RUNNING:
                 return
-        self._process_vad_frame(audio)
+        try:
+            # PyAudio owns ``in_data`` after its callback returns.  The ndarray
+            # received here may still point at that memory, so the queued frame
+            # must be an independent copy.
+            self._capture_queue.put_nowait(audio.copy())
+        except queue.Full:
+            self._capture_dropped_frames += 1
+            if self._capture_dropped_frames == 1 or (
+                self._capture_dropped_frames % 100 == 0
+            ):
+                logger.error(
+                    "Audio capture queue full; dropping PCM frame",
+                    extra={"dropped_frames": self._capture_dropped_frames},
+                )
+
+    def _capture_loop(self) -> None:
+        """Run CPU-heavy VAD work away from the real-time audio callback."""
+        logger.info("Capture VAD thread started")
+        while not self._stop_event.is_set():
+            try:
+                audio = self._capture_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            try:
+                self._process_vad_frame(audio)
+            except Exception:
+                logger.exception("Capture VAD frame processing failed")
+            finally:
+                self._capture_queue.task_done()
+        logger.info(
+            "Capture VAD thread stopped",
+            extra={"dropped_frames": self._capture_dropped_frames},
+        )
+
+    def _join_capture_thread(self) -> None:
+        thread = getattr(self, "_capture_thread", None)
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=5.0)
+            if thread.is_alive():
+                logger.warning("Capture VAD thread did not stop within timeout")
+        self._capture_thread = None
+        self._capture_queue = queue.Queue(maxsize=CAPTURE_QUEUE_FRAMES)
 
     def _process_vad_frame(self, audio: np.ndarray) -> None:
         sr = self._recorder.sample_rate if self._recorder and self._recorder.sample_rate > 0 else self._config.audio.sample_rate
