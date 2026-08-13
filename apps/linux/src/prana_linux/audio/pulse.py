@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import io
+import re
+import shutil
+import subprocess
 import threading
 import wave
 from typing import Callable
@@ -23,6 +26,7 @@ class PulseBackend(AudioBackend):
         self._stream = None
         self._running = False
         self._sample_rate = 0
+        self._capture_thread: threading.Thread | None = None
 
     @property
     def name(self) -> str:
@@ -42,8 +46,6 @@ class PulseBackend(AudioBackend):
         return cls._pa
 
     def open_stream(self, config: AudioConfig, callback: Callable[[np.ndarray], None]) -> None:
-        import pyaudio
-
         pa = self._get_pa()
         mode = config.capture_mode
 
@@ -61,6 +63,10 @@ class PulseBackend(AudioBackend):
             channels = device_info["maxInputChannels"]
 
         frames_per_buffer = config.frame_size
+        alsa_device = self._alsa_device_name(device_info)
+        arecord = shutil.which("arecord")
+        if arecord is None:
+            raise AudioStreamError("arecord is required for Linux audio capture")
 
         logger.info(
             "Starting audio capture",
@@ -69,33 +75,38 @@ class PulseBackend(AudioBackend):
                 "sample_rate": sr,
                 "channels": channels,
                 "frame_size": frames_per_buffer,
+                "alsa_device": alsa_device,
             },
         )
 
-        def pa_callback(in_data, frame_count, time_info, status):
-            try:
-                audio = np.frombuffer(in_data, dtype=np.int16).reshape(-1, channels)
-                if channels > 1 and config.channels == 1:
-                    audio = audio.mean(axis=1)
-                if self._running and callback:
-                    callback(audio)
-            except Exception:
-                logger.exception("Audio callback error")
-            return (None, pyaudio.paContinue)
-
         try:
-            self._stream = pa.open(
-                format=pyaudio.paInt16,
-                channels=channels,
-                rate=sr,
-                input=True,
-                input_device_index=dev_index,
-                frames_per_buffer=frames_per_buffer,
-                stream_callback=pa_callback,
+            self._stream = subprocess.Popen(
+                [
+                    arecord,
+                    "-q",
+                    "-D",
+                    alsa_device,
+                    "-t",
+                    "raw",
+                    "-f",
+                    "S16_LE",
+                    "-c",
+                    str(channels),
+                    "-r",
+                    str(sr),
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
             )
-            self._stream.start_stream()
             self._running = True
             self._sample_rate = sr
+            self._capture_thread = threading.Thread(
+                target=self._read_capture,
+                args=(callback, channels, frames_per_buffer),
+                name="prana-alsa-capture",
+                daemon=True,
+            )
+            self._capture_thread.start()
         except Exception as e:
             raise AudioStreamError(f"Failed to open audio stream: {e}") from e
 
@@ -103,17 +114,76 @@ class PulseBackend(AudioBackend):
         self._running = False
         if self._stream:
             try:
-                if self._stream.is_active():
-                    self._stream.stop_stream()
-                self._stream.close()
+                self._stream.terminate()
+                self._stream.wait(timeout=3.0)
             except Exception as e:
                 logger.warning("Error closing audio stream", exc_info=e)
+                try:
+                    self._stream.kill()
+                except Exception:
+                    pass
+            if self._stream.stdout is not None:
+                self._stream.stdout.close()
+            if self._stream.stderr is not None:
+                self._stream.stderr.close()
             self._stream = None
+        if self._capture_thread is not None:
+            self._capture_thread.join(timeout=3.0)
+            self._capture_thread = None
         logger.info("Audio capture stopped")
 
     @property
     def is_running(self) -> bool:
         return self._running
+
+    @staticmethod
+    def _alsa_device_name(device_info: dict) -> str:
+        match = re.search(r"\(hw:(\d+),(\d+)\)", str(device_info.get("name", "")))
+        if match is None:
+            raise AudioDeviceNotFoundError(
+                f"Cannot resolve ALSA hardware device from {device_info.get('name', '')}"
+            )
+        return f"hw:{match.group(1)},{match.group(2)}"
+
+    def _read_capture(
+        self,
+        callback: Callable[[np.ndarray], None],
+        channels: int,
+        frames_per_buffer: int,
+    ) -> None:
+        process = self._stream
+        if process is None or process.stdout is None:
+            return
+        bytes_per_chunk = frames_per_buffer * channels * 2
+        pending = bytearray()
+        try:
+            while self._running:
+                data = process.stdout.read(bytes_per_chunk - len(pending))
+                if not data:
+                    break
+                pending.extend(data)
+                if len(pending) < bytes_per_chunk:
+                    continue
+                audio = np.frombuffer(bytes(pending), dtype="<i2").reshape(
+                    -1, channels
+                )
+                pending.clear()
+                if channels > 1:
+                    audio = audio.mean(axis=1).astype(np.int16)
+                callback(audio)
+        except Exception:
+            if self._running:
+                logger.exception("ALSA capture reader failed")
+        finally:
+            if self._running:
+                error = ""
+                if process.stderr is not None:
+                    error = process.stderr.read().decode(errors="replace").strip()
+                logger.error(
+                    "ALSA capture process stopped unexpectedly",
+                    extra={"return_code": process.poll(), "error": error},
+                )
+                self._running = False
 
     def _resolve_device(self, config: AudioConfig, pa) -> dict:
         idx = config.device_index

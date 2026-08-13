@@ -8,6 +8,8 @@ import wave
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import numpy as np
+
 from prana_core.audio.exceptions import AudioDeviceNotFoundError
 from prana_linux.audio.pulse import PulseBackend
 
@@ -97,6 +99,47 @@ class LinuxAudioPlaybackTests(unittest.TestCase):
         self.assertIsNone(fake.open_kwargs)
         self.assertTrue(fake.terminated)
 
+
+class LinuxAudioCaptureTests(unittest.TestCase):
+    def test_alsa_device_name_uses_hardware_identity(self) -> None:
+        self.assertEqual(
+            PulseBackend._alsa_device_name(
+                {"name": "USB Audio Device: - (hw:3,0)"}
+            ),
+            "hw:3,0",
+        )
+
+    def test_capture_reader_emits_complete_ordered_frames(self) -> None:
+        first = np.arange(4, dtype="<i2")
+        second = np.arange(4, 8, dtype="<i2")
+
+        class ChunkedOutput:
+            def __init__(self, value: bytes) -> None:
+                self.value = bytearray(value)
+
+            def read(self, size: int = -1) -> bytes:
+                if not self.value:
+                    backend._running = False
+                    return b""
+                count = min(size, 3, len(self.value))
+                result = bytes(self.value[:count])
+                del self.value[:count]
+                return result
+
+        backend = PulseBackend()
+        backend._running = True
+        backend._stream = SimpleNamespace(
+            stdout=ChunkedOutput(first.tobytes() + second.tobytes()),
+            stderr=None,
+            poll=lambda: None,
+        )
+        observed = []
+
+        backend._read_capture(observed.append, channels=1, frames_per_buffer=4)
+
+        self.assertEqual(len(observed), 2)
+        np.testing.assert_array_equal(observed[0].ravel(), first)
+        np.testing.assert_array_equal(observed[1].ravel(), second)
 
 if __name__ == "__main__":
     unittest.main()

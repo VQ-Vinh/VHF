@@ -43,6 +43,38 @@ Follow standard Python style (4-space indentation, clear type hints, and `snake_
 
 Tests use `pytest`; files are named `test_*.py` and test functions `test_*`. Add regression coverage beside the affected subsystem, using `tests/fixtures/` for reusable audio or data inputs. Run a targeted test while iterating (for example, `python -m pytest tests/packaging/test_windows_installer.py`) and the full suite before review.
 
+## Raspberry Pi RX Audio Capture
+
+Raspberry Pi RX must capture through ALSA using `arecord`, not through a
+PyAudio/PortAudio input callback. On the validated Pi and USB SoundCard,
+PortAudio reported `paInputOverflow` on almost every callback and delivered
+only about 4.7 seconds of PCM during a 15-second recording. Direct
+`arecord -D hw:<card>,<device>` capture retained the complete audio.
+
+Keep the platform boundary as follows:
+
+- Windows capture uses the WASAPI adapter.
+- Linux/Raspberry Pi capture uses an `arecord` subprocess with raw mono PCM16;
+  resolve the ALSA hardware identity from the selected device instead of
+  relying on the system default input.
+- The capture reader only emits ordered PCM frames into the core capture
+  queue. VAD, segmentation, resampling, storage, and Cloud processing remain
+  in `prana_core` and must not run on the real-time capture callback/thread.
+- Log and surface an unexpected `arecord` exit. Do not silently fall back to a
+  PortAudio callback on Raspberry Pi.
+
+The confirmed RX baseline for the current Raspberry Pi installation is a Mic
+Capture level of `18/28` (approximately `+15 dB`),
+`min_silence_duration_ms = 1500`, and
+`max_segment_duration_ms = 15000`. Persist mixer changes with `alsactl store`.
+Treat capture gain as hardware-specific: verify it with a raw `arecord` sample
+and clipping measurements before changing this baseline.
+
+When diagnosing Pi RX quality, first compare a raw `arecord` WAV with the
+Station-produced WAV. If raw capture is clear but Station audio is incomplete,
+inspect the Linux capture adapter and frame continuity before tuning VAD or
+changing Android/API playback.
+
 ## Commit & Pull Request Guidelines
 
 Use the established Conventional Commit style visible in history, such as `feat(ui): ...`, `refactor(pipeline): ...`, `test: ...`, and `docs: ...`. Keep commits focused and imperative.

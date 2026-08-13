@@ -17,7 +17,9 @@ try:
         trim_trailing_silence,
     )
     from prana_core.pipeline.orchestrator import (
+        CAPTURE_QUEUE_FRAMES,
         PipelineOrchestrator,
+        PipelineState,
         effective_worker_count,
     )
     from prana_core.backend.client import BackendApiError
@@ -107,6 +109,57 @@ class AudioUtilsTests(unittest.TestCase):
 
 @unittest.skipUnless(PIPELINE_AVAILABLE, "client audio dependencies are not installed")
 class PipelineStructureTests(unittest.TestCase):
+    def test_audio_callback_queues_a_copy_without_running_vad(self) -> None:
+        orchestrator = PipelineOrchestrator.__new__(PipelineOrchestrator)
+        orchestrator._state = PipelineState.RUNNING
+        orchestrator._state_lock = threading.RLock()
+        orchestrator._capture_queue = queue.Queue(maxsize=CAPTURE_QUEUE_FRAMES)
+        orchestrator._capture_dropped_frames = 0
+        processed = []
+        orchestrator._process_vad_frame = processed.append
+        audio = np.arange(32, dtype=np.int16)
+
+        orchestrator._audio_callback(audio)
+        audio[:] = -1
+
+        self.assertEqual(processed, [])
+        np.testing.assert_array_equal(
+            orchestrator._capture_queue.get_nowait(), np.arange(32, dtype=np.int16)
+        )
+
+    def test_capture_worker_processes_pcm_frames_in_order(self) -> None:
+        orchestrator = PipelineOrchestrator.__new__(PipelineOrchestrator)
+        orchestrator._stop_event = threading.Event()
+        orchestrator._capture_queue = queue.Queue(maxsize=CAPTURE_QUEUE_FRAMES)
+        orchestrator._capture_dropped_frames = 0
+        observed = []
+
+        def process(audio) -> None:
+            observed.append(int(audio[0]))
+            if len(observed) == 3:
+                orchestrator._stop_event.set()
+
+        orchestrator._process_vad_frame = process
+        for value in (1, 2, 3):
+            orchestrator._capture_queue.put(np.array([value], dtype=np.int16))
+
+        orchestrator._capture_loop()
+
+        self.assertEqual(observed, [1, 2, 3])
+        self.assertEqual(orchestrator._capture_queue.unfinished_tasks, 0)
+
+    def test_full_capture_queue_is_reported_without_blocking(self) -> None:
+        orchestrator = PipelineOrchestrator.__new__(PipelineOrchestrator)
+        orchestrator._state = PipelineState.RUNNING
+        orchestrator._state_lock = threading.RLock()
+        orchestrator._capture_queue = queue.Queue(maxsize=1)
+        orchestrator._capture_dropped_frames = 0
+        orchestrator._capture_queue.put(np.zeros(1, dtype=np.int16))
+
+        orchestrator._audio_callback(np.ones(1, dtype=np.int16))
+
+        self.assertEqual(orchestrator._capture_dropped_frames, 1)
+
     def test_segment_types_are_owned_by_segment_processor(self) -> None:
         self.assertEqual(SegmentJob.__module__, "prana_core.pipeline.segment_processor")
         self.assertTrue(callable(getattr(SegmentProcessor, "process")))
