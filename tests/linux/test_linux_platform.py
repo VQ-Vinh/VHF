@@ -80,8 +80,13 @@ class LinuxPlatformTests(unittest.TestCase):
     def test_linux_build_installs_lgpio_build_tooling(self) -> None:
         script = Path("apps/linux/packaging/build.sh").read_text(encoding="utf-8")
         manifest = Path("apps/linux/pyproject.toml").read_text(encoding="utf-8")
+        control = Path("apps/linux/packaging/debian/control.in").read_text(
+            encoding="utf-8"
+        )
         self.assertIn("swig", script)
+        self.assertIn("liblgpio-dev", script)
         self.assertIn("lgpio>=0.2.2.0; platform_machine == 'aarch64'", manifest)
+        self.assertIn("liblgpio1", control)
 
 
 if __name__ == "__main__":
