@@ -46,6 +46,12 @@ class TranslationConfig(BaseModel):
     target_language: str = "en"
 
 
+class PttConfig(BaseModel):
+    enabled: bool = True
+    gpio_pin: int = Field(default=17, ge=0)
+    active_high: bool = True
+
+
 class LocalStorageConfig(BaseModel):
     audio_dir: Path = Path("./VHF_Storage/RX/audio")
     result_dir: Path = Path("./VHF_Storage/RX/results")
@@ -67,6 +73,7 @@ class AppConfig(BaseModel):
 
     backend: BackendConfig = Field(default_factory=BackendConfig)
     translation: TranslationConfig = Field(default_factory=TranslationConfig)
+    ptt: PttConfig = Field(default_factory=PttConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
 
     @classmethod

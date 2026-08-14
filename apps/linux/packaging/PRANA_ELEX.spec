@@ -19,6 +19,9 @@ hiddenimports = [
     "silero_vad.data",
     "webrtcvad",
     "pyaudio",
+    "gpiozero",
+    "gpiozero.pins.lgpio",
+    "lgpio",
     "pydantic",
     "pydantic.v1",
 ]

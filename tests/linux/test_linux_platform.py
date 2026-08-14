@@ -8,9 +8,42 @@ from pathlib import Path
 from unittest.mock import patch
 
 from prana_linux.credential_store import LinuxCredentialStore
+from prana_linux.gpio.ptt import GpioPttController
 
 
 class LinuxPlatformTests(unittest.TestCase):
+    def test_gpio17_ptt_is_low_initially_and_wraps_transmission(self) -> None:
+        calls = []
+
+        class Device:
+            def __init__(self, pin, *, active_high, initial_value):
+                calls.append(("init", pin, active_high, initial_value))
+
+            def on(self):
+                calls.append("high")
+
+            def off(self):
+                calls.append("low")
+
+            def close(self):
+                calls.append("close")
+
+        controller = GpioPttController(device_factory=Device)
+        controller.engage()
+        controller.release()
+        controller.close()
+
+        self.assertEqual(
+            calls,
+            [
+                ("init", 17, True, False),
+                "high",
+                "low",
+                "low",
+                "close",
+            ],
+        )
+
     def test_secret_fallback_is_owner_only(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             with (

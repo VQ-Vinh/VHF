@@ -7,7 +7,7 @@ Wants=network-online.target
 Type=simple
 User=prana-elex
 Group=prana-elex
-SupplementaryGroups=audio
+SupplementaryGroups=audio gpio
 WorkingDirectory=/var/lib/prana-elex
 Environment=XDG_CONFIG_HOME=/var/lib/prana-elex/.config
 ExecStart=/usr/bin/prana-station

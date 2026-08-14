@@ -414,6 +414,79 @@ class StationModeTests(unittest.TestCase):
             )
             self.assertEqual(receipt["status"], "completed")
 
+    def test_tx_playback_asserts_ptt_only_while_audio_is_playing(self) -> None:
+        events = []
+
+        class Ptt:
+            def engage(self):
+                events.append("ptt-high")
+
+            def release(self):
+                events.append("ptt-low")
+
+        class Player:
+            def play_wav(self, output, device_index):
+                events.append(("play", output, device_index))
+
+        runtime = StationRuntime.__new__(StationRuntime)
+        runtime._ptt_controller = Ptt()
+        runtime._audio_backend_factory = lambda: Player()
+
+        runtime._play_tx_audio(b"audio", 17)
+
+        self.assertEqual(
+            events,
+            ["ptt-high", ("play", b"audio", 17), "ptt-low"],
+        )
+
+    def test_tx_playback_releases_ptt_when_audio_output_fails(self) -> None:
+        events = []
+
+        class Ptt:
+            def engage(self):
+                events.append("ptt-high")
+
+            def release(self):
+                events.append("ptt-low")
+
+        class Player:
+            def play_wav(self, output, device_index):
+                events.append("play")
+                raise RuntimeError("speaker failed")
+
+        runtime = StationRuntime.__new__(StationRuntime)
+        runtime._ptt_controller = Ptt()
+        runtime._audio_backend_factory = lambda: Player()
+
+        with self.assertRaisesRegex(RuntimeError, "speaker failed"):
+            runtime._play_tx_audio(b"audio", -1)
+
+        self.assertEqual(events, ["ptt-high", "play", "ptt-low"])
+
+    def test_tx_playback_releases_ptt_when_assertion_fails(self) -> None:
+        events = []
+
+        class Ptt:
+            def engage(self):
+                events.append("ptt-high-failed")
+                raise RuntimeError("gpio failed")
+
+            def release(self):
+                events.append("ptt-low")
+
+        class Player:
+            def play_wav(self, output, device_index):
+                events.append("play")
+
+        runtime = StationRuntime.__new__(StationRuntime)
+        runtime._ptt_controller = Ptt()
+        runtime._audio_backend_factory = lambda: Player()
+
+        with self.assertRaisesRegex(RuntimeError, "gpio failed"):
+            runtime._play_tx_audio(b"audio", -1)
+
+        self.assertEqual(events, ["ptt-high-failed", "ptt-low"])
+
 
 if __name__ == "__main__":
     unittest.main()

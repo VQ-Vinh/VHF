@@ -32,6 +32,11 @@ enabled = true
 source_language = "auto"
 target_language = "en"
 
+[ptt]
+enabled = true
+gpio_pin = 17
+active_high = true
+
 [storage]
 retention_days = 14
 cleanup_interval_hours = 24

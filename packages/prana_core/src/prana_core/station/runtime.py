@@ -14,6 +14,7 @@ from prana_core.pipeline.orchestrator import PipelineOrchestrator, PipelineState
 from prana_core.audio.base import AudioBackend
 from prana_core.audio.capabilities import capability_hash, normalize_audio_devices
 from prana_core.station.client import StationApiClient
+from prana_core.station.ptt import NullPttController, PttController
 
 logger = get_logger(__name__)
 
@@ -30,6 +31,7 @@ class StationRuntime:
         config: AppConfig,
         client: StationApiClient,
         audio_backend_factory: Callable[[], AudioBackend],
+        ptt_controller: PttController | None = None,
     ):
         self.config = config
         self.client = client
@@ -50,6 +52,7 @@ class StationRuntime:
         self._command_failed_generation = 0
         self._command_error: str | None = None
         self._audio_backend_factory = audio_backend_factory
+        self._ptt_controller = ptt_controller or NullPttController()
         self._desired_running = False
         self._tx_active = False
         self._tx_state = "idle"
@@ -284,6 +287,17 @@ class StationRuntime:
         output_path.write_bytes(output)
         result_path.write_text(json.dumps({**job, "status": status, "error": error}, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
 
+    def _play_tx_audio(self, output: bytes, device_index: int) -> None:
+        player = self._audio_backend_factory()
+        play = getattr(player, "play_wav", None)
+        if not callable(play):
+            raise RuntimeError("Audio output is not supported on this Station")
+        try:
+            self._ptt_controller.engage()
+            play(output, device_index)
+        finally:
+            self._ptt_controller.release()
+
     def _tx_loop(self) -> None:
         if not callable(getattr(self.client, "claim_tx_job", None)):
             return
@@ -320,11 +334,7 @@ class StationRuntime:
                 if self._tx_device_id and self._tx_device_id not in self._device_indices:
                     raise RuntimeError("TX_AUDIO_DEVICE_UNAVAILABLE")
                 device_index = self._device_indices.get(self._tx_device_id, -1)
-                player = self._audio_backend_factory()
-                play = getattr(player, "play_wav", None)
-                if not callable(play):
-                    raise RuntimeError("Audio output is not supported on this Station")
-                play(output, device_index)
+                self._play_tx_audio(output, device_index)
                 self._save_tx_files(job, source, output, "completed")
                 self.client.update_tx_job(self._tx_job_id, "completed")
                 self._tx_state = "completed"
@@ -403,3 +413,4 @@ class StationRuntime:
             self._stop_tx.set()
             tx_thread.join(timeout=5)
             self.orchestrator.shutdown()
+            self._ptt_controller.close()
