@@ -33,7 +33,7 @@ MEM_SWAP_KB="$(awk '/MemTotal|SwapTotal/ {sum += $2} END {print sum}' /proc/memi
 
 APT_PACKAGES=(
     python3-venv python3-dev build-essential portaudio19-dev libsndfile1-dev
-    fakeroot dpkg-dev libasound2-dev libportaudio2 libsndfile1
+    swig fakeroot dpkg-dev libasound2-dev libportaudio2 libsndfile1
 )
 MISSING=()
 for package in "${APT_PACKAGES[@]}"; do

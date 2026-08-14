@@ -77,6 +77,12 @@ class LinuxPlatformTests(unittest.TestCase):
         self.assertIn("installers/linux", script)
         self.assertNotIn("release/linux-arm64", script)
 
+    def test_linux_build_installs_lgpio_build_tooling(self) -> None:
+        script = Path("apps/linux/packaging/build.sh").read_text(encoding="utf-8")
+        manifest = Path("apps/linux/pyproject.toml").read_text(encoding="utf-8")
+        self.assertIn("swig", script)
+        self.assertIn("lgpio>=0.2.2.0; platform_machine == 'aarch64'", manifest)
+
 
 if __name__ == "__main__":
     unittest.main()
