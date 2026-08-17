@@ -5,10 +5,12 @@ import stat
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from prana_linux.credential_store import LinuxCredentialStore
 from prana_linux.gpio.ptt import GpioPttController
+from prana_linux.station import _ptt_controller
 
 
 class LinuxPlatformTests(unittest.TestCase):
@@ -43,6 +45,20 @@ class LinuxPlatformTests(unittest.TestCase):
                 "close",
             ],
         )
+
+    def test_gpio_init_failure_keeps_station_available_but_blocks_tx(self) -> None:
+        config = SimpleNamespace(
+            ptt=SimpleNamespace(enabled=True, gpio_pin=17, active_high=True)
+        )
+        with patch(
+            "prana_linux.station.GpioPttController",
+            side_effect=RuntimeError("gpio unavailable"),
+        ):
+            controller = _ptt_controller(config)
+
+        self.assertEqual(controller.mode, "unavailable")
+        self.assertFalse(controller.ready)
+        self.assertEqual(controller.error, "PTT_UNAVAILABLE")
 
     def test_secret_fallback_is_owner_only(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

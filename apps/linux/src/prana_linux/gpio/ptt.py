@@ -46,3 +46,15 @@ class GpioPttController:
             self.release()
         finally:
             self._device.close()
+
+    @property
+    def mode(self) -> str:
+        return "gpio"
+
+    @property
+    def ready(self) -> bool:
+        return True
+
+    @property
+    def error(self) -> str | None:
+        return None

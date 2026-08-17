@@ -46,10 +46,17 @@ def _ptt_controller(config):
         from prana_core.station.ptt import NullPttController
 
         return NullPttController()
-    return GpioPttController(
-        pin=config.ptt.gpio_pin,
-        active_high=config.ptt.active_high,
-    )
+    try:
+        return GpioPttController(
+            pin=config.ptt.gpio_pin,
+            active_high=config.ptt.active_high,
+        )
+    except Exception:
+        from prana_core.common.logger import get_logger
+        from prana_core.station.ptt import UnavailablePttController
+
+        get_logger(__name__).exception("PTT GPIO initialization failed")
+        return UnavailablePttController()
 
 
 def provision() -> None:
