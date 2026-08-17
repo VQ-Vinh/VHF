@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:uuid/uuid.dart';
 
 import '../domain/tx_draft.dart';
 import '../domain/tx_failure.dart';
@@ -36,9 +37,13 @@ class TxController extends ChangeNotifier {
   bool _stationOnline = true;
   bool _stationRunning = false;
   bool _commandPending = false;
+  bool _pttReady = true;
   bool _disposed = false;
   Future<void>? _recordingStart;
   String? _monitoredDraftId;
+  String? _recordingRequestId;
+  bool _restoreInProgress = false;
+  String? _restoredDraftId;
 
   void setStationOnline(bool online) {
     if (_stationOnline == online) return;
@@ -66,11 +71,31 @@ class TxController extends ChangeNotifier {
     required bool online,
     required bool running,
     required bool commandPending,
+    bool pttReady = true,
   }) {
     setStationOnline(online);
-    if (_stationRunning == running && _commandPending == commandPending) return;
+    final pttChanged = _pttReady != pttReady;
+    if (_stationRunning == running &&
+        _commandPending == commandPending &&
+        !pttChanged) {
+      return;
+    }
     _stationRunning = running;
     _commandPending = commandPending;
+    _pttReady = pttReady;
+    if (!pttReady &&
+        (state.phase == TxPhase.idle ||
+            state.phase == TxPhase.queued ||
+            state.phase == TxPhase.transmitting)) {
+      state = state.copyWith(
+        phase: TxPhase.failed,
+        failure: TxFailure.pttUnavailable,
+      );
+    } else if (pttReady &&
+        state.failure == TxFailure.pttUnavailable &&
+        state.draft == null) {
+      state = const TxState();
+    }
     notifyListeners();
   }
 
@@ -78,6 +103,7 @@ class TxController extends ChangeNotifier {
       state.canStartRecording &&
       _stationOnline &&
       _stationRunning &&
+      _pttReady &&
       !_commandPending;
 
   bool get startRequired => _stationOnline && !_stationRunning;
@@ -89,6 +115,7 @@ class TxController extends ChangeNotifier {
           state.draft?.status == 'failed') &&
       _stationOnline &&
       _stationRunning &&
+      _pttReady &&
       !_commandPending;
 
   void setTargetLanguage(String language) {
@@ -115,6 +142,7 @@ class TxController extends ChangeNotifier {
     }
     if (!canStartRecording) return;
     _recordingStartedAt = DateTime.now();
+    _recordingRequestId = const Uuid().v4();
     _recordingMaximumDuration = _maximumDuration;
     state = state.copyWith(
       phase: TxPhase.recording,
@@ -166,6 +194,7 @@ class TxController extends ChangeNotifier {
           stationId: stationId,
           duration: duration,
           targetLanguage: state.targetLanguage,
+          requestId: _recordingRequestId ?? const Uuid().v4(),
           audioPath: audioPath,
         ),
       );
@@ -189,7 +218,10 @@ class TxController extends ChangeNotifier {
     if (state.phase != TxPhase.reviewReady || draft == null) return;
     final normalized = translation.trim();
     if (normalized.isEmpty || normalized.length > 2000) return;
-    final confirmedDraft = draft.copyWith(translation: normalized);
+    final confirmedDraft = draft.copyWith(
+      translation: normalized,
+      status: 'synthesizing',
+    );
     state = state.copyWith(
       phase: TxPhase.processing,
       draft: confirmedDraft,
@@ -208,12 +240,14 @@ class TxController extends ChangeNotifier {
         debugPrintStack(stackTrace: stackTrace);
       }
       if (!_disposed) {
-        _fail(TxFailure.transmissionFailed, TxPhase.failed);
+        _fail(_failureFor(error), TxPhase.failed);
       }
     }
   }
 
   Future<void> cancelDraft() async {
+    final draft = state.draft;
+    if (draft != null && draft.status != 'review_ready') return;
     _stopRecordingTimer();
     await _recorder?.cancel();
     final draftId = state.draft?.id;
@@ -224,7 +258,18 @@ class TxController extends ChangeNotifier {
     }
   }
 
+  Future<void> cancelRecordingForBackground() async {
+    if (state.phase != TxPhase.recording) return;
+    _stopRecordingTimer();
+    _recordingStart = null;
+    _recordingRequestId = null;
+    await _recorder?.cancel();
+    state = TxState(targetLanguage: state.targetLanguage);
+    notifyListeners();
+  }
+
   Future<void> retry() async {
+    if (state.failure == TxFailure.pttUnavailable && !_pttReady) return;
     final localDraft = state.draft;
     if (state.phase == TxPhase.failed && localDraft != null) {
       if (!canRetryTransmission) return;
@@ -278,11 +323,60 @@ class TxController extends ChangeNotifier {
           debugPrint('TX retry failed: $error');
           debugPrintStack(stackTrace: stackTrace);
         }
-        _fail(TxFailure.transmissionFailed, TxPhase.failed);
+        _fail(_failureFor(error), TxPhase.failed);
       }
       return;
     }
     reset();
+  }
+
+  Future<void> restoreActiveTransmission({String? stationJobId}) async {
+    if (_restoreInProgress || _monitoredDraftId != null) return;
+    _restoreInProgress = true;
+    try {
+      final stored = await _repository.activeDraftId(stationId);
+      final draftId =
+          stationJobId != null && stationJobId.isNotEmpty
+              ? stationJobId
+              : stored;
+      if (draftId == null || draftId.isEmpty) return;
+      if (_restoredDraftId == draftId) return;
+      _restoredDraftId = draftId;
+      final current = await _repository.getDraft(stationId, draftId);
+      if (_disposed) return;
+      if (current.status == 'completed' || current.status == 'cancelled') {
+        await _repository.clearActiveDraft(stationId);
+        if (current.status == 'completed') {
+          state = state.copyWith(phase: TxPhase.completed, draft: current);
+          notifyListeners();
+        }
+        return;
+      }
+      state = state.copyWith(
+        phase:
+            current.status == 'review_ready'
+                ? TxPhase.reviewReady
+                : current.status == 'claimed' ||
+                    current.status == 'transmitting'
+                ? TxPhase.transmitting
+                : current.status == 'failed'
+                ? TxPhase.failed
+                : TxPhase.queued,
+        draft: current,
+        failure:
+            current.status == 'failed' ? TxFailure.transmissionFailed : null,
+        clearFailure: current.status != 'failed',
+      );
+      notifyListeners();
+      if (current.status != 'failed') await _monitorTransmission(current);
+    } on TxPermanentPollingFailure {
+      if (!_disposed) _fail(TxFailure.transmissionFailed, TxPhase.failed);
+    } catch (_) {
+      // A transient startup failure is retried on the next Station update.
+      _restoredDraftId = null;
+    } finally {
+      _restoreInProgress = false;
+    }
   }
 
   void reset() {
@@ -293,14 +387,23 @@ class TxController extends ChangeNotifier {
 
   Future<void> _monitorTransmission(TxDraft draft) async {
     _monitoredDraftId = draft.id;
+    var retryDelay = queuePreviewDuration;
     while (!_disposed && _monitoredDraftId == draft.id) {
-      await Future<void>.delayed(queuePreviewDuration);
+      await Future<void>.delayed(retryDelay);
       TxDraft current;
       try {
         current = await _repository.getDraft(stationId, draft.id);
+        retryDelay = queuePreviewDuration;
+      } on TxPermanentPollingFailure {
+        _monitoredDraftId = null;
+        _fail(TxFailure.transmissionFailed, TxPhase.failed);
+        return;
       } catch (_) {
-        // A temporary API/network failure must not terminate monitoring. The
-        // Station availability stream owns the visible offline state.
+        final nextMilliseconds = (retryDelay.inMilliseconds * 2).clamp(
+          queuePreviewDuration.inMilliseconds,
+          5000,
+        );
+        retryDelay = Duration(milliseconds: nextMilliseconds);
         continue;
       }
       if (_disposed) return;
@@ -317,11 +420,12 @@ class TxController extends ChangeNotifier {
       } else if (current.status == 'completed') {
         state = state.copyWith(phase: TxPhase.completed, draft: current);
         _monitoredDraftId = null;
+        unawaited(_repository.clearActiveDraft(stationId));
       } else if (current.status == 'failed') {
         final failure =
             current.error == 'STATION_OFFLINE_DURING_TX'
                 ? TxFailure.stationOfflineDuringTx
-                : TxFailure.transmissionFailed;
+                : _failureForCode(current.error);
         state = state.copyWith(
           phase: TxPhase.failed,
           draft: current,
@@ -340,6 +444,19 @@ class TxController extends ChangeNotifier {
     state = state.copyWith(phase: phase, failure: failure);
     notifyListeners();
   }
+
+  TxFailure _failureFor(Object error) =>
+      error is TxOperationFailure
+          ? _failureForCode(error.code)
+          : TxFailure.transmissionFailed;
+
+  TxFailure _failureForCode(String? code) => switch (code) {
+    'PTT_UNAVAILABLE' => TxFailure.pttUnavailable,
+    'TX_OUTPUT_TOO_LONG' => TxFailure.outputTooLong,
+    'TX_SYNTHESIS_TIMEOUT' => TxFailure.synthesisTimeout,
+    'TX_PLAYBACK_TIMEOUT' => TxFailure.playbackTimeout,
+    _ => TxFailure.transmissionFailed,
+  };
 
   void _stopRecordingTimer() {
     _recordingTimer?.cancel();

@@ -75,6 +75,23 @@ Station-produced WAV. If raw capture is clear but Station audio is incomplete,
 inspect the Linux capture adapter and frame continuity before tuning VAD or
 changing Android/API playback.
 
+## Raspberry Pi TX and PTT Safety
+
+Raspberry Pi TX uses BCM GPIO17 active-high when `[ptt].enabled = true`; the
+shared default remains disabled so Windows/Laptop Stations use manual PTT. A Pi
+GPIO initialization failure must not stop RX or heartbeat, but it must publish
+`ptt_ready=false` and prevent TX claim. Never silently fall back to playback
+without PTT on a Pi configured for GPIO control.
+
+The required TX order is: pause RX capture, assert PTT, wait 400 ms key-up, play
+the final WAV, wait 300 ms tail, release PTT, then resume RX only when desired
+state is still running. Final WAV duration is limited to 120 seconds and the
+independent absolute watchdog is 122 seconds. All error, shutdown, SIGTERM and
+player-hang paths must release PTT. Failed TX is never replayed automatically.
+
+Use a dummy load or LED to validate GPIO timing and the hung-player watchdog
+before connecting the VHF PTT circuit. Channel-busy sensing is not implemented.
+
 ## Commit & Pull Request Guidelines
 
 Use the established Conventional Commit style visible in history, such as `feat(ui): ...`, `refactor(pipeline): ...`, `test: ...`, and `docs: ...`. Keep commits focused and imperative.

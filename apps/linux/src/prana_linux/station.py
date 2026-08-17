@@ -7,6 +7,7 @@ from pathlib import Path
 from prana_core.station.commands import provision_station, run_station
 from prana_linux.audio.pulse import PulseBackend
 from prana_linux.credential_store import LinuxCredentialStore
+from prana_linux.gpio.ptt import GpioPttController
 
 
 def _default_config() -> Path:
@@ -31,7 +32,31 @@ def main() -> None:
         provision()
         return
     args = _parser().parse_args()
-    run_station(args.config, args.data_dir, LinuxCredentialStore(), PulseBackend)
+    run_station(
+        args.config,
+        args.data_dir,
+        LinuxCredentialStore(),
+        PulseBackend,
+        _ptt_controller,
+    )
+
+
+def _ptt_controller(config):
+    if not config.ptt.enabled:
+        from prana_core.station.ptt import NullPttController
+
+        return NullPttController()
+    try:
+        return GpioPttController(
+            pin=config.ptt.gpio_pin,
+            active_high=config.ptt.active_high,
+        )
+    except Exception:
+        from prana_core.common.logger import get_logger
+        from prana_core.station.ptt import UnavailablePttController
+
+        get_logger(__name__).exception("PTT GPIO initialization failed")
+        return UnavailablePttController()
 
 
 def provision() -> None:

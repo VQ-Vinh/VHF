@@ -42,6 +42,23 @@ TRANSIENT_ERROR_CODES = {
 RETRY_DELAYS_SECONDS = (2.0, 4.0, 8.0)
 
 
+def apply_software_gain(
+    audio_data: np.ndarray,
+    gain_db: float,
+    speech_threshold: float,
+) -> tuple[np.ndarray, float, float, float]:
+    """Apply bounded gain only to speech-level PCM and report input metrics."""
+    float_audio = audio_data.astype(np.float32)
+    peak = float(np.max(np.abs(float_audio))) if float_audio.size else 0.0
+    rms = float(np.sqrt(np.mean(float_audio**2))) if float_audio.size else 0.0
+    if gain_db <= 0 or rms < speech_threshold:
+        return audio_data, rms, peak, 0.0
+    amplified = float_audio * (10.0 ** (min(6.0, gain_db) / 20.0))
+    clipping_ratio = float(np.mean(np.abs(amplified) > 32767.0))
+    limited = np.clip(amplified, -32768.0, 32767.0).astype(np.int16)
+    return limited, rms, peak, clipping_ratio
+
+
 @dataclass
 class SegmentJob:
     audio_data: np.ndarray
@@ -157,16 +174,18 @@ class SegmentProcessor:
         queue_wait_ms = max(0.0, (time.time() - job.timestamp) * 1000)
         sid, seq = job.session_id, job.sequence
 
-        audio_data = job.audio_data
-        peak = np.abs(audio_data).max()
-        if 0 < peak < 5000:
-            gain = 30000.0 / peak
-            audio_data = (audio_data.astype(np.float32) * gain).clip(-32768, 32767).astype(np.int16)
-
-        audio_data = resample_audio(audio_data, job.sample_rate, TARGET_SAMPLE_RATE)
-        segment_rms = np.sqrt(np.mean(audio_data.astype(np.float32) ** 2))
+        audio_data = resample_audio(
+            job.audio_data, job.sample_rate, TARGET_SAMPLE_RATE
+        )
+        audio_data, segment_rms, input_peak, clipping_ratio = apply_software_gain(
+            audio_data,
+            float(self._config.vad.software_gain_db),
+            float(self._config.vad.energy_threshold),
+        )
         if segment_rms < 50:
             return None
+
+        software_gain_db = float(self._config.vad.software_gain_db)
 
         audio_data = trim_trailing_silence(audio_data, TARGET_SAMPLE_RATE)
         duration_ms = int(len(audio_data) / TARGET_SAMPLE_RATE * 1000)
@@ -224,6 +243,10 @@ class SegmentProcessor:
                 "confidence": result.confidence,
                 "language": result.detected_language,
                 "target_language": result.target_language or job.target_language,
+                "audio_rms": round(segment_rms, 1),
+                "audio_peak": round(input_peak, 1),
+                "clipping_ratio": round(clipping_ratio, 6),
+                "software_gain_db": software_gain_db,
                 "error": result.error,
             },
         )

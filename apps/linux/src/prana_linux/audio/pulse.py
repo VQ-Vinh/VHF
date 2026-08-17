@@ -241,7 +241,11 @@ class PulseBackend(AudioBackend):
             pa.terminate()
 
     @staticmethod
-    def play_wav(data: bytes, device_index: int = -1) -> None:
+    def play_wav(
+        data: bytes,
+        device_index: int = -1,
+        stop_event: threading.Event | None = None,
+    ) -> None:
         import pyaudio
 
         try:
@@ -307,6 +311,8 @@ class PulseBackend(AudioBackend):
                 bytes_per_frame = sample_width * channels
                 chunk_size = 4096 * bytes_per_frame
                 for offset in range(0, len(frames), chunk_size):
+                    if stop_event is not None and stop_event.is_set():
+                        break
                     stream.write(frames[offset : offset + chunk_size])
             except AudioDeviceNotFoundError:
                 raise

@@ -4,6 +4,9 @@ import unittest
 import hashlib
 import json
 import tempfile
+import io
+import wave
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -29,6 +32,16 @@ class DictStore:
 
     def set(self, key, value):
         self.values[key] = value
+
+
+def tx_wav(seconds: float = 0.1) -> bytes:
+    output = io.BytesIO()
+    with wave.open(output, "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(16000)
+        wav_file.writeframes(b"\0\0" * round(16000 * seconds))
+    return output.getvalue()
 
 
 class StationModeTests(unittest.TestCase):
@@ -413,6 +426,130 @@ class StationModeTests(unittest.TestCase):
                 )
             )
             self.assertEqual(receipt["status"], "completed")
+
+    def test_tx_playback_asserts_ptt_only_while_audio_is_playing(self) -> None:
+        events = []
+
+        class Ptt:
+            def engage(self):
+                events.append("ptt-high")
+
+            def release(self):
+                events.append("ptt-low")
+
+        class Player:
+            def play_wav(self, output, device_index):
+                events.append(("play", output, device_index))
+
+        runtime = StationRuntime.__new__(StationRuntime)
+        runtime._ptt_controller = Ptt()
+        runtime._audio_backend_factory = lambda: Player()
+        audio = tx_wav()
+
+        runtime._play_tx_audio(audio, 17)
+
+        self.assertEqual(
+            events,
+            ["ptt-high", ("play", audio, 17), "ptt-low"],
+        )
+
+    def test_tx_playback_releases_ptt_when_audio_output_fails(self) -> None:
+        events = []
+
+        class Ptt:
+            def engage(self):
+                events.append("ptt-high")
+
+            def release(self):
+                events.append("ptt-low")
+
+        class Player:
+            def play_wav(self, output, device_index):
+                events.append("play")
+                raise RuntimeError("speaker failed")
+
+        runtime = StationRuntime.__new__(StationRuntime)
+        runtime._ptt_controller = Ptt()
+        runtime._audio_backend_factory = lambda: Player()
+
+        with self.assertRaisesRegex(RuntimeError, "speaker failed"):
+            runtime._play_tx_audio(tx_wav(), -1)
+
+        self.assertEqual(events, ["ptt-high", "play", "ptt-low"])
+
+    def test_tx_playback_releases_ptt_when_assertion_fails(self) -> None:
+        events = []
+
+        class Ptt:
+            def engage(self):
+                events.append("ptt-high-failed")
+                raise RuntimeError("gpio failed")
+
+            def release(self):
+                events.append("ptt-low")
+
+        class Player:
+            def play_wav(self, output, device_index):
+                events.append("play")
+
+        runtime = StationRuntime.__new__(StationRuntime)
+        runtime._ptt_controller = Ptt()
+        runtime._audio_backend_factory = lambda: Player()
+
+        with self.assertRaisesRegex(RuntimeError, "gpio failed"):
+            runtime._play_tx_audio(tx_wav(), -1)
+
+        self.assertEqual(events, ["ptt-high-failed", "ptt-low"])
+
+    def test_tx_watchdog_cancels_hung_player_and_releases_ptt(self) -> None:
+        events = []
+
+        class Ptt:
+            def engage(self):
+                events.append("ptt-high")
+
+            def release(self):
+                events.append("ptt-low")
+
+        class Player:
+            def play_wav(self, _output, _device_index, stop_event=None):
+                events.append("play")
+                stop_event.wait(5)
+                events.append("stopped")
+
+        runtime = StationRuntime.__new__(StationRuntime)
+        runtime.config = SimpleNamespace(
+            ptt=SimpleNamespace(
+                watchdog_seconds=0.05,
+                key_up_delay_ms=0,
+                tail_delay_ms=0,
+            )
+        )
+        runtime._stop_tx = threading.Event()
+        runtime._ptt_controller = Ptt()
+        runtime._audio_backend_factory = lambda: Player()
+
+        with self.assertRaisesRegex(RuntimeError, "TX_PLAYBACK_TIMEOUT"):
+            runtime._play_tx_audio(tx_wav(), -1)
+
+        self.assertEqual(events[0:2], ["ptt-high", "play"])
+        self.assertIn("stopped", events)
+        self.assertEqual(events.count("ptt-low"), 1)
+
+    def test_tx_output_over_120_seconds_is_rejected_before_ptt(self) -> None:
+        class Ptt:
+            def engage(self):
+                raise AssertionError("PTT must not be asserted")
+
+            def release(self):
+                raise AssertionError("PTT was never asserted")
+
+        runtime = StationRuntime.__new__(StationRuntime)
+        runtime._ptt_controller = Ptt()
+        runtime._audio_backend_factory = lambda: None
+
+        with self.assertRaisesRegex(RuntimeError, "TX_OUTPUT_TOO_LONG"):
+            runtime._play_tx_audio(tx_wav(120.01), -1)
 
 
 if __name__ == "__main__":

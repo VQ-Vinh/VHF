@@ -51,7 +51,12 @@ void main() {
     return subject;
   }
 
-  Widget harness(TxController subject) => MaterialApp(
+  Widget harness(
+    TxController subject, {
+    bool stationOnline = true,
+    bool apiOnline = true,
+    VoidCallback? onConnectionRetry,
+  }) => MaterialApp(
     theme: PranaTheme.light(),
     locale: const Locale('en'),
     supportedLocales: AppText.supportedLocales,
@@ -75,14 +80,40 @@ void main() {
           TxLiveDock(
             controller: subject,
             stationState: 'IDLE',
-            stationOnline: true,
-            apiOnline: true,
+            stationOnline: stationOnline,
+            apiOnline: apiOnline,
             onReview: () {},
+            onConnectionRetry: onConnectionRetry ?? () {},
           ),
         ],
       ),
     ),
   );
+
+  testWidgets('offline dock retry refreshes the connection', (tester) async {
+    final subject = controller();
+    subject.setStationAvailability(
+      online: false,
+      running: true,
+      commandPending: false,
+    );
+    addTearDown(subject.dispose);
+    var retryCalls = 0;
+
+    await tester.pumpWidget(
+      harness(
+        subject,
+        stationOnline: false,
+        apiOnline: false,
+        onConnectionRetry: () => retryCalls++,
+      ),
+    );
+
+    await tester.tap(find.text('Retry'));
+    await tester.pump();
+
+    expect(retryCalls, 1);
+  });
 
   testWidgets('PTT stays below Live and changes RX badge to TX while held', (
     tester,

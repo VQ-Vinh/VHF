@@ -8,11 +8,12 @@ from typing import Callable
 from prana_core.audio.base import AudioBackend
 from prana_core.backend.credential_store import CredentialStore
 from prana_core.common.logger import configure_utf8_stdio, setup_logger
-from prana_core.config.schema import load_config
+from prana_core.config.schema import AppConfig, load_config
 from prana_core.station.client import StationApiClient
 from prana_core.station.identity import StationIdentity
 from prana_core.station.label import grouped, qr_payload, write_label
 from prana_core.station.runtime import StationRuntime
+from prana_core.station.ptt import NullPttController, PttController
 
 
 ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -40,6 +41,7 @@ def run_station(
     data_dir: Path | None,
     store: CredentialStore,
     audio_backend_factory: Callable[[], AudioBackend],
+    ptt_controller_factory: Callable[[AppConfig], PttController] | None = None,
 ) -> None:
     configure_utf8_stdio()
     config, client = create_station_client(config_path, data_dir, store)
@@ -47,7 +49,17 @@ def run_station(
     print(f"PRANA ELEX Station {client.identity.id}")
     print("The station stores no Firebase user session. Press Ctrl+C to stop.")
     try:
-        StationRuntime(config, client, audio_backend_factory).run_forever()
+        ptt_controller = (
+            ptt_controller_factory(config)
+            if ptt_controller_factory is not None
+            else NullPttController()
+        )
+        StationRuntime(
+            config,
+            client,
+            audio_backend_factory,
+            ptt_controller,
+        ).run_forever()
     except KeyboardInterrupt:
         pass
 

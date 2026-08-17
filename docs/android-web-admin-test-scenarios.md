@@ -1,9 +1,9 @@
 # Hướng dẫn kiểm thử Android App và Web Admin
 
 > **Chú ý phạm vi:** Tài liệu kiểm thử RX hoàn chỉnh và TX Phase 2.1 từ Android
-> đến audio output của Station. TX hiện chưa điều khiển GPIO/RF PTT, chưa sensing
-> channel busy và chưa phát qua máy VHF thật. Các case TX phải kiểm tra cổng
-> audio của Laptop Station, không được hiểu là kiểm thử phát sóng RF.
+> đến audio output của Station. Raspberry Pi đã điều khiển GPIO17 PTT; Laptop
+> dùng manual PTT. TX chưa sensing channel busy và việc kiểm thử GPIO bằng tải
+> giả không được hiểu là đã xác nhận đường truyền RF trên hai máy VHF thật.
 
 ## 1. Mục đích
 
@@ -19,7 +19,8 @@ Phạm vi gồm:
 
 Không sử dụng tài khoản, audio hoặc Station thật của khách hàng.
 Trong toàn bộ tài liệu, Start cho phép Station chạy RX và nhận TX job. Stop dừng
-RX và ngăn claim TX mới; không có nghĩa là kích hoặc nhả PTT vật lý.
+RX và ngăn claim TX mới. Với job đã transmitting, STOP không cắt audio giữa lượt
+nhưng ngăn RX resume; watchdog vẫn chịu trách nhiệm nhả PTT an toàn.
 
 ## 2. Cách ghi nhận kết quả
 
@@ -52,7 +53,8 @@ private key, CSRF token hay credential Google Cloud.
 - Có thể thay đổi múi giờ và cỡ chữ trên điện thoại.
 - Chrome hoặc Edge bản mới để kiểm thử Web Admin.
 - Một Laptop Station đã provision, có audio input RX và audio output nghe được.
-- Một Raspberry Pi/Linux Station dùng cho RX regression; GPIO PTT chưa kết nối.
+- Một Raspberry Pi/Linux Station dùng ALSA/`arecord`, có GPIO17 nối tải giả/LED
+  trước khi nối mạch PTT thật.
 - Laptop/Pi và điện thoại có thể kết nối hai mạng Internet khác nhau để xác
   nhận vận hành từ xa qua Cloud API.
 - Mạng có thể chủ động tắt/bật để kiểm tra offline.
@@ -96,8 +98,8 @@ Ghi lại:
 - Thời gian bắt đầu test.
 
 Xác nhận màn hình Station báo `API READY` và `ONLINE` trước các case cần thu âm.
-Chọn đúng `TX OUTPUT` trên Laptop và đặt âm lượng ở mức an toàn. Không nối output
-vào máy VHF/PTT khi chạy bộ case Phase 2.1.
+Chọn đúng `TX OUTPUT` và đặt âm lượng ở mức an toàn. Khi test Pi, xác nhận tải giả
+GPIO trước; chỉ nối VHF/PTT sau khi timing và watchdog đã PASS.
 Ở luồng khách hàng, chạy `enable_station_api.bat` không được yêu cầu cài
 `gcloud`, đăng nhập ADC hoặc nhập credential Google Cloud.
 
@@ -521,19 +523,21 @@ Case này cần người quản trị hoặc công cụ test gửi lại cùng m
 - App hội tụ đúng trạng thái, không cho double-submit trong terminal transition.
 - Chỉ một playback xảy ra và job completed đúng một lần.
 
-### AND-TX-06 — Half-duplex RX/TX trên Laptop
+### AND-TX-06 — Half-duplex RX/TX và PTT
 
 **Các bước**
 
 1. START Station và xác nhận RX đang tạo Live result.
 2. Gửi một TX job có output đủ dài để quan sát.
-3. Theo dõi RX capture và audio output trong lúc TX transmitting.
+3. Theo dõi RX capture, audio output và GPIO/PTT trong lúc TX transmitting.
 4. Lặp lại, nhưng bấm STOP khi TX đã transmitting.
 5. Lặp lại với thay đổi input/output setting trong lúc TX.
 
 **Kết quả mong đợi**
 
-- Station dừng RX hoàn toàn trước khi phát output WAV.
+- Station pause capture RX trước khi kích PTT nhưng cho phép segment RX đã gửi
+  trước đó hoàn tất xử lý Gemini.
+- Trên Pi, GPIO HIGH trong key-up 400 ms, playback và tail 300 ms; sau đó LOW.
 - Trong lúc TX, desired-state loop không tự start RX.
 - TX kết thúc khi người dùng STOP giữa lượt, nhưng RX không resume.
 - Nếu vẫn running, RX chỉ resume sau khi playback kết thúc.
@@ -556,6 +560,18 @@ Case này cần người quản trị hoặc công cụ test gửi lại cùng m
 - Failed job không tự replay qua polling, Stop/Start hoặc restart process.
 - Retry tạo attempt mới liên kết job trước, giữ logical filename và chỉ phát sau
   thao tác rõ ràng của người dùng.
+
+### AND-TX-07A — PTT unavailable và watchdog playback
+
+1. Khởi động Raspberry Pi với GPIO17 bị chiếm hoặc driver GPIO không khởi tạo được.
+2. Xác nhận RX/heartbeat vẫn hoạt động và App hiển thị không thể điều khiển PTT.
+3. Khôi phục GPIO, restart Station và gửi một TX job bằng tải giả.
+4. Làm player treo có chủ đích, theo dõi GPIO và trạng thái job trong hơn 122 giây.
+
+**Kết quả mong đợi:** Station lỗi GPIO không claim TX và không fallback phát audio
+âm thầm; heartbeat báo `ptt_mode`, `ptt_ready`, `ptt_error`. Khi player treo,
+watchdog hạ GPIO, job nhận `TX_PLAYBACK_TIMEOUT`, không tự replay và chỉ cho retry
+thủ công khi Station online/running/PTT ready.
 
 ### AND-TX-08 — Layout dock và accessibility
 
@@ -1212,15 +1228,15 @@ không lộ Cloud path.
 nhưng RX không resume; Android/Station/Admin cuối cùng cùng hội tụ về stopped;
 Audit chỉ ghi thao tác Admin, không ghi completed giả hoặc replay job.
 
-### E2E-TX-BOUNDARY-01 — Xác nhận ranh giới chưa có GPIO/RF PTT
+### E2E-TX-BOUNDARY-01 — Xác nhận ranh giới GPIO/PTT và RF
 
-1. Ngắt hoặc không lắp GPIO/serial PTT và không nối output Station vào VHF TX.
-2. Chạy đầy đủ RX, HTT, confirm và Station TX playback.
-3. Theo dõi cổng audio output, GPIO/PTT và máy VHF test trong suốt quá trình.
+1. Trên Laptop, chạy đầy đủ TX và xác nhận `ptt_mode=manual`.
+2. Trên Pi, nối GPIO17 vào tải giả, chạy TX bình thường và test player treo.
+3. Sau khi timing/watchdog PASS mới nối mạch cách ly PTT và VHF theo phê duyệt.
 
-**Mong đợi:** output WAV chỉ phát tại audio output Laptop; không có GPIO/serial
-PTT, không key máy VHF và không phát RF. Việc thiếu PTT không làm pipeline phần
-mềm crash hoặc báo completed sai cho audio playback.
+**Mong đợi:** Laptop không giả vờ có GPIO; Pi không claim nếu GPIO unavailable.
+GPIO chỉ HIGH trong cửa sổ TX và luôn về LOW khi lỗi/shutdown/watchdog. Kết quả
+trên tải giả không được ghi nhận là phát RF thành công nếu chưa kiểm thử hai VHF.
 
 ---
 
@@ -1237,7 +1253,8 @@ Bản phát hành chỉ được đề xuất nghiệm thu khi:
   retry thủ công, lưu trữ và History TX đều PASS trên Laptop Station.
 - Các case Gemini, tự phát/nghe lại audio, lưu local/GCS và dọn dữ liệu 14 ngày đều
   PASS trên ít nhất một Station Windows và một Station Raspberry Pi/Linux.
-- Không có TX job tự replay; Phase 2.1 không kích GPIO/PTT hoặc phát RF.
+- Không có TX job tự replay; GPIO17 PTT và watchdog PASS trên tải giả. Phát RF chỉ
+  được đánh dấu PASS khi có biên bản kiểm thử hai VHF thật.
 - Các lỗi còn lại đều có ticket, mức độ ưu tiên, người phụ trách và quyết định
   có chấp nhận phát hành hay không.
 - Báo cáo test đính kèm phiên bản APK, API, Admin, Station và danh sách case

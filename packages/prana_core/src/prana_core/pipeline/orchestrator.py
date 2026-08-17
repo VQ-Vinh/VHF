@@ -44,6 +44,7 @@ class PipelineState(Enum):
     STARTING = auto()
     RUNNING = auto()
     STOPPING = auto()
+    PAUSED = auto()
     ERROR = auto()
 
 
@@ -59,6 +60,7 @@ class PipelineOrchestrator:
         self._state = PipelineState.IDLE
         self._state_lock = threading.RLock()
         self._stop_event = threading.Event()
+        self._capture_stop_event = threading.Event()
 
         self._session = SessionManager(config.general.session_prefix)
         self._storage = LocalStorage(config.storage.local)
@@ -148,6 +150,7 @@ class PipelineOrchestrator:
         self._recording = False
         self._samples_since_speech = 0
         self._speech_frame_count = 0
+        self._capture_stop_signal().clear()
         try:
             self._session.start_session()
             sid = self._session.session_id
@@ -237,11 +240,13 @@ class PipelineOrchestrator:
             self._state = PipelineState.STOPPING
         event_bus.emit("state_changed", PipelineState.STOPPING, "Stopping...")
         self._stop_event.set()
+        self._capture_stop_signal().set()
         threading.Thread(target=self._do_stop, daemon=True).start()
 
     def _do_stop(self) -> None:
         try:
             self._stop_event.set()
+            self._capture_stop_signal().set()
 
             if self._recorder is not None:
                 self._recorder.stop()
@@ -274,6 +279,61 @@ class PipelineOrchestrator:
                 self._state = PipelineState.ERROR
             event_bus.emit("state_changed", PipelineState.ERROR, str(e))
 
+    def pause_capture_for_tx(self) -> None:
+        """Stop only real-time capture while allowing queued Cloud work to finish."""
+        with self._state_lock:
+            if self._state == PipelineState.PAUSED:
+                return
+            if self._state != PipelineState.RUNNING:
+                raise RuntimeError(f"Cannot pause capture from {self._state.name}")
+            self._state = PipelineState.STOPPING
+        event_bus.emit("state_changed", PipelineState.STOPPING, "Pausing RX for TX")
+        self._capture_stop_signal().set()
+        if self._recorder is not None:
+            self._recorder.stop()
+            self._recorder = None
+        if not self._join_capture_thread():
+            with self._state_lock:
+                self._state = PipelineState.ERROR
+            raise RuntimeError("RX_CAPTURE_PAUSE_TIMEOUT")
+        self._vad_buffer.clear()
+        self._vad_sample_count = 0
+        self._recording = False
+        self._samples_since_speech = 0
+        self._speech_frame_count = 0
+        with self._state_lock:
+            self._state = PipelineState.PAUSED
+        event_bus.emit("state_changed", PipelineState.PAUSED, "RX paused for TX")
+
+    def resume_capture_after_tx(self) -> None:
+        """Resume input capture without replacing in-flight processing workers."""
+        with self._state_lock:
+            if self._state != PipelineState.PAUSED:
+                raise RuntimeError(f"Cannot resume capture from {self._state.name}")
+            self._state = PipelineState.STARTING
+        self._capture_stop_signal().clear()
+        try:
+            self._recorder = AudioRecorder(
+                config=self._config.audio,
+                callback=self._audio_callback,
+                backend_factory=self._audio_backend_factory,
+            )
+            self._capture_thread = threading.Thread(
+                target=self._capture_loop,
+                name="prana-capture-vad",
+                daemon=True,
+            )
+            self._capture_thread.start()
+            self._recorder.start()
+            with self._state_lock:
+                self._state = PipelineState.RUNNING
+            event_bus.emit("state_changed", PipelineState.RUNNING, "")
+        except Exception:
+            self._cleanup_failed_start()
+            with self._state_lock:
+                self._state = PipelineState.ERROR
+            raise
+
     # ── Restart ─────────────────────────────────────────────────────
     def restart(self) -> None:
         if not self._is_state(PipelineState.RUNNING):
@@ -289,6 +349,7 @@ class PipelineOrchestrator:
         # _do_stop sets this flag so workers can exit. A restart must clear it
         # before creating the replacement worker pool.
         self._stop_event.clear()
+        self._capture_stop_signal().clear()
         self._do_start()
 
     # ── Cleanup ─────────────────────────────────────────────────────
@@ -335,7 +396,7 @@ class PipelineOrchestrator:
     def _capture_loop(self) -> None:
         """Run CPU-heavy VAD work away from the real-time audio callback."""
         logger.info("Capture VAD thread started")
-        while not self._stop_event.is_set():
+        while not self._stop_event.is_set() and not self._capture_stop_signal().is_set():
             try:
                 audio = self._capture_queue.get(timeout=0.1)
             except queue.Empty:
@@ -351,14 +412,18 @@ class PipelineOrchestrator:
             extra={"dropped_frames": self._capture_dropped_frames},
         )
 
-    def _join_capture_thread(self) -> None:
+    def _join_capture_thread(self) -> bool:
         thread = getattr(self, "_capture_thread", None)
+        stopped = True
         if thread is not None and thread is not threading.current_thread():
             thread.join(timeout=5.0)
             if thread.is_alive():
+                stopped = False
                 logger.warning("Capture VAD thread did not stop within timeout")
-        self._capture_thread = None
-        self._capture_queue = queue.Queue(maxsize=CAPTURE_QUEUE_FRAMES)
+        if stopped:
+            self._capture_thread = None
+            self._capture_queue = queue.Queue(maxsize=CAPTURE_QUEUE_FRAMES)
+        return stopped
 
     def _process_vad_frame(self, audio: np.ndarray) -> None:
         sr = self._recorder.sample_rate if self._recorder and self._recorder.sample_rate > 0 else self._config.audio.sample_rate
@@ -542,3 +607,10 @@ class PipelineOrchestrator:
 
     def retry_last_failed(self) -> bool:
         return self._segment_processor.retry_last_failed()
+
+    def _capture_stop_signal(self) -> threading.Event:
+        signal = getattr(self, "_capture_stop_event", None)
+        if signal is None:
+            signal = threading.Event()
+            self._capture_stop_event = signal
+        return signal

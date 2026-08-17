@@ -5,12 +5,61 @@ import stat
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from prana_linux.credential_store import LinuxCredentialStore
+from prana_linux.gpio.ptt import GpioPttController
+from prana_linux.station import _ptt_controller
 
 
 class LinuxPlatformTests(unittest.TestCase):
+    def test_gpio17_ptt_is_low_initially_and_wraps_transmission(self) -> None:
+        calls = []
+
+        class Device:
+            def __init__(self, pin, *, active_high, initial_value):
+                calls.append(("init", pin, active_high, initial_value))
+
+            def on(self):
+                calls.append("high")
+
+            def off(self):
+                calls.append("low")
+
+            def close(self):
+                calls.append("close")
+
+        controller = GpioPttController(device_factory=Device)
+        controller.engage()
+        controller.release()
+        controller.close()
+
+        self.assertEqual(
+            calls,
+            [
+                ("init", 17, True, False),
+                "high",
+                "low",
+                "low",
+                "close",
+            ],
+        )
+
+    def test_gpio_init_failure_keeps_station_available_but_blocks_tx(self) -> None:
+        config = SimpleNamespace(
+            ptt=SimpleNamespace(enabled=True, gpio_pin=17, active_high=True)
+        )
+        with patch(
+            "prana_linux.station.GpioPttController",
+            side_effect=RuntimeError("gpio unavailable"),
+        ):
+            controller = _ptt_controller(config)
+
+        self.assertEqual(controller.mode, "unavailable")
+        self.assertFalse(controller.ready)
+        self.assertEqual(controller.error, "PTT_UNAVAILABLE")
+
     def test_secret_fallback_is_owner_only(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             with (
@@ -43,6 +92,17 @@ class LinuxPlatformTests(unittest.TestCase):
         self.assertIn("build/buildlinux/dist", script)
         self.assertIn("installers/linux", script)
         self.assertNotIn("release/linux-arm64", script)
+
+    def test_linux_build_installs_lgpio_build_tooling(self) -> None:
+        script = Path("apps/linux/packaging/build.sh").read_text(encoding="utf-8")
+        manifest = Path("apps/linux/pyproject.toml").read_text(encoding="utf-8")
+        control = Path("apps/linux/packaging/debian/control.in").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("swig", script)
+        self.assertIn("liblgpio-dev", script)
+        self.assertIn("lgpio>=0.2.2.0; platform_machine == 'aarch64'", manifest)
+        self.assertIn("liblgpio1", control)
 
 
 if __name__ == "__main__":

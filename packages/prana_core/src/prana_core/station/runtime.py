@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import time
 import json
+import io
 import threading
+import inspect
+import wave
+import signal
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
@@ -14,6 +18,7 @@ from prana_core.pipeline.orchestrator import PipelineOrchestrator, PipelineState
 from prana_core.audio.base import AudioBackend
 from prana_core.audio.capabilities import capability_hash, normalize_audio_devices
 from prana_core.station.client import StationApiClient
+from prana_core.station.ptt import NullPttController, PttController
 
 logger = get_logger(__name__)
 
@@ -30,6 +35,7 @@ class StationRuntime:
         config: AppConfig,
         client: StationApiClient,
         audio_backend_factory: Callable[[], AudioBackend],
+        ptt_controller: PttController | None = None,
     ):
         self.config = config
         self.client = client
@@ -50,6 +56,7 @@ class StationRuntime:
         self._command_failed_generation = 0
         self._command_error: str | None = None
         self._audio_backend_factory = audio_backend_factory
+        self._ptt_controller = ptt_controller or NullPttController()
         self._desired_running = False
         self._tx_active = False
         self._tx_state = "idle"
@@ -265,6 +272,9 @@ class StationRuntime:
             "tx_job_id": self._tx_job_id,
             "active_tx_audio_device_id": self._tx_device_id if self._tx_active else "",
             "tx_error": self._tx_error,
+            "ptt_mode": getattr(self._ptt_controller, "mode", "manual"),
+            "ptt_ready": bool(getattr(self._ptt_controller, "ready", True)),
+            "ptt_error": getattr(self._ptt_controller, "error", None),
         }
 
     def _save_tx_files(self, job: dict, source: bytes, output: bytes, status: str, error: str | None = None) -> None:
@@ -284,6 +294,108 @@ class StationRuntime:
         output_path.write_bytes(output)
         result_path.write_text(json.dumps({**job, "status": status, "error": error}, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
 
+    def _play_tx_audio(self, output: bytes, device_index: int) -> None:
+        try:
+            with wave.open(io.BytesIO(output), "rb") as wav_file:
+                duration_seconds = wav_file.getnframes() / wav_file.getframerate()
+        except (wave.Error, ZeroDivisionError) as exc:
+            raise RuntimeError("TX_AUDIO_INVALID") from exc
+        if duration_seconds > 120.0:
+            raise RuntimeError("TX_OUTPUT_TOO_LONG")
+        player = self._audio_backend_factory()
+        play = getattr(player, "play_wav", None)
+        if not callable(play):
+            raise RuntimeError("Audio output is not supported on this Station")
+        stop_event = threading.Event()
+        completed = threading.Event()
+        playback_error: list[BaseException] = []
+        release_lock = threading.Lock()
+        released = False
+        asserted_at: float | None = None
+        watchdog_expired = False
+
+        def release_ptt() -> None:
+            nonlocal released
+            with release_lock:
+                if released:
+                    return
+                released = True
+            self._ptt_controller.release()
+
+        def watchdog_release() -> None:
+            nonlocal watchdog_expired
+            watchdog_expired = True
+            stop_event.set()
+            logger.error(
+                "PTT watchdog expired",
+                extra={"watchdog_seconds": watchdog_seconds},
+            )
+            release_ptt()
+
+        def playback() -> None:
+            try:
+                parameters = inspect.signature(play).parameters
+                if "stop_event" in parameters:
+                    play(output, device_index, stop_event=stop_event)
+                else:
+                    play(output, device_index)
+            except BaseException as exc:
+                playback_error.append(exc)
+            finally:
+                completed.set()
+
+        ptt_config = getattr(getattr(self, "config", None), "ptt", None)
+        watchdog_seconds = float(getattr(ptt_config, "watchdog_seconds", 122.0))
+        watchdog = threading.Timer(watchdog_seconds, watchdog_release)
+        watchdog.daemon = True
+        try:
+            self._ptt_controller.engage()
+            asserted_at = time.monotonic()
+            watchdog.start()
+            stop_tx = getattr(self, "_stop_tx", threading.Event())
+            key_up_seconds = float(getattr(ptt_config, "key_up_delay_ms", 0)) / 1000
+            tail_seconds = float(getattr(ptt_config, "tail_delay_ms", 0)) / 1000
+            if stop_tx.wait(key_up_seconds):
+                raise RuntimeError("TX_PLAYBACK_CANCELLED")
+            worker = threading.Thread(
+                target=playback,
+                name="station-tx-playback",
+                daemon=True,
+            )
+            worker.start()
+            deadline = time.monotonic() + max(
+                0.0,
+                watchdog_seconds - key_up_seconds,
+            )
+            while not completed.wait(0.1):
+                if stop_tx.is_set() or time.monotonic() >= deadline:
+                    stop_event.set()
+                    worker.join(timeout=1.0)
+                    raise RuntimeError("TX_PLAYBACK_TIMEOUT")
+            if playback_error:
+                raise playback_error[0]
+            if time.monotonic() + tail_seconds > deadline:
+                stop_event.set()
+                raise RuntimeError("TX_PLAYBACK_TIMEOUT")
+            if stop_tx.wait(tail_seconds):
+                raise RuntimeError("TX_PLAYBACK_CANCELLED")
+        finally:
+            stop_event.set()
+            watchdog.cancel()
+            release_ptt()
+            logger.info(
+                "TX playback finished",
+                extra={
+                    "audio_duration_seconds": round(duration_seconds, 3),
+                    "ptt_asserted_seconds": (
+                        round(time.monotonic() - asserted_at, 3)
+                        if asserted_at is not None
+                        else 0.0
+                    ),
+                    "watchdog_expired": watchdog_expired,
+                },
+            )
+
     def _tx_loop(self) -> None:
         if not callable(getattr(self.client, "claim_tx_job", None)):
             return
@@ -300,6 +412,10 @@ class StationRuntime:
             source = b""
             output = b""
             try:
+                if not self._ptt_controller.ready:
+                    self._tx_state = "idle"
+                    self._tx_error = self._ptt_controller.error or "PTT_UNAVAILABLE"
+                    continue
                 job = self.client.claim_tx_job()
                 if not job:
                     continue
@@ -309,22 +425,38 @@ class StationRuntime:
                 self._tx_error = None
                 source = self.client.download_tx_audio(self._tx_job_id, "source")
                 output = self.client.download_tx_audio(self._tx_job_id, "output")
-                self.orchestrator.stop()
-                deadline = time.monotonic() + 10
-                while self.orchestrator.state != PipelineState.IDLE and time.monotonic() < deadline:
-                    time.sleep(0.05)
-                if self.orchestrator.state != PipelineState.IDLE:
+                pause_error: list[BaseException] = []
+                pause_done = threading.Event()
+                pause_started_at = time.monotonic()
+
+                def pause_capture() -> None:
+                    try:
+                        self.orchestrator.pause_capture_for_tx()
+                    except BaseException as exc:
+                        pause_error.append(exc)
+                    finally:
+                        pause_done.set()
+
+                threading.Thread(target=pause_capture, daemon=True).start()
+                if not pause_done.wait(7.0):
+                    raise RuntimeError("RX did not pause before TX")
+                if pause_error or self.orchestrator.state != PipelineState.PAUSED:
                     raise RuntimeError("RX did not stop before TX")
+                logger.info(
+                    "RX capture paused for TX",
+                    extra={
+                        "tx_job_id": self._tx_job_id,
+                        "rx_pause_ms": round(
+                            (time.monotonic() - pause_started_at) * 1000, 1
+                        ),
+                    },
+                )
                 self.client.update_tx_job(self._tx_job_id, "transmitting")
                 self._tx_state = "transmitting"
                 if self._tx_device_id and self._tx_device_id not in self._device_indices:
                     raise RuntimeError("TX_AUDIO_DEVICE_UNAVAILABLE")
                 device_index = self._device_indices.get(self._tx_device_id, -1)
-                player = self._audio_backend_factory()
-                play = getattr(player, "play_wav", None)
-                if not callable(play):
-                    raise RuntimeError("Audio output is not supported on this Station")
-                play(output, device_index)
+                self._play_tx_audio(output, device_index)
                 self._save_tx_files(job, source, output, "completed")
                 self.client.update_tx_job(self._tx_job_id, "completed")
                 self._tx_state = "completed"
@@ -356,14 +488,35 @@ class StationRuntime:
             finally:
                 if self._tx_active:
                     self._tx_active = False
-                    if self._desired_running and self.orchestrator.state in {PipelineState.IDLE, PipelineState.ERROR}:
-                        self.orchestrator.start()
+                    if self._desired_running and self.orchestrator.state == PipelineState.PAUSED:
+                        try:
+                            self.orchestrator.resume_capture_after_tx()
+                        except Exception:
+                            logger.exception("RX resume after TX failed")
+                    elif not self._desired_running and self.orchestrator.state == PipelineState.PAUSED:
+                        self.orchestrator.stop()
                 if self._tx_state == "completed":
                     time.sleep(0.5)
                     self._tx_state = "idle"
                     self._tx_job_id = ""
 
     def run_forever(self) -> None:
+        shutdown_requested = threading.Event()
+        previous_handlers: dict[int, object] = {}
+
+        def request_shutdown(signum, _frame) -> None:
+            logger.info("Station shutdown requested", extra={"signal": signum})
+            shutdown_requested.set()
+            self._stop_tx.set()
+            try:
+                self._ptt_controller.release()
+            except Exception:
+                logger.exception("Failed to release PTT during signal handling")
+
+        if threading.current_thread() is threading.main_thread():
+            for signum in (signal.SIGINT, signal.SIGTERM):
+                previous_handlers[signum] = signal.getsignal(signum)
+                signal.signal(signum, request_shutdown)
         next_poll = 0.0
         next_heartbeat = 0.0
         tx_thread = threading.Thread(target=self._tx_loop, name="station-tx", daemon=True)
@@ -373,7 +526,7 @@ class StationRuntime:
                 self._scan_capabilities(force=True)
             except Exception as exc:
                 logger.warning("Initial capability scan failed: %s", exc)
-            while True:
+            while not shutdown_requested.is_set():
                 now = time.monotonic()
                 if now >= next_poll:
                     try:
@@ -403,3 +556,6 @@ class StationRuntime:
             self._stop_tx.set()
             tx_thread.join(timeout=5)
             self.orchestrator.shutdown()
+            self._ptt_controller.close()
+            for signum, handler in previous_handlers.items():
+                signal.signal(signum, handler)

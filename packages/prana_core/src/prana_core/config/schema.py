@@ -31,6 +31,7 @@ class VADConfig(BaseModel):
     threshold: float = 0.5
     energy_threshold: int = 500
     silero_model_path: str = ""
+    software_gain_db: float = Field(default=0.0, ge=0.0, le=6.0)
 
 
 class BackendConfig(BaseModel):
@@ -44,6 +45,15 @@ class TranslationConfig(BaseModel):
     enabled: bool = True
     source_language: str = "auto"
     target_language: str = "en"
+
+
+class PttConfig(BaseModel):
+    enabled: bool = False
+    gpio_pin: int = Field(default=17, ge=0)
+    active_high: bool = True
+    key_up_delay_ms: int = Field(default=400, ge=0, le=5000)
+    tail_delay_ms: int = Field(default=300, ge=0, le=5000)
+    watchdog_seconds: float = Field(default=122.0, gt=0, le=300)
 
 
 class LocalStorageConfig(BaseModel):
@@ -67,6 +77,7 @@ class AppConfig(BaseModel):
 
     backend: BackendConfig = Field(default_factory=BackendConfig)
     translation: TranslationConfig = Field(default_factory=TranslationConfig)
+    ptt: PttConfig = Field(default_factory=PttConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
 
     @classmethod

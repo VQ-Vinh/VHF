@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Callable
+import threading
 import io
 import wave
 
@@ -302,7 +303,12 @@ class WASAPIBackend(AudioBackend):
             pa.terminate()
 
     @classmethod
-    def play_wav(cls, data: bytes, device_index: int = -1) -> None:
+    def play_wav(
+        cls,
+        data: bytes,
+        device_index: int = -1,
+        stop_event: threading.Event | None = None,
+    ) -> None:
         import pyaudiowpatch as paw
 
         with wave.open(io.BytesIO(data), "rb") as source:
@@ -322,6 +328,8 @@ class WASAPIBackend(AudioBackend):
                     kwargs["output_device_index"] = device_index
                 stream = pa.open(**kwargs)
                 while chunk := source.readframes(4096):
+                    if stop_event is not None and stop_event.is_set():
+                        break
                     stream.write(chunk)
             except AudioDeviceNotFoundError:
                 raise

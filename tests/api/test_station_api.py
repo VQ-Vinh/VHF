@@ -180,6 +180,30 @@ class StationApiTests(unittest.TestCase):
         self.assertEqual(claim.status_code, 200, claim.text)
         return value
 
+    def heartbeat(self, **overrides):
+        path = f"/v1/stations/{self.station_id}/heartbeat"
+        payload = {
+            "capture_state": "listening",
+            "session_id": "session-1",
+            "sequence": 0,
+            "observed_generation": 0,
+            "target_language": "en",
+            "active_capture_mode": "device",
+            "active_audio_device_id": "usb-input",
+            "tx_state": "idle",
+            "tx_job_id": "",
+            "active_tx_audio_device_id": "usb-output",
+            "ptt_mode": "gpio",
+            "ptt_ready": True,
+        }
+        payload.update(overrides)
+        response = self.client.post(
+            path,
+            json=payload,
+            headers=self.signed_headers("POST", path, payload),
+        )
+        self.assertEqual(response.status_code, 204, response.text)
+
     def provision(self, activation_code: str = "ABCDEFGH23456789"):
         path = "/v1/station-provisions"
         payload = {
@@ -451,6 +475,9 @@ class StationApiTests(unittest.TestCase):
             "observed_generation": 1,
             "target_language": "vi",
             "error": None,
+            "ptt_mode": "unavailable",
+            "ptt_ready": False,
+            "ptt_error": "PTT_UNAVAILABLE",
         }
         response = self.client.post(
             heartbeat_path,
@@ -461,6 +488,9 @@ class StationApiTests(unittest.TestCase):
         station = self.client.get("/v1/stations").json()[0]
         self.assertEqual(station["observed_generation"], 1)
         self.assertEqual(station["sequence"], 4)
+        self.assertEqual(station["ptt_mode"], "unavailable")
+        self.assertFalse(station["ptt_ready"])
+        self.assertEqual(station["ptt_error"], "PTT_UNAVAILABLE")
 
         self.assertEqual(self.client.delete(f"/v1/stations/{self.station_id}").status_code, 204)
         denied = self.client.get(
@@ -929,6 +959,7 @@ class StationApiTests(unittest.TestCase):
         self.repo.update_station_desired_state(
             self.identity.uid, self.station_id, {"running": True}
         )
+        self.heartbeat()
         archive = Archive()
         request_id = str(uuid.uuid4())
         with patch("services.prana_api.main.get_processor", return_value=Processor()), patch(
@@ -1038,6 +1069,7 @@ class StationApiTests(unittest.TestCase):
             self.repo.update_station_desired_state(
                 self.identity.uid, self.station_id, {"running": True}
             )
+            self.heartbeat()
             draft = self.client.post(
                 f"/v1/stations/{self.station_id}/tx/drafts",
                 data={"target_language": "vi"},
@@ -1060,6 +1092,7 @@ class StationApiTests(unittest.TestCase):
         self.repo.update_station_desired_state(
             self.identity.uid, self.station_id, {"running": True}
         )
+        self.heartbeat()
         self.repo.plans["free"] = self.repo.plans["free"].model_copy(
             update={"tx_max_recording_seconds": 5}
         )
@@ -1086,6 +1119,72 @@ class StationApiTests(unittest.TestCase):
         self.assertEqual(rejected.json()["detail"]["code"], "TX_AUDIO_TOO_LONG")
         self.assertEqual(rejected.json()["detail"]["max_seconds"], 5)
         self.assertIsNone(self.tx_repo.get(rejected_id))
+        self.assertEqual(len(archive.audio), 1)
+
+    def test_tx_output_over_120_seconds_is_not_archived_or_queued(self):
+        class LongSynthesizer:
+            def synthesize_with_over(self, _text, _target_language):
+                return wav_bytes(120.01)
+
+        self.create_and_claim()
+        self.repo.update_station_desired_state(
+            self.identity.uid, self.station_id, {"running": True}
+        )
+        self.heartbeat()
+        archive = Archive()
+        request_id = str(uuid.uuid4())
+        with patch("services.prana_api.main.get_processor", return_value=Processor()), patch(
+            "services.prana_api.main.get_tx_synthesizer",
+            return_value=LongSynthesizer(),
+        ), patch("services.prana_api.main.get_archive", return_value=archive):
+            draft = self.client.post(
+                f"/v1/stations/{self.station_id}/tx/drafts",
+                data={"target_language": "vi"},
+                files={"audio": ("phone.wav", wav_bytes(), "audio/wav")},
+                headers={"X-Request-ID": request_id},
+            )
+            confirmed = self.client.post(
+                f"/v1/stations/{self.station_id}/tx/drafts/{request_id}/confirm",
+                json={"translation": draft.json()["translation"]},
+            )
+
+        self.assertEqual(confirmed.status_code, 422, confirmed.text)
+        self.assertEqual(confirmed.json()["detail"]["code"], "TX_OUTPUT_TOO_LONG")
+        self.assertEqual(self.tx_repo.get(request_id)["status"], "failed")
+        self.assertFalse(self.tx_repo.get(request_id)["output_available"])
+        self.assertFalse(any("/output/" in key for key in archive.audio))
+
+    def test_tx_create_idempotency_reuses_result_and_rejects_changed_audio(self):
+        self.create_and_claim()
+        self.repo.update_station_desired_state(
+            self.identity.uid, self.station_id, {"running": True}
+        )
+        self.heartbeat()
+        archive = Archive()
+        request_id = str(uuid.uuid4())
+        Processor.calls = 0
+        with patch("services.prana_api.main.get_processor", return_value=Processor()), patch(
+            "services.prana_api.main.get_archive", return_value=archive
+        ):
+            def create(audio_bytes):
+                return self.client.post(
+                    f"/v1/stations/{self.station_id}/tx/drafts",
+                    data={"target_language": "vi"},
+                    files={"audio": ("phone.wav", audio_bytes, "audio/wav")},
+                    headers={"X-Request-ID": request_id},
+                )
+
+            first = create(wav_bytes())
+            repeated = create(wav_bytes())
+            conflict = create(wav_bytes(1.1))
+
+        self.assertEqual(first.status_code, 200, first.text)
+        self.assertEqual(repeated.status_code, 200, repeated.text)
+        self.assertEqual(first.json()["id"], repeated.json()["id"])
+        self.assertEqual(first.json()["audio_filename"], repeated.json()["audio_filename"])
+        self.assertEqual(Processor.calls, 1)
+        self.assertEqual(conflict.status_code, 409, conflict.text)
+        self.assertEqual(conflict.json()["detail"]["code"], "IDEMPOTENCY_CONFLICT")
         self.assertEqual(len(archive.audio), 1)
 
 

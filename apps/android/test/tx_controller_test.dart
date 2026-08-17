@@ -36,6 +36,12 @@ class _OfflineTxRepository implements TxRepository {
   @override
   Future<TxDraft> retryTransmission(TxDraft draft) async =>
       draft.copyWith(status: 'queued');
+
+  @override
+  Future<String?> activeDraftId(String stationId) async => null;
+
+  @override
+  Future<void> clearActiveDraft(String stationId) async {}
 }
 
 class _LostConfirmRepository implements TxRepository {
@@ -83,6 +89,12 @@ class _LostConfirmRepository implements TxRepository {
     retryCalls += 1;
     return this.draft('queued');
   }
+
+  @override
+  Future<String?> activeDraftId(String stationId) async => null;
+
+  @override
+  Future<void> clearActiveDraft(String stationId) async {}
 }
 
 void main() {
@@ -251,6 +263,31 @@ void main() {
     );
     pending.startRecording();
     expect(pending.state.phase, TxPhase.idle);
+  });
+
+  test('PTT unavailable blocks TX until Station reports ready', () {
+    final subject = controller();
+
+    subject.setStationAvailability(
+      online: true,
+      running: true,
+      commandPending: false,
+      pttReady: false,
+    );
+
+    expect(subject.state.failure, TxFailure.pttUnavailable);
+    expect(subject.canStartRecording, isFalse);
+    expect(subject.canRetryTransmission, isFalse);
+
+    subject.setStationAvailability(
+      online: true,
+      running: true,
+      commandPending: false,
+      pttReady: true,
+    );
+
+    expect(subject.state.phase, TxPhase.idle);
+    expect(subject.canStartRecording, isTrue);
   });
 
   test('processing failure can be reset and retried', () async {
