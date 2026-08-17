@@ -1,9 +1,9 @@
 # Kiến trúc Android và Station
 
 > **Phạm vi hiện tại:** Hệ thống hỗ trợ RX hoàn chỉnh và TX Phase 2.1 từ
-> Android đến Cloud và audio output của Station. Station thực thi interlock
-> half-duplex bằng phần mềm nhưng chưa điều khiển GPIO/RF PTT, chưa sensing
-> channel busy và chưa phát qua máy VHF thật.
+> Android đến Cloud và audio output của Station. Raspberry Pi Station đã tích
+> hợp GPIO17 PTT với watchdog; Laptop Station dùng manual PTT. Hệ thống chưa
+> sensing channel busy và đường RF vẫn cần kiểm thử theo phần cứng VHF thực tế.
 
 ## Tổng quan
 
@@ -21,7 +21,9 @@ flowchart LR
 
     VHF[VHF RX audio] --> ST
     ST --> OUT[TX audio output]
-    OUT -. Phase sau: GPIO/PTT + RF .-> VHFTX[VHF TX]
+    ST --> PTT[GPIO17 PTT on Pi / manual on Laptop]
+    OUT --> VHFTX[VHF TX]
+    PTT --> VHFTX
 ```
 
 - Android là client đăng nhập của người dùng, dùng Firebase Authentication.
@@ -148,9 +150,11 @@ audio. Polling/rebuild không tự phát lại log cũ.
 
 ### 1. Tạo draft
 
-App thu WAV mono từ microphone, giới hạn 60 giây và gửi multipart cùng
-`target_language` và idempotency key. API chỉ chấp nhận nếu Station thuộc owner,
-active và `desired_state.running == true`.
+App thu WAV mono từ microphone theo giới hạn entitlement và tạo `request_id`
+ngay khi bắt đầu giữ HTT. Multipart retry luôn dựng lại body từ file với cùng
+`request_id`. API atomically reserve trạng thái `processing` trước Gemini; cùng
+ID/cùng payload trả cùng draft, cùng ID/khác payload trả `IDEMPOTENCY_CONFLICT`.
+API chỉ chấp nhận nếu Station thuộc owner, active, running, online và PTT ready.
 
 API validate WAV, chạy Gemini để tạo transcript/bản dịch và archive source WAV.
 Giai đoạn này chưa gọi TTS. Draft ở `review_ready` chứa:
@@ -163,12 +167,14 @@ Giai đoạn này chưa gọi TTS. Draft ở `review_ready` chứa:
 ### 2. Confirm và tạo output
 
 App gửi nội dung translation cuối sau review. API atomically reserve active TX
-slot và chuyển draft sang `synthesizing`. Backend lưu cả bản AI gốc và nội dung
+slot và chuyển draft sang `synthesizing` với lease 180 giây. Backend lưu cả bản AI gốc và nội dung
 cuối, đồng thời đánh dấu `translation_edited` khi hai giá trị khác nhau.
 
 Cloud TTS tổng hợp nội dung cuối thành LINEAR16. Backend chuẩn hóa format, chèn
 khoảng lặng khoảng 300 ms và nối clip “Over” tiếng Anh. Output WAV và metadata
-được archive trước khi job chuyển sang `queued`.
+được archive trước khi job chuyển sang `queued`. Final WAV gồm cả khoảng lặng và
+“Over” không được vượt 120 giây. Lease hết hạn chuyển job sang `failed` với
+`TX_SYNTHESIS_TIMEOUT`; kết quả đến muộn không thể hồi sinh job.
 
 Confirm lặp cùng nội dung trả job hiện tại và không tạo WAV/job thứ hai. Confirm
 lặp với nội dung khác sau khi draft đã rời review bị từ chối. Nếu TTS hoặc
@@ -184,11 +190,14 @@ TX worker thực hiện:
 
 1. claim job và lưu định danh cục bộ;
 2. tải source/output WAV;
-3. dừng RX hoàn toàn;
-4. báo `transmitting`;
+3. pause capture RX mà không chờ request Gemini RX đang xử lý;
+4. kích PTT, chờ key-up 400 ms và báo `transmitting`;
 5. phát output WAV qua stable output device ID;
-6. lưu file/receipt và báo `completed` hoặc `failed`;
-7. chỉ resume RX nếu desired state mới nhất vẫn running.
+6. giữ tail 300 ms, nhả PTT, lưu receipt và báo terminal state;
+7. chỉ resume capture RX nếu desired state mới nhất vẫn running.
+
+Watchdog tuyệt đối 122 giây độc lập audio driver sẽ hạ GPIO và yêu cầu dừng
+player khi playback bị treo. PTT cũng được nhả khi shutdown, SIGTERM hoặc exception.
 
 Nếu người dùng STOP trong lúc transmitting, Station phát hết job đã bắt đầu
 nhưng không resume RX. Nếu download, device hoặc playback lỗi, Station báo
@@ -262,7 +271,9 @@ IAP, allowlist, CSRF và transaction/batch cùng audit.
 
 Khách hàng chạy Station Windows bằng `enable_station_api.bat`; mặc định dùng
 Cloud API và không yêu cầu `gcloud`/ADC. `-LocalApi` chỉ dành cho developer.
-Linux/Pi dùng cùng Station contract, nhưng GPIO PTT chưa được triển khai.
+Linux/Pi dùng ALSA/`arecord` cho RX và GPIO17 active-high cho PTT. Nếu GPIO init
+lỗi, RX/heartbeat vẫn chạy nhưng `ptt_ready=false` ngăn claim TX. Laptop dùng
+manual PTT và không điều khiển GPIO.
 
 ## Ranh giới Phase 2.1 và Phase tiếp theo
 
@@ -272,16 +283,15 @@ Linux/Pi dùng cùng Station contract, nhưng GPIO PTT chưa được triển kh
 - transcript/translation review và chỉnh nội dung;
 - Cloud TTS + silence + “Over”;
 - atomic queue, manual retry và half-duplex software interlock;
-- output playback trên Laptop Station;
+- output playback trên Laptop và Raspberry Pi Station;
+- GPIO17 PTT, key-up/tail và software watchdog trên Raspberry Pi;
 - lưu trữ và History RX/TX.
 
 Chưa có:
 
-- GPIO/serial PTT control;
-- pre-key/post-key timing cho VHF thật;
 - channel-busy sensing;
 - RF transmission và kiểm thử hai bộ VHF;
-- watchdog phần cứng bảo đảm nhả PTT khi runtime lỗi.
+- watchdog phần cứng độc lập với process/nguồn điện.
 
 Kịch bản kiểm thử tương ứng nằm tại
 [android-web-admin-test-scenarios.md](android-web-admin-test-scenarios.md).

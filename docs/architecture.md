@@ -7,7 +7,7 @@ hai dịch vụ Cloud Run.
 
 ```text
 apps/windows      Qt Desktop + Windows Station + WASAPI + Credential Manager
-apps/linux        Raspberry Pi Station headless + PulseAudio + Secret Service
+apps/linux        Raspberry Pi Station headless + ALSA/arecord + GPIO17 PTT
 apps/android      Flutter UI, Firebase Auth và Firestore realtime
        │
        └──────────── packages/prana_core
@@ -32,9 +32,13 @@ qasync hay qtawesome.
   trạng thái Station thuộc owner.
 - API/Admin là các deployment độc lập và không import client packages.
 
-RX và TX dùng worker riêng tại Station. TX worker claim job từ API, dừng RX qua
-software interlock, phát final WAV trên output được chọn và chỉ resume RX khi
-desired state vẫn running. Phase hiện tại chưa điều khiển GPIO/RF PTT.
+RX và TX dùng worker riêng tại Station. Windows RX dùng WASAPI; Raspberry Pi RX
+dùng ALSA qua tiến trình `arecord`, không dùng callback PortAudio. TX worker chỉ
+claim khi Station running và PTT ready, pause riêng capture RX (không chờ các
+request Gemini đang xử lý), kích PTT, phát final WAV rồi chỉ resume RX khi desired
+state vẫn running. Raspberry Pi dùng GPIO17 active-high với key-up 400 ms, tail
+300 ms và watchdog tuyệt đối 122 giây; Laptop dùng manual PTT. Hệ thống chưa có
+channel-busy sensing.
 
 Client không chứa service-account JSON và không gọi Vertex AI hoặc Cloud Storage
 trực tiếp. Firebase Web API key/OAuth client ID trong Windows hoặc Android là

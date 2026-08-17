@@ -2,8 +2,8 @@
 
 PRANA ELEX dùng kiến trúc Cloud-first. Windows Laptop và Raspberry Pi chạy cùng
 Station Runtime; Android điều khiển RX, thu HTT cho TX, review kết quả và xem
-History. TX Phase 2.1 phát WAV tại audio output Station, chưa kích GPIO/PTT hoặc
-phát RF qua VHF thật.
+History. Raspberry Pi Station điều khiển GPIO17 cho PTT; Laptop Station giữ chế
+độ PTT thủ công. Hệ thống chưa có channel-busy sensing.
 
 ```mermaid
 flowchart LR
@@ -20,8 +20,10 @@ flowchart LR
     RX -->|Signed RX WAV| API
     TX -->|Claim/status| API
     API -->|Final TX WAV| TX
+    TX --> PTT[PTT controller\nGPIO17 on Pi / manual on Laptop]
     TX --> OUT[Selected audio output]
-    OUT -. Phase sau: GPIO/PTT .-> VHF_TX[VHF transmitter]
+    PTT --> VHF_TX[VHF transmitter]
+    OUT --> VHF_TX
 
     subgraph CLOUD[PRANA Cloud]
         API[Public API]
@@ -55,8 +57,9 @@ flowchart LR
    người dùng được review và chỉnh translation.
 4. **TX confirm:** API tổng hợp nội dung cuối, nối khoảng lặng và “Over”, archive
    output rồi atomically đưa job vào queue.
-5. **TX playback:** Station chỉ claim khi running, dừng RX, phát final WAV, báo
-   completed/failed rồi chỉ resume RX nếu desired state vẫn running.
+5. **TX playback:** Station chỉ claim khi running và PTT ready, pause capture RX,
+   kích PTT, chờ key-up 400 ms, phát final WAV, giữ tail 300 ms rồi nhả PTT.
+   Watchdog 122 giây bảo đảm nhả PTT; RX chỉ resume nếu desired state vẫn running.
 6. **Điều khiển:** Android gửi Start/Stop, ngôn ngữ, audio settings và retry qua
    REST. Station poll desired state và gửi heartbeat riêng cho RX/TX.
 7. **History:** một màn History có tab RX/TX; API áp dụng cùng timezone,
@@ -71,5 +74,5 @@ flowchart LR
 - API xác thực ownership ở mọi endpoint audio/history và quản lý idempotency,
   active TX slot cùng atomic claim.
 - Web Admin là deployment riêng, được bảo vệ bởi IAP, allowlist, CSRF và audit.
-- Phase 2.1 chỉ điều phối/phát audio bằng phần mềm; GPIO PTT, channel-busy
-  sensing, RF và watchdog phần cứng thuộc phase tiếp theo.
+- GPIO17 PTT đã được tích hợp ở Raspberry Pi runtime. Laptop dùng manual PTT.
+  Channel-busy sensing và việc xác nhận đường RF/mạch cách ly vẫn nằm ngoài phạm vi.

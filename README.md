@@ -13,13 +13,14 @@ VHF → USB SoundCard → Station → Cloud AI → Android App
 Luồng TX hiện tại:
 
 ```text
-Android Hold-to-talk → Cloud AI/TTS → Station → audio output
+Android Hold-to-talk → Cloud AI/TTS → Station → GPIO17 PTT + audio output → VHF
 ```
 
-Station thực thi interlock half-duplex bằng phần mềm: dừng RX trước khi phát TX
-và chỉ tiếp tục RX nếu Station vẫn được START. Phiên bản hiện tại chưa tự điều
-khiển GPIO/RF PTT và chưa sensing channel busy; khi kiểm thử với VHF thật, PTT
-vẫn cần được kích thủ công.
+Station thực thi interlock half-duplex bằng phần mềm: tạm dừng capture RX, kích
+PTT, phát TX và chỉ tiếp tục RX nếu Station vẫn được START. Raspberry Pi có thể
+điều khiển PTT active-high bằng GPIO17; Laptop Station dùng PTT thủ công. Hệ
+thống chưa sensing channel busy và phần RF vẫn phải được kiểm thử theo cấu hình
+VHF/mạch cách ly thực tế.
 
 ## Mục lục
 
@@ -387,8 +388,11 @@ Station dừng RX trước khi playback và chỉ resume RX nếu desired state 
 START. Job lỗi không tự phát lại để tránh truyền trùng; chỉ nhấn **Thử lại** khi
 Station đã online và START trở lại.
 
-TX hiện phát qua audio output đã chọn. Khi thử với VHF thật mà chưa có GPIO PTT,
-người vận hành phải kích PTT thủ công trước lúc Station phát audio.
+Trên Raspberry Pi đã bật cấu hình PTT, Station tạm dừng capture RX, đưa GPIO17
+lên HIGH, chờ key-up 400 ms, phát audio, giữ tail 300 ms rồi hạ GPIO. Watchdog
+122 giây luôn nhả PTT nếu audio driver bị treo. Nếu GPIO không khởi tạo được,
+RX và heartbeat vẫn chạy nhưng App khóa TX và báo `PTT_UNAVAILABLE`. Laptop
+Station tiếp tục dùng PTT thủ công; hệ thống chưa có channel-busy sensing.
 
 ### 6. Xem lịch sử
 
