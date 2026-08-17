@@ -61,9 +61,17 @@ final stationClockProvider = StreamProvider<DateTime>((ref) {
 
 final apiHealthProvider = StreamProvider<bool>((ref) async* {
   final api = ref.watch(apiProvider);
+  var retryDelay = const Duration(seconds: 1);
   while (true) {
-    yield await api.health();
-    await Future<void>.delayed(const Duration(seconds: 5));
+    final online = await api.health();
+    yield online;
+    if (online) {
+      retryDelay = const Duration(seconds: 1);
+      await Future<void>.delayed(const Duration(seconds: 5));
+    } else {
+      await Future<void>.delayed(retryDelay);
+      retryDelay = _nextRetryDelay(retryDelay);
+    }
   }
 });
 
@@ -108,30 +116,51 @@ final liveResultsProvider = StreamProvider.autoDispose.family<
   if (user == null) return Stream.value(const []);
   final api = ref.watch(apiProvider);
   final limit = ref.watch(planEntitlementsProvider).liveLogLimit;
-  return _pollStationLiveResults(
-    api,
-    key.stationId,
-    timezoneOffsetMinutes: key.timezoneOffsetMinutes,
-    limit: limit <= 0 ? 1000 : limit,
+  return resilientPoll<List<TranslationResult>>(
+    fetch: () async {
+      final results = await api.stationLiveResults(
+        key.stationId,
+        timezoneOffsetMinutes: key.timezoneOffsetMinutes,
+        limit: limit <= 0 ? 1000 : limit,
+      );
+      return liveTranslationsForLocalDay(results, DateTime.now());
+    },
+    pollInterval: const Duration(seconds: 2),
   );
 });
 
-Stream<List<TranslationResult>> _pollStationLiveResults(
-  PranaApi api,
-  String stationId, {
-  required int timezoneOffsetMinutes,
-  required int limit,
+Stream<T> resilientPoll<T>({
+  required Future<T> Function() fetch,
+  Duration pollInterval = const Duration(seconds: 2),
+  Duration initialRetryDelay = const Duration(seconds: 1),
+  Duration maxRetryDelay = const Duration(seconds: 5),
 }) async* {
+  var hasValue = false;
+  var retryDelay = initialRetryDelay;
   while (true) {
-    final results = await api.stationLiveResults(
-      stationId,
-      timezoneOffsetMinutes: timezoneOffsetMinutes,
-      limit: limit,
-    );
-    yield liveTranslationsForLocalDay(results, DateTime.now());
-    await Future<void>.delayed(const Duration(seconds: 2));
+    try {
+      final value = await fetch();
+      hasValue = true;
+      retryDelay = initialRetryDelay;
+      yield value;
+      await Future<void>.delayed(pollInterval);
+    } catch (error, stackTrace) {
+      if (!hasValue) {
+        yield* Stream<T>.error(error, stackTrace);
+      }
+      await Future<void>.delayed(retryDelay);
+      retryDelay = _nextRetryDelay(retryDelay, maximum: maxRetryDelay);
+    }
   }
 }
+
+Duration _nextRetryDelay(
+  Duration current, {
+  Duration maximum = const Duration(seconds: 5),
+}) => Duration(
+  milliseconds:
+      (current.inMilliseconds * 2).clamp(1, maximum.inMilliseconds).toInt(),
+);
 
 final accountProvider = FutureProvider<Map<String, dynamic>>((ref) {
   final user = ref.watch(authStateProvider).value;

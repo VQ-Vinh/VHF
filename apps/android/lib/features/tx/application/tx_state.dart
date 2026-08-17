@@ -19,7 +19,11 @@ class TxState {
 
   bool get canChangeLanguage => phase == TxPhase.idle;
   bool get canStartRecording => phase == TxPhase.idle;
-  bool get requiresLeaveConfirmation => phase.isDraftActive;
+  bool get requiresLeaveConfirmation =>
+      phase == TxPhase.recording ||
+      phase == TxPhase.reviewReady ||
+      (phase == TxPhase.processing &&
+          (draft == null || draft!.status == 'review_ready'));
 
   TxState copyWith({
     TxPhase? phase,

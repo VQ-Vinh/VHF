@@ -13,6 +13,7 @@ VOICE_BY_LANGUAGE = {
     "ja": ("ja-JP", "ja-JP-Standard-A"),
     "ko": ("ko-KR", "ko-KR-Standard-A"),
 }
+MAX_TX_OUTPUT_SECONDS = 120.0
 
 
 def _pcm_from_wav(data: bytes) -> tuple[bytes, int, int, int]:
@@ -40,6 +41,14 @@ def append_over(main_wav: bytes, over_wav: bytes, silence_ms: int = 300) -> byte
         output.setframerate(rate)
         output.writeframes(main_pcm + silence + over_pcm)
     return target.getvalue()
+
+
+def wav_duration_seconds(data: bytes) -> float:
+    with wave.open(io.BytesIO(data), "rb") as source:
+        rate = source.getframerate()
+        if rate <= 0:
+            raise ValueError("TX WAV has an invalid sample rate")
+        return source.getnframes() / rate
 
 
 class CloudTxSynthesizer:

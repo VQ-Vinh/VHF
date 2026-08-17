@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,6 +10,7 @@ import '../../core/theme.dart';
 import '../../core/widgets.dart';
 import '../../models/station.dart';
 import '../../providers.dart';
+import '../../services/prana_api.dart';
 import '../history/history_screen.dart';
 import 'translation_result_card.dart';
 import '../tx/application/api_tx_repository.dart';
@@ -34,7 +37,8 @@ bool canToggleLiveStation({
   bool commandFailed = false,
 }) => (online || running) && !busy && (!commandPending || commandFailed);
 
-class _LiveScreenState extends ConsumerState<LiveScreen> {
+class _LiveScreenState extends ConsumerState<LiveScreen>
+    with WidgetsBindingObserver {
   String? _dismissedProcessingError;
   late final TxController _txController;
   bool _requiresDiscardConfirmation = false;
@@ -43,6 +47,7 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _txController = TxController(
       stationId: widget.stationId,
       repository: ApiTxRepository(ref.read(apiProvider)),
@@ -56,6 +61,13 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
     });
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) {
+      _txController.cancelRecordingForBackground();
+    }
+  }
+
   void _onTxChanged() {
     final requiresDiscard = _txController.state.requiresLeaveConfirmation;
     if (requiresDiscard != _requiresDiscardConfirmation && mounted) {
@@ -66,6 +78,14 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
         if (mounted) _showTxReview();
       });
     }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _txController.removeListener(_onTxChanged);
+    _txController.dispose();
+    super.dispose();
   }
 
   Future<void> _showTxReview() async {
@@ -167,9 +187,15 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
             online: online,
             running: station.desired.running,
             commandPending: station.commandPending || controller.state.busy,
+            pttReady: station.pttReady,
           );
           _txController.setMaximumDuration(
             Duration(seconds: entitlements.txMaxRecordingSeconds),
+          );
+          unawaited(
+            _txController.restoreActiveTransmission(
+              stationJobId: station.txJobId,
+            ),
           );
         });
         final ux = controller.state;
@@ -181,13 +207,12 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
         final commandFailed =
             station.commandError != null &&
             station.commandFailedGeneration >= station.desired.generation;
-        final results = ref.watch(
-          liveResultsProvider((
-            stationId: widget.stationId,
-            localDate: localDateKey(now),
-            timezoneOffsetMinutes: now.timeZoneOffset.inMinutes,
-          )),
+        final resultsKey = (
+          stationId: widget.stationId,
+          localDate: localDateKey(now),
+          timezoneOffsetMinutes: now.timeZoneOffset.inMinutes,
         );
+        final results = ref.watch(liveResultsProvider(resultsKey));
         final items = results.value ?? const <TranslationResult>[];
         final detectedLanguage =
             items.isEmpty || items.first.language.isEmpty
@@ -201,6 +226,11 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
             !station.retrying &&
             (station.lastError?.isNotEmpty ?? false) &&
             _dismissedProcessingError != processingErrorKey;
+        void retryConnection() {
+          ref.invalidate(apiHealthProvider);
+          ref.invalidate(stationProvider(widget.stationId));
+          ref.invalidate(liveResultsProvider(resultsKey));
+        }
 
         final body = Column(
           children: [
@@ -249,13 +279,16 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
               count: items.length,
               limit: entitlements.liveLogLimit,
             ),
-            Expanded(child: _TranslationFeed(value: results)),
+            Expanded(
+              child: _TranslationFeed(value: results, onRetry: retryConnection),
+            ),
             TxLiveDock(
               controller: _txController,
               stationState: stationDisplayState,
               stationOnline: online,
               apiOnline: apiOnline,
               onReview: _showTxReview,
+              onConnectionRetry: retryConnection,
             ),
           ],
         );
@@ -313,13 +346,6 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
         );
       },
     );
-  }
-
-  @override
-  void dispose() {
-    _txController.removeListener(_onTxChanged);
-    _txController.dispose();
-    super.dispose();
   }
 }
 
@@ -780,8 +806,9 @@ class LiveFeedHeader extends ConsumerWidget {
 }
 
 class _TranslationFeed extends StatefulWidget {
-  const _TranslationFeed({required this.value});
+  const _TranslationFeed({required this.value, required this.onRetry});
   final AsyncValue<List<TranslationResult>> value;
+  final VoidCallback onRetry;
 
   @override
   State<_TranslationFeed> createState() => _TranslationFeedState();
@@ -835,10 +862,46 @@ class _TranslationFeedState extends State<_TranslationFeed> {
   Widget build(BuildContext context) => widget.value.when(
     loading: () => const _ResultSkeleton(),
     error:
-        (error, _) => EmptyState(
-          icon: Icons.cloud_off,
-          title: AppText.of(context, 'realtime_error'),
-          subtitle: '$error',
+        (error, _) => Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.cloud_off,
+                  size: 52,
+                  color: PranaTheme.brandBlue,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  AppText.of(context, 'realtime_error'),
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  AppText.of(
+                    context,
+                    error is PranaApiFailure
+                        ? error.messageKey
+                        : 'error_api_unreachable',
+                  ),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: PranaTheme.muted),
+                ),
+                const SizedBox(height: 18),
+                FilledButton.icon(
+                  key: const ValueKey('live-results-retry'),
+                  onPressed: widget.onRetry,
+                  icon: const Icon(Icons.refresh),
+                  label: Text(AppText.of(context, 'retry')),
+                ),
+              ],
+            ),
+          ),
         ),
     data: (items) {
       if (items.isNotEmpty && _visibleResultSignature == null) {

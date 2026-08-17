@@ -126,3 +126,54 @@ def test_tx_filename_sequence_is_daily_and_independent() -> None:
     assert repository.next_filename("station-1", created_at) == "20260805_155923_0001.wav"
     assert repository.next_filename("station-1", created_at) == "20260805_155923_0002.wav"
     assert repository.next_filename("station-2", created_at) == "20260805_155923_0001.wav"
+
+
+def test_processing_reservation_is_idempotent_and_rejects_changed_payload() -> None:
+    repository = MemoryTxRepository()
+    value = job()
+    value["status"] = "processing"
+
+    first, created = repository.reserve_processing(value, "hash-1")
+    repeated, repeated_created = repository.reserve_processing(value, "hash-1")
+
+    assert created is True
+    assert repeated_created is False
+    assert first["id"] == repeated["id"]
+    with pytest.raises(HTTPException) as error:
+        repository.reserve_processing(value, "hash-2")
+    assert error.value.detail["code"] == "IDEMPOTENCY_CONFLICT"
+
+
+def test_synthesis_lease_expiry_fails_job_and_releases_slot() -> None:
+    repository = MemoryTxRepository()
+    repository.create(job())
+    repository.begin_confirm("user-1", "station-1", "job-1", "Kênh 18")
+    repository.items["job-1"]["synthesis_lease_expires_at"] = (
+        datetime.now(timezone.utc) - timedelta(seconds=1)
+    )
+
+    expired = repository.expire_stale_active(
+        "station-1", False, datetime.now(timezone.utc)
+    )
+
+    assert expired["status"] == "failed"
+    assert expired["error"] == "TX_SYNTHESIS_TIMEOUT"
+    with pytest.raises(HTTPException):
+        repository.finish_confirm("user-1", "station-1", "job-1", "late.wav")
+    repository.create(job("job-2"))
+    assert repository.begin_confirm(
+        "user-1", "station-1", "job-2", "Kênh 19"
+    )["status"] == "synthesizing"
+
+
+def test_cancel_is_only_allowed_before_confirm() -> None:
+    repository = MemoryTxRepository()
+    repository.create(job())
+    repository.cancel("user-1", "station-1", "job-1")
+    assert repository.get("job-1")["status"] == "cancelled"
+
+    repository.create(job("job-2"))
+    repository.begin_confirm("user-1", "station-1", "job-2", "Kênh 18")
+    with pytest.raises(HTTPException) as error:
+        repository.cancel("user-1", "station-1", "job-2")
+    assert error.value.detail["code"] == "TX_INVALID_STATE"

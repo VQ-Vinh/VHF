@@ -28,7 +28,11 @@ from services.prana_api.google_services import (
     GeminiProcessor,
     station_audio_filename,
 )
-from services.prana_api.tx_audio import CloudTxSynthesizer
+from services.prana_api.tx_audio import (
+    MAX_TX_OUTPUT_SECONDS,
+    CloudTxSynthesizer,
+    wav_duration_seconds,
+)
 from services.prana_api.tx_repository import FirestoreTxRepository
 from services.prana_api.google_auth import (
     AuthRateLimiter,
@@ -1108,6 +1112,15 @@ def _require_tx_running(station: dict) -> None:
         raise api_error(409, "TX_NOT_STARTED", "Start the Station before using TX")
 
 
+def _require_tx_ready(station: dict) -> None:
+    now = datetime.now(timezone.utc)
+    last_seen = station.get("last_seen_at")
+    if last_seen is None or last_seen <= now - timedelta(seconds=20):
+        raise api_error(409, "STATION_OFFLINE", "Station is offline")
+    if not bool(station.get("ptt_ready", True)):
+        raise api_error(409, "PTT_UNAVAILABLE", "Station PTT is unavailable")
+
+
 def _reconcile_stale_tx(station: dict, station_id: str, tx_repo) -> dict | None:
     now = datetime.now(timezone.utc)
     last_seen = station.get("last_seen_at")
@@ -1130,12 +1143,9 @@ def create_tx_draft(
         raise api_error(422, "INVALID_REQUEST", "Unsupported target language")
     _account, plan = active_account(identity, repo)
     station = _owned_tx_station(repo, identity.uid, station_id)
+    _reconcile_stale_tx(station, station_id, tx_repo)
     _require_tx_running(station)
-    existing = tx_repo.get(request_id)
-    if existing:
-        if existing.get("uid") != identity.uid or existing.get("station_id") != station_id:
-            raise api_error(409, "IDEMPOTENCY_CONFLICT", "Request ID is already used")
-        return TxDraft.model_validate(existing)
+    _require_tx_ready(station)
     settings = get_settings()
     source = audio.file.read(settings.max_audio_bytes + 1)
     info = validate_wav(
@@ -1146,25 +1156,51 @@ def create_tx_draft(
     )
     if info.seconds < 0.3:
         raise api_error(422, "AUDIO_TOO_SHORT", "Hold to talk for at least 300 ms")
-    model = get_processor().process(source, target_language, f"tx-{request_id}", 0, request_id).response
-    if model.error:
-        raise api_error(422, "NO_SPEECH", model.error)
     created_at = datetime.now(timezone.utc)
+    request_hash = hashlib.sha256(
+        source + b"\0" + target_language.encode("ascii") + b"\0" + station_id.encode("ascii")
+    ).hexdigest()
+    reserved, created = tx_repo.reserve_processing(
+        {
+            "id": request_id,
+            "uid": identity.uid,
+            "station_id": station_id,
+            "duration_ms": round(info.seconds * 1000),
+            "target_language": target_language,
+            "detected_language": "",
+            "transcript": "",
+            "translation": "",
+            "translation_original": "",
+            "translation_edited": False,
+            "audio_filename": "",
+            "output_available": False,
+            "error": None,
+            "attempt": 1,
+            "retry_of": None,
+            "created_at": created_at,
+            "source_object": "",
+            "output_object": "",
+            "confirmed": False,
+        },
+        request_hash,
+    )
+    if not created:
+        return TxDraft.model_validate(reserved)
     audio_filename = tx_repo.next_filename(station_id, created_at)
     date_path = f"{created_at:%Y/%m/%d}"
     try:
+        model = get_processor().process(
+            source, target_language, f"tx-{request_id}", 0, request_id
+        ).response
+        if model.error:
+            tx_repo.release_processing(request_id)
+            raise api_error(422, "NO_SPEECH", model.error)
         metadata = {
-            "id": request_id,
-            "station_id": station_id,
-            "target_language": target_language,
             "detected_language": model.detected_language,
             "transcript": model.transcript_restored,
             "translation": model.translation,
             "translation_original": model.translation,
-            "translation_edited": False,
-            "duration_ms": round(info.seconds * 1000),
             "audio_filename": audio_filename,
-            "output_available": False,
         }
         source_object = get_archive().archive_tx_source(
             identity.uid,
@@ -1173,21 +1209,17 @@ def create_tx_draft(
             date_path,
             source,
         )
+    except HTTPException:
+        raise
     except Exception:
+        tx_repo.release_processing(request_id)
         logger.exception("TX synthesis/archive failed", extra={"station_id": station_id, "tx_job_id": request_id})
         raise api_error(503, "TX_PROCESSING_FAILED", "TX audio could not be created")
-    value = {
+    updates = {
         **metadata,
-        "uid": identity.uid,
-        "status": "review_ready",
-        "error": None,
-        "attempt": 1,
-        "retry_of": None,
-        "created_at": created_at,
         "source_object": source_object,
-        "output_object": "",
     }
-    return TxDraft.model_validate(tx_repo.create(value))
+    return TxDraft.model_validate(tx_repo.complete_processing(request_id, updates))
 
 
 @app.get("/v1/stations/{station_id}/tx/drafts/{job_id}", response_model=TxDraft)
@@ -1207,6 +1239,15 @@ def _synthesize_tx_draft(item: dict, tx_repo, uid: str, station_id: str) -> TxDr
             item["translation"],
             item["target_language"],
         )
+        if wav_duration_seconds(output) > MAX_TX_OUTPUT_SECONDS:
+            tx_repo.fail_synthesis(
+                uid, station_id, item["id"], "TX_OUTPUT_TOO_LONG"
+            )
+            raise api_error(
+                422,
+                "TX_OUTPUT_TOO_LONG",
+                "TX audio exceeds the 120 second safety limit",
+            )
         created_at = _history_timestamp(item)
         output_object = get_archive().archive_tx_output(
             uid,
@@ -1248,8 +1289,9 @@ def confirm_tx_draft(
     tx_repo=Depends(get_tx_repository),
 ):
     station = _owned_tx_station(repo, identity.uid, station_id)
-    _require_tx_running(station)
     _reconcile_stale_tx(station, station_id, tx_repo)
+    _require_tx_running(station)
+    _require_tx_ready(station)
     existing = tx_repo.get(job_id)
     if (
         existing
@@ -1285,8 +1327,9 @@ def cancel_tx_draft(station_id: str, job_id: str, identity: Identity = Depends(r
 def retry_tx_draft(station_id: str, job_id: str, identity: Identity = Depends(require_identity),
                    repo: Repository = Depends(get_repository), tx_repo=Depends(get_tx_repository)):
     station = _owned_tx_station(repo, identity.uid, station_id)
-    _require_tx_running(station)
     _reconcile_stale_tx(station, station_id, tx_repo)
+    _require_tx_running(station)
+    _require_tx_ready(station)
     clone = tx_repo.retry(identity.uid, station_id, job_id, str(uuid.uuid4()))
     item = tx_repo.begin_confirm(
         identity.uid,
@@ -1414,6 +1457,8 @@ def claim_tx_job(station_id: str, signed_station_id: str = Header(alias="X-Stati
     path = f"/v1/stations/{station_id}/tx/jobs/claim"
     station = _signed_tx_station(station_id, "POST", path, request_id, request_timestamp, signature, {}, repo)
     if not bool((station.get("desired_state") or {}).get("running")):
+        return None
+    if not bool(station.get("ptt_ready", True)):
         return None
     item = tx_repo.claim(station_id)
     return TxJob.model_validate(item) if item else None

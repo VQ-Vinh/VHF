@@ -3,12 +3,14 @@ class TxRecordingInput {
     required this.stationId,
     required this.duration,
     required this.targetLanguage,
+    required this.requestId,
     this.audioPath,
   });
 
   final String stationId;
   final Duration duration;
   final String targetLanguage;
+  final String requestId;
   final String? audioPath;
 }
 

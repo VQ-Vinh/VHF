@@ -53,6 +53,11 @@ jobs:
           python -m pip install pytest
       - name: Run API and Admin tests
         run: python -m pytest tests/api tests/admin
+      - name: Run Firestore TX transaction contract
+        run: >-
+          npx --yes firebase-tools@14.12.0 emulators:exec
+          --only firestore --project prana-ci
+          "python -m pytest tests/api/test_tx_firestore_contract.py"
 
   core-linux:
     name: Core, Linux and packaging tests

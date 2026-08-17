@@ -57,6 +57,12 @@ class FakeTxRepository implements TxRepository {
   @override
   Future<TxDraft> retryTransmission(TxDraft draft) async => draft;
 
+  @override
+  Future<String?> activeDraftId(String stationId) async => null;
+
+  @override
+  Future<void> clearActiveDraft(String stationId) async {}
+
   static String _translationFor(String language) => switch (language) {
     'vi' => 'Vui lòng xác nhận tọa độ và báo cáo trạng thái của bạn.',
     'zh' => '请确认坐标并报告您的状态。',

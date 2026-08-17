@@ -239,6 +239,8 @@ abstract final class AppText {
       'tx_station_offline': 'Station đang offline. Không thể bắt đầu TX.',
       'tx_station_offline_during_tx':
           'Mất kết nối với Station khi đang phát. Kết quả TX chưa được xác nhận.',
+      'tx_ptt_unavailable':
+          'Không thể điều khiển PTT. Hãy kiểm tra GPIO hoặc cấu hình Station.',
       'tx_retry_waiting_station':
           'Chờ Station online và xác nhận job thất bại trước khi thử lại.',
       'tx_recording_short': 'ĐANG THU',
@@ -249,6 +251,12 @@ abstract final class AppText {
       'tx_processing_failed': 'Không thể tạo bản dịch. Vui lòng thử lại.',
       'tx_audio_too_long':
           'Bản thu vượt quá thời lượng cho phép. Vui lòng thu lại.',
+      'tx_output_too_long':
+          'Audio sau khi dịch vượt quá 120 giây. Hãy rút gọn nội dung rồi thử lại.',
+      'tx_synthesis_timeout':
+          'Quá thời gian tạo audio TX. Job đã dừng an toàn; hãy thử lại thủ công.',
+      'tx_playback_timeout':
+          'Quá thời gian phát TX. PTT đã được nhả an toàn; hãy kiểm tra Station.',
       'tx_transmission_failed': 'Station không thể phát bản dịch.',
       'tx_discard_title': 'Hủy bản TX hiện tại?',
       'tx_discard_body': 'Bản thu hoặc bản dịch chưa phát sẽ bị xóa.',
@@ -472,6 +480,8 @@ abstract final class AppText {
       'tx_station_offline': 'The Station is offline. TX cannot be started.',
       'tx_station_offline_during_tx':
           'Connection to the Station was lost during transmission. The TX result is unconfirmed.',
+      'tx_ptt_unavailable':
+          'PTT control is unavailable. Check the Station GPIO or configuration.',
       'tx_retry_waiting_station':
           'Wait for the Station to reconnect and confirm failure before retrying.',
       'tx_recording_short': 'RECORDING',
@@ -484,6 +494,12 @@ abstract final class AppText {
           'The translation could not be prepared. Please try again.',
       'tx_audio_too_long':
           'The recording exceeds the allowed duration. Please record it again.',
+      'tx_output_too_long':
+          'The translated audio exceeds 120 seconds. Shorten the text and try again.',
+      'tx_synthesis_timeout':
+          'TX audio synthesis timed out. The job stopped safely; retry manually.',
+      'tx_playback_timeout':
+          'TX playback timed out. PTT was released safely; check the Station.',
       'tx_transmission_failed':
           'The Station could not transmit the translation.',
       'tx_discard_title': 'Discard the current TX draft?',

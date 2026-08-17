@@ -130,6 +130,9 @@ class StationModel {
     this.txJobId = '',
     this.activeTxAudioDeviceId = '',
     this.txError,
+    this.pttMode = 'manual',
+    this.pttReady = true,
+    this.pttError,
   });
 
   final String id;
@@ -155,6 +158,9 @@ class StationModel {
   final String txJobId;
   final String activeTxAudioDeviceId;
   final String? txError;
+  final String pttMode;
+  final bool pttReady;
+  final String? pttError;
 
   bool isOnlineAt(DateTime now) =>
       active &&
@@ -198,6 +204,9 @@ class StationModel {
       txJobId: map['tx_job_id'] as String? ?? '',
       activeTxAudioDeviceId: map['active_tx_audio_device_id'] as String? ?? '',
       txError: map['tx_error'] as String?,
+      pttMode: map['ptt_mode'] as String? ?? 'manual',
+      pttReady: map['ptt_ready'] as bool? ?? true,
+      pttError: map['ptt_error'] as String?,
     );
   }
 }

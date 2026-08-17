@@ -16,6 +16,7 @@ class TxLiveDock extends StatelessWidget {
     required this.stationOnline,
     required this.apiOnline,
     required this.onReview,
+    required this.onConnectionRetry,
   });
 
   final TxController controller;
@@ -23,6 +24,7 @@ class TxLiveDock extends StatelessWidget {
   final bool stationOnline;
   final bool apiOnline;
   final VoidCallback onReview;
+  final VoidCallback onConnectionRetry;
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
@@ -87,6 +89,7 @@ class TxLiveDock extends StatelessWidget {
                   child: _CenterControl(
                     controller: controller,
                     onReview: onReview,
+                    onConnectionRetry: onConnectionRetry,
                   ),
                 ),
               ],
@@ -167,10 +170,15 @@ class _StatusLine extends StatelessWidget {
 }
 
 class _CenterControl extends StatelessWidget {
-  const _CenterControl({required this.controller, required this.onReview});
+  const _CenterControl({
+    required this.controller,
+    required this.onReview,
+    required this.onConnectionRetry,
+  });
 
   final TxController controller;
   final VoidCallback onReview;
+  final VoidCallback onConnectionRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -207,6 +215,8 @@ class _CenterControl extends StatelessWidget {
         state.phase == TxPhase.expired ||
         state.phase == TxPhase.busy ||
         state.phase == TxPhase.stationOffline) {
+      final retryConnection =
+          state.draft == null && state.failure == TxFailure.stationOffline;
       return _DockAction(
         icon:
             state.failure == TxFailure.stationOfflineDuringTx
@@ -215,12 +225,17 @@ class _CenterControl extends StatelessWidget {
         label: AppText.of(
           context,
           state.failure == TxFailure.stationOfflineDuringTx &&
-                  !controller.canRetryTransmission
+                      !controller.canRetryTransmission ||
+                  state.failure == TxFailure.pttUnavailable
               ? 'waiting'
               : 'retry',
         ),
         onPressed:
-            state.draft == null || controller.canRetryTransmission
+            retryConnection
+                ? onConnectionRetry
+                : (state.draft == null &&
+                        state.failure != TxFailure.pttUnavailable) ||
+                    controller.canRetryTransmission
                 ? controller.retry
                 : null,
         error: true,

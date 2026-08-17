@@ -16,4 +16,20 @@ abstract interface class TxRepository {
   Future<TxDraft> getDraft(String stationId, String draftId);
 
   Future<TxDraft> retryTransmission(TxDraft draft);
+
+  Future<String?> activeDraftId(String stationId);
+
+  Future<void> clearActiveDraft(String stationId);
+}
+
+class TxPermanentPollingFailure implements Exception {
+  const TxPermanentPollingFailure(this.code);
+
+  final String code;
+}
+
+class TxOperationFailure implements Exception {
+  const TxOperationFailure(this.code);
+
+  final String code;
 }

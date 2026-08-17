@@ -310,6 +310,9 @@ class StationHeartbeat(BaseModel):
     tx_job_id: str = Field(default="", max_length=64)
     active_tx_audio_device_id: str = Field(default="", max_length=64)
     tx_error: str | None = Field(default=None, max_length=500)
+    ptt_mode: Literal["manual", "gpio", "unavailable"] = "manual"
+    ptt_ready: bool = True
+    ptt_error: str | None = Field(default=None, max_length=80)
 
 
 class Station(BaseModel):
@@ -337,12 +340,15 @@ class Station(BaseModel):
     tx_job_id: str = ""
     active_tx_audio_device_id: str = ""
     tx_error: str | None = None
+    ptt_mode: Literal["manual", "gpio", "unavailable"] = "manual"
+    ptt_ready: bool = True
+    ptt_error: str | None = None
 
 
 class TxDraft(BaseModel):
     id: str
     station_id: str
-    status: Literal["review_ready", "synthesizing", "queued", "claimed", "transmitting", "completed", "failed", "cancelled"]
+    status: Literal["processing", "review_ready", "synthesizing", "queued", "claimed", "transmitting", "completed", "failed", "cancelled"]
     duration_ms: int = Field(ge=1, le=120_000)
     target_language: Literal["vi", "en", "zh", "ja", "ko"]
     detected_language: str = ""
