@@ -7,6 +7,7 @@ VHF_Storage/
 
 # Local process metadata, logs and diagnostic artifacts
 .prana/
+/.tmp/
 
 # Station activation labels contain private activation codes
 stations/
