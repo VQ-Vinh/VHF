@@ -8,6 +8,7 @@ import unittest
 import uuid
 import wave
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -1111,6 +1112,39 @@ class StationApiTests(unittest.TestCase):
             output["date_path"].replace("/", ""),
             output["audio_filename"][:8],
         )
+
+    def test_tx_filename_date_follows_the_owner_timezone(self):
+        self.create_and_claim()
+        self.repo.update_station_desired_state(
+            self.identity.uid, self.station_id, {"running": True}
+        )
+        self.heartbeat()
+        # Auckland (UTC+12/+13) and Honolulu (UTC-10) are ~23 hours apart, so
+        # their local dates never coincide -- one of them always differs from
+        # UTC, which is what makes this assertion meaningful at any wall clock.
+        seen = {}
+        for country, zone in (("NZ", "Pacific/Auckland"), ("US", "Pacific/Honolulu")):
+            patched = self.client.patch(
+                "/v1/me", json={"country_code": country, "timezone": zone}
+            )
+            self.assertEqual(patched.status_code, 200, patched.text)
+            request_id = str(uuid.uuid4())
+            with patch(
+                "services.prana_api.main.get_processor", return_value=Processor()
+            ), patch("services.prana_api.main.get_archive", return_value=Archive()):
+                draft = self.client.post(
+                    f"/v1/stations/{self.station_id}/tx/drafts",
+                    data={"target_language": "vi"},
+                    files={"audio": ("phone.wav", wav_bytes(), "audio/wav")},
+                    headers={"X-Request-ID": request_id},
+                )
+            self.assertEqual(draft.status_code, 200, draft.text)
+            seen[zone] = draft.json()["audio_filename"][:8]
+            self.assertEqual(
+                seen[zone],
+                datetime.now(ZoneInfo(zone)).strftime("%Y%m%d"),
+            )
+        self.assertNotEqual(seen["Pacific/Auckland"], seen["Pacific/Honolulu"])
 
     def test_tx_create_and_confirm_require_station_start(self):
         self.create_and_claim()

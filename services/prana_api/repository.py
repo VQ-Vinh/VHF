@@ -94,6 +94,7 @@ class Repository(Protocol):
     def get_plan(self, plan_id: str) -> Plan: ...
     def list_plans(self) -> list[Plan]: ...
     def select_plan(self, uid: str, plan: Plan) -> UserAccount: ...
+    def update_user_region(self, uid: str, country_code: str, timezone_name: str) -> UserAccount: ...
     def get_usage(self, uid: str, plan: Plan) -> Usage: ...
     def list_devices(self, uid: str) -> list[Device]: ...
     def register_device(self, uid: str, device: Device, max_devices: int) -> Device: ...
@@ -266,6 +267,20 @@ class FirestoreRepository:
             return UserAccount.model_validate(data)
 
         return run(self.db.transaction())
+
+    def update_user_region(self, uid: str, country_code: str, timezone_name: str) -> UserAccount:
+        user_ref = self._user_ref(uid)
+        snap = user_ref.get()
+        if not snap.exists:
+            raise api_error(404, "ACCOUNT_NOT_FOUND", "Account was not found")
+        user_ref.update({
+            "country_code": country_code,
+            "timezone": timezone_name,
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        })
+        data = snap.to_dict()
+        data.update({"uid": uid, "country_code": country_code, "timezone": timezone_name})
+        return UserAccount.model_validate(data)
 
     def get_usage(self, uid: str, plan: Plan) -> Usage:
         now = datetime.now(timezone.utc)

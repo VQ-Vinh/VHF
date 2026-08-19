@@ -51,6 +51,9 @@ class UserAccount(BaseModel):
     ] = "registered"
     plan_id: str | None = None
     subscription_expires_at: datetime | None = None
+    # Empty until the user picks a country; readers fall back to the server default.
+    country_code: str = ""
+    timezone: str = ""
 
     @property
     def subscription_active(self) -> bool:
@@ -130,8 +133,23 @@ class MeResponse(BaseModel):
     status: str
     plan_id: str | None
     subscription_expires_at: datetime | None
+    country_code: str = ""
+    timezone: str = ""
     usage: Usage | None = None
     entitlements: PlanEntitlements = Field(default_factory=PlanEntitlements)
+
+
+class UserSettingsPatch(BaseModel):
+    country_code: str = Field(pattern=r"^[A-Za-z]{2}$")
+    # Only needed for countries that span several zones; otherwise the server
+    # picks the country's primary zone.
+    timezone: str | None = Field(default=None, max_length=64)
+
+
+class CountryOption(BaseModel):
+    code: str
+    name: str
+    timezones: list[str]
 
 
 class GoogleAuthorizationRequest(BaseModel):
@@ -256,6 +274,9 @@ class StationDesiredState(BaseModel):
     capture_mode: Literal["device", "loopback"] = "device"
     audio_device_id: str = Field(default="", max_length=64)
     tx_audio_device_id: str = Field(default="", max_length=64)
+    # Owner's timezone, fanned out from user settings. Empty means the Station
+    # keeps using its own system clock.
+    timezone: str = Field(default="", max_length=64)
     capability_refresh_generation: int = Field(default=0, ge=0)
     retry_generation: int = Field(default=0, ge=0)
     generation: int = Field(default=0, ge=0)

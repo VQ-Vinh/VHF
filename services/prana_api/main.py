@@ -8,6 +8,7 @@ import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
+from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, Response, UploadFile
 from fastapi.responses import JSONResponse
@@ -33,6 +34,12 @@ from services.prana_api.tx_audio import (
     MAX_TX_OUTPUT_SECONDS,
     CloudTxSynthesizer,
     wav_duration_seconds,
+)
+from services.prana_api.timezones import (
+    country_catalog,
+    country_timezones,
+    load_timezone,
+    resolve_timezone,
 )
 from services.prana_api.tx_repository import FirestoreTxRepository
 from services.prana_api.google_auth import (
@@ -62,6 +69,8 @@ from services.prana_api.models import (
     StationPairingResponse,
     StationProvisionRequest,
     StationProvisionResponse,
+    CountryOption,
+    UserSettingsPatch,
     TxDraft,
     TxConfirmRequest,
     TxHistoryPage,
@@ -196,6 +205,52 @@ def _history_timezone(offset_minutes: int) -> timezone:
             "Timezone offset must be between -840 and 840 minutes",
         )
     return timezone(timedelta(minutes=offset_minutes))
+
+
+def _account_timezone(account) -> ZoneInfo:
+    """Timezone used to lay out this owner's storage folders."""
+    stored = getattr(account, "timezone", "") or ""
+    return resolve_timezone(stored, get_settings().default_timezone)
+
+
+def _fan_out_station_timezone(repo: Repository, uid: str, timezone_name: str) -> None:
+    """Push the owner's timezone to every Station they own.
+
+    Best effort per Station: one failure must not abandon the rest, and the
+    setting is already persisted on the account by the time we get here.
+    """
+    for station in repo.list_stations(uid):
+        try:
+            repo.update_station_desired_state(
+                uid, station.station_id, {"timezone": timezone_name}
+            )
+        except Exception:
+            logger.exception(
+                "Could not fan out timezone to Station",
+                extra={"station_id": station.station_id},
+            )
+
+
+def _seed_station_timezone(repo: Repository, account, station: Station) -> Station:
+    """Give a freshly claimed Station its owner's timezone.
+
+    Without this a Station claimed after the owner picked a country would keep
+    using its own system clock until the next settings change.
+    """
+    timezone_name = getattr(account, "timezone", "") or ""
+    if not timezone_name:
+        return station
+    try:
+        desired = repo.update_station_desired_state(
+            account.uid, station.station_id, {"timezone": timezone_name}
+        )
+    except Exception:
+        logger.exception(
+            "Could not seed timezone on claimed Station",
+            extra={"station_id": station.station_id},
+        )
+        return station
+    return station.model_copy(update={"desired_state": desired})
 
 
 def _record_timestamp(value: dict) -> datetime | None:
@@ -360,6 +415,58 @@ def me(identity: Identity = Depends(require_identity), repo: Repository = Depend
         **account.model_dump(),
         usage=usage,
         entitlements=entitlements,
+    )
+
+
+@app.get("/v1/countries", response_model=list[CountryOption])
+def countries(
+    response: Response,
+    _identity: Identity = Depends(require_identity),
+):
+    response.headers["Cache-Control"] = "public, max-age=86400"
+    return country_catalog()
+
+
+@app.patch("/v1/me", response_model=MeResponse)
+def update_me(
+    request: UserSettingsPatch,
+    identity: Identity = Depends(require_identity),
+    repo: Repository = Depends(get_repository),
+):
+    account = verified_account(identity, repo)
+    country_code = request.country_code.upper()
+    options = country_timezones(country_code)
+    if not options:
+        raise api_error(422, "INVALID_COUNTRY", "Country is not supported")
+    timezone_name = request.timezone or options[0]
+    if timezone_name not in options:
+        raise api_error(
+            422,
+            "INVALID_TIMEZONE",
+            "Timezone does not belong to the selected country",
+        )
+    if load_timezone(timezone_name) is None:
+        raise api_error(422, "INVALID_TIMEZONE", "Timezone is not available")
+    account = repo.update_user_region(account.uid, country_code, timezone_name)
+    _fan_out_station_timezone(repo, account.uid, timezone_name)
+    usage = None
+    plan = None
+    if account.plan_id:
+        plan = repo.get_plan(account.plan_id)
+        usage = repo.get_usage(account.uid, plan)
+    return MeResponse(
+        **account.model_dump(),
+        usage=usage,
+        entitlements={
+            "live_log_limit": plan.live_log_limit if plan else 10,
+            "history_unlock_delay_days": (
+                plan.history_unlock_delay_days if plan else 1
+            ),
+            "max_concurrency": plan.max_concurrency if plan else 2,
+            "tx_max_recording_seconds": (
+                plan.tx_max_recording_seconds if plan else 60
+            ),
+        },
     )
 
 
@@ -543,12 +650,13 @@ def claim_station_activation(
     _account, plan = active_account(identity, repo)
     client_ip = http_request.client.host if http_request.client else "unknown"
     repo.check_activation_claim_rate(identity.uid, request.setup_id, client_ip)
-    return repo.claim_station_activation(
+    station = repo.claim_station_activation(
         identity.uid,
         request.setup_id,
         request.activation_code,
         plan.max_stations,
     )
+    return _seed_station_timezone(repo, _account, station)
 
 
 @app.post("/v1/station-pairings/{pairing_id}/claim", response_model=Station)
@@ -560,12 +668,13 @@ def claim_station(
 ):
     _account, plan = active_account(identity, repo)
     repo.check_pairing_claim_rate(identity.uid, pairing_id)
-    return repo.claim_station(
+    station = repo.claim_station(
         identity.uid,
         pairing_id,
         _pairing_hash(pairing_id, request.pairing_code.upper()),
         plan.max_stations,
     )
+    return _seed_station_timezone(repo, _account, station)
 
 
 @app.get("/v1/stations", response_model=list[Station])
@@ -1214,8 +1323,11 @@ def create_tx_draft(
     )
     if not created:
         return TxDraft.model_validate(reserved)
-    audio_filename = tx_repo.next_filename(station_id, created_at)
-    date_path = tx_date_path(audio_filename, fallback=created_at)
+    # created_at stays UTC in Firestore; only the stored filename and the date
+    # folder derived from it follow the owner's timezone.
+    local_created_at = created_at.astimezone(_account_timezone(_account))
+    audio_filename = tx_repo.next_filename(station_id, local_created_at)
+    date_path = tx_date_path(audio_filename, fallback=local_created_at)
     try:
         model = get_processor().process(
             source, target_language, f"tx-{request_id}", 0, request_id

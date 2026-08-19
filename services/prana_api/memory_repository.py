@@ -112,6 +112,18 @@ class MemoryRepository:
             self.users[uid] = account
             return account
 
+    def update_user_region(self, uid: str, country_code: str, timezone_name: str) -> UserAccount:
+        with self.lock:
+            account = self.users.get(uid)
+            if not account:
+                raise api_error(404, "ACCOUNT_NOT_FOUND", "Account was not found")
+            account = account.model_copy(update={
+                "country_code": country_code,
+                "timezone": timezone_name,
+            })
+            self.users[uid] = account
+            return account
+
     def get_usage(self, uid: str, plan: Plan) -> Usage:
         now = datetime.now(timezone.utc)
         period = usage_period(plan, now)
