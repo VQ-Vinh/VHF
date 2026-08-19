@@ -334,6 +334,7 @@ class StationHeartbeat(BaseModel):
     ptt_mode: Literal["manual", "gpio", "unavailable"] = "manual"
     ptt_ready: bool = True
     ptt_error: str | None = Field(default=None, max_length=80)
+    active_timezone: str = Field(default="", max_length=64)
 
 
 class Station(BaseModel):
@@ -364,6 +365,7 @@ class Station(BaseModel):
     ptt_mode: Literal["manual", "gpio", "unavailable"] = "manual"
     ptt_ready: bool = True
     ptt_error: str | None = None
+    active_timezone: str = ""
 
 
 class TxDraft(BaseModel):

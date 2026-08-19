@@ -167,7 +167,10 @@ class StationModeTests(unittest.TestCase):
                 return True
 
         runtime = StationRuntime.__new__(StationRuntime)
-        runtime.config = SimpleNamespace(translation=SimpleNamespace(target_language="en"))
+        runtime.config = SimpleNamespace(
+            translation=SimpleNamespace(target_language="en"),
+            storage=SimpleNamespace(local=SimpleNamespace(timezone="")),
+        )
         runtime.orchestrator = Orchestrator()
         runtime.observed_generation = 0
         runtime.retry_generation = 0
@@ -240,6 +243,7 @@ class StationModeTests(unittest.TestCase):
         runtime.config = SimpleNamespace(
             translation=SimpleNamespace(target_language="en"),
             audio=SimpleNamespace(capture_mode="device", device_index=1),
+            storage=SimpleNamespace(local=SimpleNamespace(timezone="")),
         )
         runtime.orchestrator = Orchestrator()
         runtime.observed_generation = 2
@@ -275,6 +279,7 @@ class StationModeTests(unittest.TestCase):
         runtime.config = SimpleNamespace(
             translation=SimpleNamespace(target_language="en"),
             audio=SimpleNamespace(capture_mode="device", device_index=4),
+            storage=SimpleNamespace(local=SimpleNamespace(timezone="")),
         )
         runtime.orchestrator = Orchestrator()
         runtime.observed_generation = 2
@@ -318,6 +323,7 @@ class StationModeTests(unittest.TestCase):
         runtime.config = SimpleNamespace(
             translation=SimpleNamespace(target_language="en"),
             audio=SimpleNamespace(capture_mode="device", device_index=1),
+            storage=SimpleNamespace(local=SimpleNamespace(timezone="")),
         )
         runtime.orchestrator = Orchestrator()
         runtime.observed_generation = 2
@@ -362,6 +368,7 @@ class StationModeTests(unittest.TestCase):
         runtime.config = SimpleNamespace(
             translation=SimpleNamespace(target_language="en"),
             audio=SimpleNamespace(capture_mode="device", device_index=1),
+            storage=SimpleNamespace(local=SimpleNamespace(timezone="")),
         )
         runtime.orchestrator = Orchestrator()
         runtime.observed_generation = 0

@@ -420,6 +420,7 @@ class FirestoreRepository:
             ptt_mode=data.get("ptt_mode", "manual"),
             ptt_ready=bool(data.get("ptt_ready", True)),
             ptt_error=data.get("ptt_error"),
+            active_timezone=data.get("active_timezone") or "",
         )
 
     def claim_station(
@@ -834,6 +835,7 @@ class FirestoreRepository:
             "ptt_mode": heartbeat.ptt_mode,
             "ptt_ready": heartbeat.ptt_ready,
             "ptt_error": heartbeat.ptt_error,
+            "active_timezone": heartbeat.active_timezone,
             "last_error": heartbeat.error,
             "retrying": heartbeat.retrying,
             "retry_code": heartbeat.retry_code,

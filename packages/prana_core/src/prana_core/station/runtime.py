@@ -10,6 +10,7 @@ import signal
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from prana_core import __version__
 from prana_core.backend.client import BackendApiError
 from prana_core.common.logger import get_logger
@@ -197,6 +198,8 @@ class StationRuntime:
                     return
             self._station_error = None
 
+        self._apply_timezone(str(desired.get("timezone", "") or ""))
+
         should_run = bool(desired.get("running"))
         self._desired_running = should_run
         self._tx_device_id = str(desired.get("tx_audio_device_id", ""))
@@ -235,6 +238,33 @@ class StationRuntime:
             self._command_error = str(
                 status.get("startup_error") or "STATION_RX_START_FAILED"
             )
+
+    def _apply_timezone(self, name: str) -> None:
+        """Adopt the owner's timezone for storage paths.
+
+        LocalStorage reads this config object on every write, so no pipeline
+        restart is needed. An unusable name keeps whatever was working before.
+        """
+        storage = self.config.storage.local
+        if name == storage.timezone:
+            return
+        if name:
+            try:
+                ZoneInfo(name)
+            except (ZoneInfoNotFoundError, ValueError):
+                logger.warning("Ignoring unknown timezone %r from desired state", name)
+                return
+        storage.timezone = name
+        logger.info("Storage timezone set to %s", name or "system clock")
+
+    def _storage_now(self) -> datetime:
+        tz_name = self.config.storage.local.timezone
+        if tz_name:
+            try:
+                return datetime.now(ZoneInfo(tz_name))
+            except (ZoneInfoNotFoundError, ValueError):
+                pass
+        return datetime.now()
 
     def _heartbeat_payload(self) -> dict:
         status = self.orchestrator.get_status()
@@ -275,6 +305,7 @@ class StationRuntime:
             "ptt_mode": getattr(self._ptt_controller, "mode", "manual"),
             "ptt_ready": bool(getattr(self._ptt_controller, "ready", True)),
             "ptt_error": getattr(self._ptt_controller, "error", None),
+            "active_timezone": self.config.storage.local.timezone,
         }
 
     def _save_tx_files(self, job: dict, source: bytes, output: bytes, status: str, error: str | None = None) -> None:
@@ -282,7 +313,7 @@ class StationRuntime:
         try:
             file_date = datetime.strptime(filename[:8], "%Y%m%d")
         except (ValueError, TypeError):
-            file_date = datetime.now()
+            file_date = self._storage_now()
         date_path = file_date.strftime("%Y/%m/%d")
         storage = self.config.storage.local
         source_path = Path(storage.tx_source_dir) / date_path / filename
