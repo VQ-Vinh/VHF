@@ -60,6 +60,20 @@ def station_audio_filename(
     return candidate, f"{date:%Y/%m/%d}"
 
 
+def tx_date_path(audio_filename: str, *, fallback: datetime) -> str:
+    """Return the TX date path derived from the job's logical filename.
+
+    Source, output and result of one job share the logical filename, so
+    deriving the date from it keeps the three objects in the same folder even
+    when a retry gives the clone a newer created_at.
+    """
+    try:
+        date = datetime.strptime(audio_filename[:8], "%Y%m%d")
+    except (ValueError, TypeError):
+        date = fallback
+    return f"{date:%Y/%m/%d}"
+
+
 def station_storage_objects(
     station_id: str,
     station_name: str,

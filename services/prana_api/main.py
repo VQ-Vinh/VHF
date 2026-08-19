@@ -27,6 +27,7 @@ from services.prana_api.google_services import (
     CloudStorageArchive,
     GeminiProcessor,
     station_audio_filename,
+    tx_date_path,
 )
 from services.prana_api.tx_audio import (
     MAX_TX_OUTPUT_SECONDS,
@@ -197,22 +198,49 @@ def _history_timezone(offset_minutes: int) -> timezone:
     return timezone(timedelta(minutes=offset_minutes))
 
 
+def _record_timestamp(value: dict) -> datetime | None:
+    """Return the record's instant, or None when it carries no usable one.
+
+    RX results store it as "timestamp"; TX jobs store it as "created_at".
+    """
+    for key in ("timestamp", "created_at"):
+        candidate = value.get(key)
+        if isinstance(candidate, datetime):
+            return (
+                candidate.replace(tzinfo=timezone.utc)
+                if candidate.tzinfo is None
+                else candidate
+            )
+        if isinstance(candidate, str):
+            try:
+                parsed = datetime.fromisoformat(candidate.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            return (
+                parsed.replace(tzinfo=timezone.utc)
+                if parsed.tzinfo is None
+                else parsed
+            )
+    return None
+
+
 def _history_timestamp(value: dict) -> datetime:
-    timestamp = value.get("timestamp")
-    if isinstance(timestamp, datetime):
-        return (
-            timestamp.replace(tzinfo=timezone.utc)
-            if timestamp.tzinfo is None
-            else timestamp
+    """Sort/group key for history listings.
+
+    Falls back instead of raising: this runs per record inside grouping loops,
+    so one malformed document must not fail the whole history page.
+    """
+    timestamp = _record_timestamp(value)
+    if timestamp is None:
+        logger.warning(
+            "History record has no usable timestamp",
+            extra={
+                "record_id": str(value.get("id") or ""),
+                "station_id": str(value.get("station_id") or ""),
+            },
         )
-    if isinstance(timestamp, str):
-        parsed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
-        return (
-            parsed.replace(tzinfo=timezone.utc)
-            if parsed.tzinfo is None
-            else parsed
-        )
-    return datetime.min.replace(tzinfo=timezone.utc)
+        return datetime.min.replace(tzinfo=timezone.utc)
+    return timestamp
 
 
 def _history_unlocked(history_date: date, plan: Plan, local_today: date) -> bool:
@@ -1187,7 +1215,7 @@ def create_tx_draft(
     if not created:
         return TxDraft.model_validate(reserved)
     audio_filename = tx_repo.next_filename(station_id, created_at)
-    date_path = f"{created_at:%Y/%m/%d}"
+    date_path = tx_date_path(audio_filename, fallback=created_at)
     try:
         model = get_processor().process(
             source, target_language, f"tx-{request_id}", 0, request_id
@@ -1248,12 +1276,15 @@ def _synthesize_tx_draft(item: dict, tx_repo, uid: str, station_id: str, station
                 "TX_OUTPUT_TOO_LONG",
                 "TX audio exceeds the 120 second safety limit",
             )
-        created_at = _history_timestamp(item)
+        audio_filename = item["audio_filename"]
         output_object = get_archive().archive_tx_output(
             station_id,
             station_name,
-            item["audio_filename"],
-            f"{created_at:%Y/%m/%d}",
+            audio_filename,
+            tx_date_path(
+                audio_filename,
+                fallback=_record_timestamp(item) or datetime.now(timezone.utc),
+            ),
             output,
             {
                 **{

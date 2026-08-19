@@ -8,6 +8,7 @@ from services.prana_api.google_services import (
     station_audio_filename,
     station_storage_folder,
     station_storage_objects,
+    tx_date_path,
 )
 
 
@@ -66,6 +67,15 @@ def test_station_storage_separates_audio_and_result_with_matching_stems() -> Non
         "VHF-Storage/VINH_0f90cd8e/RX/result/2026/08/03/"
         "20260803_110002_0001.json"
     )
+
+
+def test_tx_date_path_uses_filename_date_and_falls_back_when_unusable() -> None:
+    fallback = datetime(2026, 8, 19, 4, 5, 6, tzinfo=timezone.utc)
+    assert tx_date_path("20260805_155923_0001.wav", fallback=fallback) == "2026/08/05"
+    # Unusable names must not silently produce year 1.
+    assert tx_date_path("", fallback=fallback) == "2026/08/19"
+    assert tx_date_path("not-a-timestamp.wav", fallback=fallback) == "2026/08/19"
+    assert tx_date_path("20260231_155923_0001.wav", fallback=fallback) == "2026/08/19"
 
 
 def test_language_code_normalization_accepts_case_and_locale() -> None:
