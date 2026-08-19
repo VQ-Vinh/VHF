@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     global_monthly_audio_seconds: int = 0
     input_cost_per_million_tokens: float = 0.0
     output_cost_per_million_tokens: float = 0.0
+    # Used for storage date folders until a user picks a country.
+    default_timezone: str = "UTC"
 
 
 @lru_cache

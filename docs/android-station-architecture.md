@@ -245,6 +245,29 @@ Trước khi thống nhất scheme này, TX archive từng ghi vào
 `VHF-Storage/{firebase_uid}/{station_id}/TX/...` (tách biệt hoàn toàn khỏi
 `station_folder` của RX). Dữ liệu TX cũ theo layout này vẫn đọc được và không
 bắt buộc migration, tương tự chính sách áp dụng cho RX legacy data ở trên.
+Tương tự, TX output/result từng bị ghi vào `TX/output/1/01/01/` do khoá
+timestamp sai; dữ liệu cũ đó cũng được giữ nguyên tại chỗ.
+
+### Múi giờ
+
+Ngày trong đường dẫn lấy theo **múi giờ của chủ sở hữu trạm**, chọn qua Quốc gia
+trong Account Center (`PATCH /v1/me`, danh sách từ `GET /v1/countries`). Backend
+lưu tên IANA trên user document và đẩy xuống từng trạm qua
+`desired_state.timezone`; trạm mới claim được seed ngay lúc claim. Chưa chọn
+Quốc gia thì dùng `PRANA_API_DEFAULT_TIMEZONE` (mặc định `UTC`) — đúng bằng hành
+vi trước đây.
+
+**Tên file là nguồn sự thật cho ngày.** RX: Station sinh tên file rồi backend
+parse ra đường dẫn GCS. TX: backend sinh tên file rồi Station parse ra thư mục
+local. Cả hai chiều đều một chiều, nên thư mục trên Pi và prefix trên GCS luôn
+khớp nhau kể cả khi Station và backend chạy phiên bản khác nhau — không cần
+deploy đồng bộ.
+
+Timestamp ghi vào Firestore vẫn luôn là UTC; chỉ chuỗi `YYYYMMDD_HHMMSS` trong
+tên file và `YYYY/MM/DD` trong đường dẫn đi theo múi giờ người dùng. Các endpoint
+History nhận thêm query `timezone` (tên IANA) bên cạnh `timezone_offset_minutes`
+cũ; ưu tiên tên IANA vì offset cố định gom sai ngày quanh mốc đổi giờ DST.
+Heartbeat báo `active_timezone` để phát hiện trạm chưa áp dụng.
 
 ## History hợp nhất
 

@@ -12,6 +12,7 @@ import 'services/authentication_service.dart';
 import 'services/translation_speech.dart';
 import 'services/source_audio.dart';
 import 'core/localization.dart';
+import 'core/user_region.dart';
 
 final authProvider = Provider<FirebaseAuth>((ref) => FirebaseAuth.instance);
 final authenticationServiceProvider = Provider<AuthenticationService>(
@@ -47,6 +48,15 @@ final activeSpeechStationProvider = StateProvider<String?>((ref) => null);
 final appLocaleProvider = ChangeNotifierProvider<AppLocaleController>(
   (ref) => AppLocaleController(ref.watch(secureStorageProvider)),
 );
+
+final userRegionProvider = ChangeNotifierProvider<UserRegionController>(
+  (ref) => UserRegionController(ref.watch(secureStorageProvider)),
+);
+
+final countriesProvider = FutureProvider<List<CountryOption>>((ref) async {
+  final values = await ref.watch(apiProvider).countries();
+  return values.map(CountryOption.fromJson).toList();
+});
 
 final authStateProvider = StreamProvider<User?>((ref) {
   return ref.watch(authProvider).userChanges();
@@ -110,7 +120,12 @@ final stationProvider = StreamProvider.family<StationModel?, String>((
 
 final liveResultsProvider = StreamProvider.autoDispose.family<
   List<TranslationResult>,
-  ({String stationId, String localDate, int timezoneOffsetMinutes})
+  ({
+    String stationId,
+    String localDate,
+    int timezoneOffsetMinutes,
+    String? timezone,
+  })
 >((ref, key) {
   final user = ref.watch(authStateProvider).value;
   if (user == null) return Stream.value(const []);
@@ -121,6 +136,7 @@ final liveResultsProvider = StreamProvider.autoDispose.family<
       final results = await api.stationLiveResults(
         key.stationId,
         timezoneOffsetMinutes: key.timezoneOffsetMinutes,
+        timezone: key.timezone,
         limit: limit <= 0 ? 1000 : limit,
       );
       return liveTranslationsForLocalDay(results, DateTime.now());

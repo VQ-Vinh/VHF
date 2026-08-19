@@ -5,6 +5,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 
 import '../../core/app_config.dart';
 import '../../core/localization.dart';
+import '../../core/user_region.dart';
 import '../../core/widgets.dart';
 import '../../providers.dart';
 import '../../services/prana_api.dart';
@@ -37,12 +38,53 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
       api.devices(),
       api.stations(),
     ]);
+    final account = values[0] as Map<String, dynamic>;
+    // The server is the source of truth, so a choice made on another device wins.
+    await ref
+        .read(userRegionProvider)
+        .hydrate(
+          country: account['country_code']?.toString(),
+          timezone: account['timezone']?.toString(),
+        );
     return {
-      'account': values[0],
+      'account': account,
       'plans': values[1],
       'devices': values[2],
       'stations': values[3],
     };
+  }
+
+  Future<void> _pickCountry() async {
+    final countries = await ref.read(countriesProvider.future);
+    if (!mounted) return;
+    final country = await showModalBottomSheet<CountryOption>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _CountryPicker(countries: countries),
+    );
+    if (country == null || !mounted) return;
+
+    var timezone = country.timezones.firstOrNull;
+    if (country.timezones.length > 1) {
+      timezone = await showModalBottomSheet<String>(
+        context: context,
+        isScrollControlled: true,
+        builder: (_) => _TimezonePicker(country: country),
+      );
+      if (timezone == null || !mounted) return;
+    }
+
+    await _action(() async {
+      final updated = await ref
+          .read(apiProvider)
+          .updateRegion(countryCode: country.code, timezone: timezone);
+      await ref
+          .read(userRegionProvider)
+          .hydrate(
+            country: updated['country_code']?.toString(),
+            timezone: updated['timezone']?.toString(),
+          );
+    }, refreshData: true);
   }
 
   Future<void> _refresh() async {
@@ -175,6 +217,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
   Widget build(BuildContext context) {
     final user = ref.watch(authStateProvider).value;
     final locale = ref.watch(appLocaleProvider);
+    final region = ref.watch(userRegionProvider);
     return Scaffold(
       appBar: PranaPageHeader(
         title: AppText.of(context, 'account_plan'),
@@ -523,6 +566,17 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                     ),
                     ListTile(
                       dense: true,
+                      visualDensity: const VisualDensity(vertical: -2),
+                      title: Text(AppText.of(context, 'country')),
+                      subtitle:
+                          region.timezoneName == null
+                              ? null
+                              : Text(region.timezoneName!),
+                      trailing: const Icon(Icons.chevron_right, size: 20),
+                      onTap: busy ? null : _pickCountry,
+                    ),
+                    ListTile(
+                      dense: true,
                       visualDensity: const VisualDensity(vertical: -3),
                       title: Text(AppText.of(context, 'environment')),
                       trailing: Text(AppConfig.flavor),
@@ -577,6 +631,131 @@ class _Section extends StatelessWidget {
       ],
     ),
   );
+}
+
+/// Searchable country list. A plain dropdown is unusable at this length.
+class _CountryPicker extends StatefulWidget {
+  const _CountryPicker({required this.countries});
+
+  final List<CountryOption> countries;
+
+  @override
+  State<_CountryPicker> createState() => _CountryPickerState();
+}
+
+class _CountryPickerState extends State<_CountryPicker> {
+  String query = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final matches =
+        widget.countries.where((item) => item.matches(query)).toList();
+    return _PickerSheet(
+      title: AppText.of(context, 'select_country'),
+      header: TextField(
+        autofocus: true,
+        decoration: InputDecoration(
+          prefixIcon: const Icon(Icons.search, size: 20),
+          hintText: AppText.of(context, 'country_search_hint'),
+          isDense: true,
+          border: const OutlineInputBorder(),
+        ),
+        onChanged: (value) => setState(() => query = value),
+      ),
+      itemCount: matches.length,
+      itemBuilder:
+          (context, index) => ListTile(
+            dense: true,
+            title: Text(matches[index].name),
+            subtitle:
+                matches[index].timezones.length == 1
+                    ? Text(matches[index].timezones.first)
+                    : null,
+            onTap: () => Navigator.pop(context, matches[index]),
+          ),
+    );
+  }
+}
+
+/// Second step, shown only for countries that span more than one zone.
+class _TimezonePicker extends StatelessWidget {
+  const _TimezonePicker({required this.country});
+
+  final CountryOption country;
+
+  @override
+  Widget build(BuildContext context) {
+    return _PickerSheet(
+      title: AppText.of(context, 'select_timezone'),
+      itemCount: country.timezones.length,
+      itemBuilder:
+          (context, index) => ListTile(
+            dense: true,
+            title: Text(country.timezones[index]),
+            onTap: () => Navigator.pop(context, country.timezones[index]),
+          ),
+    );
+  }
+}
+
+class _PickerSheet extends StatelessWidget {
+  const _PickerSheet({
+    required this.title,
+    required this.itemCount,
+    required this.itemBuilder,
+    this.header,
+  });
+
+  final String title;
+  final int itemCount;
+  final IndexedWidgetBuilder itemBuilder;
+  final Widget? header;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: SizedBox(
+          height: MediaQuery.of(context).size.height * 0.7,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(title, style: theme.textTheme.titleMedium),
+                    const SizedBox(height: 4),
+                    Text(
+                      AppText.of(context, 'country_change_notice'),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    if (header != null) ...[
+                      const SizedBox(height: 12),
+                      header!,
+                    ],
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: itemCount,
+                  itemBuilder: itemBuilder,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _LanguageToggle extends StatelessWidget {

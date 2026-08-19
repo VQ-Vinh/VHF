@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import numpy as np
 import soundfile as sf
@@ -27,7 +28,29 @@ class LocalStorage:
             Path(config.tx_output_dir),
             Path(config.tx_result_dir),
         )
+        self._tz_name: str | None = None
+        self._tz: ZoneInfo | None = None
         self._ensure_dirs()
+
+    def _now(self) -> datetime:
+        """Wall clock in the owner's timezone, or this machine's when unset.
+
+        Anchored on a real UTC instant, so it stays correct even when the host
+        itself is configured for the wrong timezone.
+        """
+        name = self._config.timezone or ""
+        if name != self._tz_name:
+            self._tz_name = name
+            self._tz = None
+            if name:
+                try:
+                    self._tz = ZoneInfo(name)
+                except (ZoneInfoNotFoundError, ValueError):
+                    # Logged once per name: this runs on every saved segment.
+                    logger.warning("Unknown timezone %r, using system clock", name)
+        if self._tz is None:
+            return datetime.now()
+        return datetime.now(self._tz)
 
     @property
     def audio_dir(self) -> Path:
@@ -44,8 +67,7 @@ class LocalStorage:
             directory.mkdir(parents=True, exist_ok=True)
 
     @staticmethod
-    def _date_subdir() -> str:
-        now = datetime.now()
+    def _date_subdir(now: datetime) -> str:
         return f"{now.year:04d}/{now.month:02d}/{now.day:02d}"
 
     def save_audio(
@@ -55,9 +77,11 @@ class LocalStorage:
         session_id: str,
         sequence: int,
     ) -> Path:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{timestamp}_{sequence:04d}.wav"
-        subdir = self._date_subdir()
+        # One instant for both halves: reading the clock twice can put the file
+        # in one day's folder under the next day's name across midnight.
+        now = self._now()
+        filename = f"{now:%Y%m%d_%H%M%S}_{sequence:04d}.wav"
+        subdir = self._date_subdir(now)
         filepath = self._audio_dir / subdir / filename
         filepath.parent.mkdir(parents=True, exist_ok=True)
 
@@ -77,7 +101,7 @@ class LocalStorage:
 
     def save_result(self, result: ProcessingResult) -> Path:
         try:
-            subdir = self._date_subdir()
+            subdir = self._date_subdir(self._now())
             filepath = self._result_dir / subdir / result.json_path
             filepath.parent.mkdir(parents=True, exist_ok=True)
 
@@ -118,9 +142,10 @@ class LocalStorage:
 
     def cleanup_old_files(self, max_days: int = 30) -> int:
         import time
-        from datetime import datetime, timedelta
 
-        threshold_date = datetime.now() - timedelta(days=max_days)
+        # Filenames are stamped in the storage timezone, so the threshold has to
+        # be too -- comparing them against the host clock can be a day out.
+        threshold_date = self._now().replace(tzinfo=None) - timedelta(days=max_days)
         threshold_ts = time.time() - (max_days * 86400)
         count = 0
 

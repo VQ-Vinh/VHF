@@ -112,6 +112,18 @@ class MemoryRepository:
             self.users[uid] = account
             return account
 
+    def update_user_region(self, uid: str, country_code: str, timezone_name: str) -> UserAccount:
+        with self.lock:
+            account = self.users.get(uid)
+            if not account:
+                raise api_error(404, "ACCOUNT_NOT_FOUND", "Account was not found")
+            account = account.model_copy(update={
+                "country_code": country_code,
+                "timezone": timezone_name,
+            })
+            self.users[uid] = account
+            return account
+
     def get_usage(self, uid: str, plan: Plan) -> Usage:
         now = datetime.now(timezone.utc)
         period = usage_period(plan, now)
@@ -218,6 +230,7 @@ class MemoryRepository:
             ptt_mode=data.get("ptt_mode", "manual"),
             ptt_ready=data.get("ptt_ready", True),
             ptt_error=data.get("ptt_error"),
+            active_timezone=data.get("active_timezone") or "",
         )
 
     def claim_station(self, uid: str, pairing_id: str, secret_hash: str, max_stations: int) -> Station:
@@ -501,6 +514,7 @@ class MemoryRepository:
                 "ptt_mode": heartbeat.ptt_mode,
                 "ptt_ready": heartbeat.ptt_ready,
                 "ptt_error": heartbeat.ptt_error,
+                "active_timezone": heartbeat.active_timezone,
                 "last_error": heartbeat.error,
                 "retrying": heartbeat.retrying,
                 "retry_code": heartbeat.retry_code,

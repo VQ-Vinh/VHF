@@ -62,6 +62,9 @@ class LocalStorageConfig(BaseModel):
     tx_source_dir: Path = Path("./VHF_Storage/TX/source")
     tx_output_dir: Path = Path("./VHF_Storage/TX/output")
     tx_result_dir: Path = Path("./VHF_Storage/TX/results")
+    # IANA name pushed down from the owner's account via desired state. Empty
+    # means "use this machine's clock", which is the pre-existing behaviour.
+    timezone: str = ""
 
 
 class StorageConfig(BaseModel):

@@ -211,6 +211,7 @@ class _LiveScreenState extends ConsumerState<LiveScreen>
           stationId: widget.stationId,
           localDate: localDateKey(now),
           timezoneOffsetMinutes: now.timeZoneOffset.inMinutes,
+          timezone: ref.watch(userRegionProvider).timezoneName,
         );
         final results = ref.watch(liveResultsProvider(resultsKey));
         final items = results.value ?? const <TranslationResult>[];
