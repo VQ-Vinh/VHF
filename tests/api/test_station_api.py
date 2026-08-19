@@ -55,6 +55,8 @@ class Archive:
     def __init__(self):
         self.audio = {}
         self.station_calls = []
+        self.tx_source_calls = []
+        self.tx_output_calls = []
 
     def archive(self, *_args):
         uid, session_id, request_id, audio, _response = _args
@@ -95,6 +97,9 @@ class Archive:
             f"VHF-Storage/{station_name}_{station_id[:8]}/TX/source/"
             f"{date_path}/{audio_filename}"
         )
+        self.tx_source_calls.append(
+            {"audio_filename": audio_filename, "date_path": date_path}
+        )
         self.audio[source_object] = source
         return source_object
 
@@ -102,6 +107,9 @@ class Archive:
         output_object = (
             f"VHF-Storage/{station_name}_{station_id[:8]}/TX/output/"
             f"{date_path}/{audio_filename}"
+        )
+        self.tx_output_calls.append(
+            {"audio_filename": audio_filename, "date_path": date_path}
         )
         self.audio[output_object] = output
         return output_object
@@ -1044,6 +1052,13 @@ class StationApiTests(unittest.TestCase):
             self.assertEqual(days.status_code, 200, days.text)
             self.assertEqual(days.json()[0]["result_count"], 1)
             history_date = days.json()[0]["date"]
+            # Regression: TX jobs carry "created_at", not "timestamp", so the
+            # grouping key used to fall back to datetime.min and bucket every
+            # job under 0001-01-01.
+            self.assertEqual(
+                history_date,
+                datetime.now(timezone(timedelta(minutes=420))).date().isoformat(),
+            )
             jobs = self.client.get(
                 f"/v1/stations/{self.station_id}/tx/history/days/{history_date}/jobs",
                 params={"timezone_offset_minutes": 420},
@@ -1055,6 +1070,47 @@ class StationApiTests(unittest.TestCase):
             )
             self.assertEqual(history_audio.status_code, 200, history_audio.text)
             self.assertEqual(history_audio.headers["content-type"], "audio/wav")
+
+    def test_tx_archive_date_path_matches_filename_for_source_and_output(self):
+        self.create_and_claim()
+        self.repo.update_station_desired_state(
+            self.identity.uid, self.station_id, {"running": True}
+        )
+        self.heartbeat()
+        archive = Archive()
+        request_id = str(uuid.uuid4())
+        with patch("services.prana_api.main.get_processor", return_value=Processor()), patch(
+            "services.prana_api.main.get_tx_synthesizer", return_value=Synthesizer()
+        ), patch("services.prana_api.main.get_archive", return_value=archive):
+            draft = self.client.post(
+                f"/v1/stations/{self.station_id}/tx/drafts",
+                data={"target_language": "vi"},
+                files={"audio": ("phone.wav", wav_bytes(), "audio/wav")},
+                headers={"X-Request-ID": request_id},
+            )
+            self.assertEqual(draft.status_code, 200, draft.text)
+            confirmed = self.client.post(
+                f"/v1/stations/{self.station_id}/tx/drafts/{request_id}/confirm",
+                json={"translation": "Chuyển sang kênh 18."},
+            )
+            self.assertEqual(confirmed.status_code, 200, confirmed.text)
+
+        source = archive.tx_source_calls[-1]
+        output = archive.tx_output_calls[-1]
+        # Regression: output used to fall back to datetime.min and archive under
+        # "1/01/01" because the TX job dict has no "timestamp" key.
+        self.assertRegex(output["date_path"], r"^\d{4}/\d{2}/\d{2}$")
+        self.assertEqual(
+            output["date_path"][:4],
+            f"{datetime.now(timezone.utc).year:04d}",
+        )
+        # Source, output and result of one job must share one folder.
+        self.assertEqual(output["date_path"], source["date_path"])
+        # And that folder must be the one encoded in the logical filename.
+        self.assertEqual(
+            output["date_path"].replace("/", ""),
+            output["audio_filename"][:8],
+        )
 
     def test_tx_create_and_confirm_require_station_start(self):
         self.create_and_claim()
