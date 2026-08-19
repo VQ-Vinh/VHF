@@ -223,9 +223,28 @@ Source, output và result của một TX có cùng stem. Retry giữ logical fil
 tăng `attempt`. Dữ liệu legacy ở layout cũ hoặc tên UUID vẫn đọc được và không
 bắt buộc migration.
 
-Cloud archive cũng tách prefix RX/TX và không đưa object path ra public API.
-Audio History được stream qua endpoint có xác thực và ownership check. Retention
-hiện hành áp dụng cho dữ liệu mới; cleanup không xóa job đang active.
+Trên GCS, backend gom RX và TX của cùng một trạm vào chung một `station_folder`
+(tên trạm slugify + 8 ký tự đầu station id, ví dụ `VINH_0f90cd8e`):
+
+```text
+VHF-Storage/{station_folder}/
+├── RX/
+│   ├── audio/YYYY/MM/DD/
+│   └── result/YYYY/MM/DD/
+└── TX/
+    ├── source/YYYY/MM/DD/
+    ├── output/YYYY/MM/DD/
+    └── result/YYYY/MM/DD/
+```
+
+Cloud archive không đưa object path ra public API. Audio History được stream
+qua endpoint có xác thực và ownership check. Retention hiện hành áp dụng cho
+dữ liệu mới; cleanup không xóa job đang active.
+
+Trước khi thống nhất scheme này, TX archive từng ghi vào
+`VHF-Storage/{firebase_uid}/{station_id}/TX/...` (tách biệt hoàn toàn khỏi
+`station_folder` của RX). Dữ liệu TX cũ theo layout này vẫn đọc được và không
+bắt buộc migration, tương tự chính sách áp dụng cho RX legacy data ở trên.
 
 ## History hợp nhất
 

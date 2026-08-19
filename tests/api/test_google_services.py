@@ -108,8 +108,8 @@ def test_tx_output_archive_serializes_firestore_datetime_metadata() -> None:
     created_at = datetime(2026, 8, 5, 15, 59, 23, tzinfo=timezone.utc)
 
     output_object = archive.archive_tx_output(
-        "owner-1",
         "station-1",
+        "VINH",
         "20260805_155923_0001.wav",
         "2026/08/05",
         b"wav-output",
@@ -117,13 +117,47 @@ def test_tx_output_archive_serializes_firestore_datetime_metadata() -> None:
     )
 
     assert output_object.endswith("/TX/output/2026/08/05/20260805_155923_0001.wav")
+    station_folder = station_storage_folder("VINH", "station-1")
     result_object = (
-        "VHF-Storage/owner-1/station-1/TX/result/2026/08/05/"
+        f"VHF-Storage/{station_folder}/TX/result/2026/08/05/"
         "20260805_155923_0001.json"
     )
     metadata = json.loads(archive.bucket.objects[result_object].data)
     assert metadata["created_at"] == "2026-08-05 15:59:23+00:00"
     assert archive.bucket.objects[output_object].data == b"wav-output"
+
+
+def test_tx_and_rx_archives_share_the_same_station_folder_prefix() -> None:
+    archive = CloudStorageArchive.__new__(CloudStorageArchive)
+    archive.bucket = _Bucket()
+    station_folder = station_storage_folder("VINH", "0f90cd8ef056")
+
+    rx_audio, _rx_result = station_storage_objects(
+        "0f90cd8ef056",
+        "VINH",
+        "20260803_110002_0001.wav",
+        "2026/08/03",
+    )
+    assert rx_audio.startswith(f"VHF-Storage/{station_folder}/")
+
+    tx_source = archive.archive_tx_source(
+        "0f90cd8ef056",
+        "VINH",
+        "20260803_110002_0001.wav",
+        "2026/08/03",
+        b"wav-source",
+    )
+    tx_output = archive.archive_tx_output(
+        "0f90cd8ef056",
+        "VINH",
+        "20260803_110002_0001.wav",
+        "2026/08/03",
+        b"wav-output",
+        {"id": "job-1", "status": "queued"},
+    )
+
+    assert tx_source.startswith(f"VHF-Storage/{station_folder}/")
+    assert tx_output.startswith(f"VHF-Storage/{station_folder}/")
 
 
 def test_different_language_preserves_model_translation() -> None:

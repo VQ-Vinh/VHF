@@ -1203,8 +1203,8 @@ def create_tx_draft(
             "audio_filename": audio_filename,
         }
         source_object = get_archive().archive_tx_source(
-            identity.uid,
             station_id,
+            str(station.get("name") or ""),
             audio_filename,
             date_path,
             source,
@@ -1233,7 +1233,7 @@ def get_tx_draft(station_id: str, job_id: str, identity: Identity = Depends(requ
     return TxDraft.model_validate(item)
 
 
-def _synthesize_tx_draft(item: dict, tx_repo, uid: str, station_id: str) -> TxDraft:
+def _synthesize_tx_draft(item: dict, tx_repo, uid: str, station_id: str, station_name: str) -> TxDraft:
     try:
         output = get_tx_synthesizer().synthesize_with_over(
             item["translation"],
@@ -1250,8 +1250,8 @@ def _synthesize_tx_draft(item: dict, tx_repo, uid: str, station_id: str) -> TxDr
             )
         created_at = _history_timestamp(item)
         output_object = get_archive().archive_tx_output(
-            uid,
             station_id,
+            station_name,
             item["audio_filename"],
             f"{created_at:%Y/%m/%d}",
             output,
@@ -1312,7 +1312,7 @@ def confirm_tx_draft(
         job_id,
         request.translation,
     )
-    return _synthesize_tx_draft(item, tx_repo, identity.uid, station_id)
+    return _synthesize_tx_draft(item, tx_repo, identity.uid, station_id, str(station.get("name") or ""))
 
 
 @app.delete("/v1/stations/{station_id}/tx/drafts/{job_id}", status_code=204)
@@ -1346,7 +1346,7 @@ def retry_tx_draft(station_id: str, job_id: str, identity: Identity = Depends(re
                 item["output_object"],
             )
         )
-    return _synthesize_tx_draft(item, tx_repo, identity.uid, station_id)
+    return _synthesize_tx_draft(item, tx_repo, identity.uid, station_id, str(station.get("name") or ""))
 
 
 def _tx_history_values(tx_repo, uid: str, station_id: str) -> list[dict]:

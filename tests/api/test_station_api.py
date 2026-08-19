@@ -90,13 +90,19 @@ class Archive:
     def download_audio(self, object_name):
         return self.audio.get(object_name)
 
-    def archive_tx_source(self, uid, station_id, audio_filename, date_path, source):
-        source_object = f"TX/{uid}/{station_id}/source/{date_path}/{audio_filename}"
+    def archive_tx_source(self, station_id, station_name, audio_filename, date_path, source):
+        source_object = (
+            f"VHF-Storage/{station_name}_{station_id[:8]}/TX/source/"
+            f"{date_path}/{audio_filename}"
+        )
         self.audio[source_object] = source
         return source_object
 
-    def archive_tx_output(self, uid, station_id, audio_filename, date_path, output, _metadata):
-        output_object = f"TX/{uid}/{station_id}/output/{date_path}/{audio_filename}"
+    def archive_tx_output(self, station_id, station_name, audio_filename, date_path, output, _metadata):
+        output_object = (
+            f"VHF-Storage/{station_name}_{station_id[:8]}/TX/output/"
+            f"{date_path}/{audio_filename}"
+        )
         self.audio[output_object] = output
         return output_object
 
