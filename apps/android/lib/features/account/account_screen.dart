@@ -514,18 +514,11 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                       dense: true,
                       visualDensity: const VisualDensity(vertical: -2),
                       title: Text(AppText.of(context, 'ui_language')),
-                      trailing: SegmentedButton<String>(
-                        showSelectedIcon: false,
-                        segments: const [
-                          ButtonSegment(value: 'vi', label: Text('VI')),
-                          ButtonSegment(value: 'en', label: Text('EN')),
-                        ],
-                        selected: {
-                          locale.locale?.languageCode ??
-                              Localizations.localeOf(context).languageCode,
-                        },
-                        onSelectionChanged:
-                            (value) => locale.setLocale(value.first),
+                      trailing: _LanguageToggle(
+                        value:
+                            locale.locale?.languageCode ??
+                            Localizations.localeOf(context).languageCode,
+                        onChanged: locale.setLocale,
                       ),
                     ),
                     ListTile(
@@ -584,6 +577,83 @@ class _Section extends StatelessWidget {
       ],
     ),
   );
+}
+
+class _LanguageToggle extends StatelessWidget {
+  const _LanguageToggle({required this.value, required this.onChanged});
+
+  final String value;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      height: 32,
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _LanguageOption(
+            label: 'VI',
+            selected: value == 'vi',
+            onTap: () => onChanged('vi'),
+          ),
+          _LanguageOption(
+            label: 'EN',
+            selected: value == 'en',
+            onTap: () => onChanged('en'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LanguageOption extends StatelessWidget {
+  const _LanguageOption({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(99),
+      child: Material(
+        color:
+            selected ? theme.colorScheme.secondaryContainer : Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          child: Container(
+            alignment: Alignment.center,
+            width: 44,
+            height: 28,
+            child: Text(
+              label,
+              style: theme.textTheme.labelLarge?.copyWith(
+                color:
+                    selected
+                        ? theme.colorScheme.onSecondaryContainer
+                        : theme.colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _StatusChip extends StatelessWidget {

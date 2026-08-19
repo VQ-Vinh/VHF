@@ -273,27 +273,17 @@ class CloudStorageArchive:
             return None
         return blob.download_as_bytes()
 
-    def archive_tx(self, uid: str, station_id: str, job_id: str, source: bytes, output: bytes, metadata: dict) -> tuple[str, str]:
-        date = datetime.now(timezone.utc)
-        prefix = f"VHF-Storage/{uid}/{station_id}/TX/{date:%Y/%m/%d}/{job_id}"
-        source_object, output_object = f"{prefix}/source.wav", f"{prefix}/output.wav"
-        self.bucket.blob(source_object).upload_from_string(source, content_type="audio/wav")
-        self.bucket.blob(output_object).upload_from_string(output, content_type="audio/wav")
-        self.bucket.blob(f"{prefix}/metadata.json").upload_from_string(
-            json.dumps(metadata, ensure_ascii=False), content_type="application/json"
-        )
-        return source_object, output_object
-
     def archive_tx_source(
         self,
-        uid: str,
         station_id: str,
+        station_name: str,
         audio_filename: str,
         date_path: str,
         source: bytes,
     ) -> str:
+        station_folder = station_storage_folder(station_name, station_id)
         source_object = (
-            f"VHF-Storage/{uid}/{station_id}/TX/source/"
+            f"VHF-Storage/{station_folder}/TX/source/"
             f"{date_path}/{audio_filename}"
         )
         self.bucket.blob(source_object).upload_from_string(
@@ -304,19 +294,20 @@ class CloudStorageArchive:
 
     def archive_tx_output(
         self,
-        uid: str,
         station_id: str,
+        station_name: str,
         audio_filename: str,
         date_path: str,
         output: bytes,
         metadata: dict,
     ) -> str:
+        station_folder = station_storage_folder(station_name, station_id)
         output_object = (
-            f"VHF-Storage/{uid}/{station_id}/TX/output/"
+            f"VHF-Storage/{station_folder}/TX/output/"
             f"{date_path}/{audio_filename}"
         )
         result_object = (
-            f"VHF-Storage/{uid}/{station_id}/TX/result/{date_path}/"
+            f"VHF-Storage/{station_folder}/TX/result/{date_path}/"
             f"{audio_filename.removesuffix('.wav')}.json"
         )
         self.bucket.blob(output_object).upload_from_string(
