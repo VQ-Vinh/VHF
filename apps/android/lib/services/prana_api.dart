@@ -117,6 +117,28 @@ class PranaApi {
     return response.data ?? const {};
   }
 
+  Future<List<Map<String, dynamic>>> countries() async {
+    final response = await _dio.get<List<dynamic>>('/v1/countries');
+    return (response.data ?? const [])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList();
+  }
+
+  /// Sends only the country when it has a single zone; the server resolves it.
+  Future<Map<String, dynamic>> updateRegion({
+    required String countryCode,
+    String? timezone,
+  }) async {
+    final response = await _dio.patch<Map<String, dynamic>>(
+      '/v1/me',
+      data: {
+        'country_code': countryCode,
+        if (timezone != null) 'timezone': timezone,
+      },
+    );
+    return response.data ?? const {};
+  }
+
   Future<bool> health() async {
     try {
       final response = await _dio.get<Map<String, dynamic>>('/health');
@@ -176,6 +198,7 @@ class PranaApi {
   Future<List<TranslationResult>> stationLiveResults(
     String stationId, {
     required int timezoneOffsetMinutes,
+    String? timezone,
     int limit = 1000,
   }) async {
     try {
@@ -183,6 +206,7 @@ class PranaApi {
         '/v1/stations/$stationId/live/results',
         queryParameters: {
           'timezone_offset_minutes': timezoneOffsetMinutes,
+          if (timezone != null) 'timezone': timezone,
           'limit': limit,
         },
       );
@@ -214,10 +238,14 @@ class PranaApi {
   Future<List<StationHistoryDay>> stationHistoryDays(
     String stationId, {
     required int timezoneOffsetMinutes,
+    String? timezone,
   }) async {
     final response = await _dio.get<List<dynamic>>(
       '/v1/stations/$stationId/history/days',
-      queryParameters: {'timezone_offset_minutes': timezoneOffsetMinutes},
+      queryParameters: {
+        'timezone_offset_minutes': timezoneOffsetMinutes,
+        if (timezone != null) 'timezone': timezone,
+      },
     );
     return (response.data ?? const [])
         .map(
@@ -230,10 +258,14 @@ class PranaApi {
   Future<List<StationHistoryDay>> txHistoryDays(
     String stationId, {
     required int timezoneOffsetMinutes,
+    String? timezone,
   }) async {
     final response = await _dio.get<List<dynamic>>(
       '/v1/stations/$stationId/tx/history/days',
-      queryParameters: {'timezone_offset_minutes': timezoneOffsetMinutes},
+      queryParameters: {
+        'timezone_offset_minutes': timezoneOffsetMinutes,
+        if (timezone != null) 'timezone': timezone,
+      },
     );
     return (response.data ?? const [])
         .map(
@@ -247,6 +279,7 @@ class PranaApi {
     String stationId,
     String date, {
     required int timezoneOffsetMinutes,
+    String? timezone,
   }) async {
     final unique = <String, TxDraft>{};
     String? cursor;
@@ -255,6 +288,7 @@ class PranaApi {
         '/v1/stations/$stationId/tx/history/days/$date/jobs',
         queryParameters: {
           'timezone_offset_minutes': timezoneOffsetMinutes,
+          if (timezone != null) 'timezone': timezone,
           'limit': 200,
           if (cursor != null) 'cursor': cursor,
         },
@@ -285,6 +319,7 @@ class PranaApi {
     String stationId,
     String date, {
     required int timezoneOffsetMinutes,
+    String? timezone,
   }) async {
     final unique = <String, TranslationResult>{};
     String? cursor;
@@ -293,6 +328,7 @@ class PranaApi {
         '/v1/stations/$stationId/history/days/$date/results',
         queryParameters: {
           'timezone_offset_minutes': timezoneOffsetMinutes,
+          if (timezone != null) 'timezone': timezone,
           'limit': 1000,
           if (cursor != null) 'cursor': cursor,
         },

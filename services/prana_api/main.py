@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 from zoneinfo import ZoneInfo
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, Response, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import JSONResponse
 from google.api_core.exceptions import Aborted
 from google.cloud import firestore
@@ -197,7 +197,18 @@ def _validate_request_id(value: str) -> None:
         raise api_error(422, "INVALID_REQUEST", "X-Request-ID must be a UUID") from exc
 
 
-def _history_timezone(offset_minutes: int) -> timezone:
+def _history_timezone(offset_minutes: int, name: str | None = None):
+    """Timezone used to group history into local days.
+
+    An IANA name wins when the client sends one: a fixed offset splits days
+    wrongly on either side of a daylight-saving change. Older clients that only
+    know how to send an offset keep working.
+    """
+    if name:
+        resolved = load_timezone(name)
+        if resolved is None:
+            raise api_error(422, "INVALID_TIMEZONE", "Timezone is not available")
+        return resolved
     if offset_minutes < -840 or offset_minutes > 840:
         raise api_error(
             422,
@@ -693,11 +704,12 @@ def list_stations(
 def list_station_history_days(
     station_id: str,
     timezone_offset_minutes: int = 0,
+    timezone_name: str | None = Query(default=None, alias="timezone"),
     identity: Identity = Depends(require_identity),
     repo: Repository = Depends(get_repository),
 ):
     account, plan = active_account(identity, repo)
-    local_timezone = _history_timezone(timezone_offset_minutes)
+    local_timezone = _history_timezone(timezone_offset_minutes, timezone_name)
     local_today = datetime.now(timezone.utc).astimezone(local_timezone).date()
     grouped: dict[date, list[datetime]] = {}
     for value in _station_history_values(repo, account.uid, station_id):
@@ -727,13 +739,14 @@ def list_station_history_day_results(
     station_id: str,
     history_date: date,
     timezone_offset_minutes: int = 0,
+    timezone_name: str | None = Query(default=None, alias="timezone"),
     limit: int = 200,
     cursor: str | None = None,
     identity: Identity = Depends(require_identity),
     repo: Repository = Depends(get_repository),
 ):
     account, plan = active_account(identity, repo)
-    local_timezone = _history_timezone(timezone_offset_minutes)
+    local_timezone = _history_timezone(timezone_offset_minutes, timezone_name)
     local_today = datetime.now(timezone.utc).astimezone(local_timezone).date()
     if not _history_unlocked(history_date, plan, local_today):
         raise api_error(
@@ -770,12 +783,13 @@ def list_station_history_day_results(
 def list_station_live_results(
     station_id: str,
     timezone_offset_minutes: int = 0,
+    timezone_name: str | None = Query(default=None, alias="timezone"),
     limit: int = 1000,
     identity: Identity = Depends(require_identity),
     repo: Repository = Depends(get_repository),
 ):
     account, plan = active_account(identity, repo)
-    local_timezone = _history_timezone(timezone_offset_minutes)
+    local_timezone = _history_timezone(timezone_offset_minutes, timezone_name)
     local_now = datetime.now(timezone.utc).astimezone(local_timezone)
     local_start = datetime.combine(local_now.date(), datetime.min.time(), local_timezone)
     start_at = local_start.astimezone(timezone.utc)
@@ -1500,13 +1514,14 @@ def _tx_history_values(tx_repo, uid: str, station_id: str) -> list[dict]:
 def list_tx_history_days(
     station_id: str,
     timezone_offset_minutes: int = 0,
+    timezone_name: str | None = Query(default=None, alias="timezone"),
     identity: Identity = Depends(require_identity),
     repo: Repository = Depends(get_repository),
     tx_repo=Depends(get_tx_repository),
 ):
     account, plan = active_account(identity, repo)
     _owned_tx_station(repo, account.uid, station_id)
-    local_timezone = _history_timezone(timezone_offset_minutes)
+    local_timezone = _history_timezone(timezone_offset_minutes, timezone_name)
     local_today = datetime.now(timezone.utc).astimezone(local_timezone).date()
     grouped: dict[date, list[datetime]] = {}
     for value in _tx_history_values(tx_repo, account.uid, station_id):
@@ -1529,6 +1544,7 @@ def list_tx_history_day_jobs(
     station_id: str,
     history_date: date,
     timezone_offset_minutes: int = 0,
+    timezone_name: str | None = Query(default=None, alias="timezone"),
     limit: int = 200,
     cursor: str | None = None,
     identity: Identity = Depends(require_identity),
@@ -1537,7 +1553,7 @@ def list_tx_history_day_jobs(
 ):
     account, plan = active_account(identity, repo)
     _owned_tx_station(repo, account.uid, station_id)
-    local_timezone = _history_timezone(timezone_offset_minutes)
+    local_timezone = _history_timezone(timezone_offset_minutes, timezone_name)
     local_today = datetime.now(timezone.utc).astimezone(local_timezone).date()
     if not _history_unlocked(history_date, plan, local_today):
         raise api_error(403, "HISTORY_LOCKED", "Full history is not available until the configured unlock date")

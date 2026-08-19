@@ -108,6 +108,7 @@ class _TranslationSpeechHostState extends ConsumerState<TranslationSpeechHost>
         stationId: station.id,
         localDate: dayKey,
         timezoneOffsetMinutes: now.timeZoneOffset.inMinutes,
+        timezone: ref.read(userRegionProvider).timezoneName,
       )),
     );
     if (results.hasValue) {

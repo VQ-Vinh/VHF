@@ -36,6 +36,9 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
 
   int get timezoneOffsetMinutes => DateTime.now().timeZoneOffset.inMinutes;
 
+  // The chosen country's zone, so days group the same way they are stored.
+  String? get timezoneName => ref.read(userRegionProvider).timezoneName;
+
   @override
   void initState() {
     super.initState();
@@ -48,10 +51,12 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
         ? api.stationHistoryDays(
           widget.stationId,
           timezoneOffsetMinutes: timezoneOffsetMinutes,
+          timezone: timezoneName,
         )
         : api.txHistoryDays(
           widget.stationId,
           timezoneOffsetMinutes: timezoneOffsetMinutes,
+          timezone: timezoneName,
         );
   }
 
@@ -80,12 +85,14 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
             stationId: widget.stationId,
             day: selectedDay!,
             timezoneOffsetMinutes: timezoneOffsetMinutes,
+            timezoneName: timezoneName,
             onBack: () => setState(() => selectedDay = null),
           )
           : _TxDayHistory(
             stationId: widget.stationId,
             day: selectedDay!,
             timezoneOffsetMinutes: timezoneOffsetMinutes,
+            timezoneName: timezoneName,
             onBack: () => setState(() => selectedDay = null),
           );
     }
@@ -199,12 +206,14 @@ class _TxDayHistory extends ConsumerStatefulWidget {
     required this.stationId,
     required this.day,
     required this.timezoneOffsetMinutes,
+    required this.timezoneName,
     required this.onBack,
   });
 
   final String stationId;
   final StationHistoryDay day;
   final int timezoneOffsetMinutes;
+  final String? timezoneName;
   final VoidCallback onBack;
 
   @override
@@ -227,6 +236,7 @@ class _TxDayHistoryState extends ConsumerState<_TxDayHistory> {
           widget.stationId,
           widget.day.apiDate,
           timezoneOffsetMinutes: widget.timezoneOffsetMinutes,
+          timezone: widget.timezoneName,
         );
     player.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed && mounted) {
@@ -424,12 +434,14 @@ class _DayHistory extends ConsumerStatefulWidget {
     required this.stationId,
     required this.day,
     required this.timezoneOffsetMinutes,
+    required this.timezoneName,
     required this.onBack,
   });
 
   final String stationId;
   final StationHistoryDay day;
   final int timezoneOffsetMinutes;
+  final String? timezoneName;
   final VoidCallback onBack;
 
   @override
@@ -450,6 +462,7 @@ class _DayHistoryState extends ConsumerState<_DayHistory> {
           widget.stationId,
           widget.day.apiDate,
           timezoneOffsetMinutes: widget.timezoneOffsetMinutes,
+          timezone: widget.timezoneName,
         );
   }
 
