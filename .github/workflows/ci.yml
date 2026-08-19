@@ -16,6 +16,7 @@ jobs:
   quality:
     name: Quality and secrets
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: read
@@ -36,6 +37,7 @@ jobs:
   backend:
     name: API and Admin tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -62,6 +64,7 @@ jobs:
   core-linux:
     name: Core, Linux and packaging tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -85,6 +88,7 @@ jobs:
   windows:
     name: Windows tests
     runs-on: windows-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -107,6 +111,7 @@ jobs:
   android:
     name: Flutter analyze and tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: apps/android
@@ -127,6 +132,7 @@ jobs:
   terraform:
     name: Terraform validation
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: infra/terraform
@@ -144,6 +150,7 @@ jobs:
     if: always()
     needs: [quality, backend, core-linux, windows, android, terraform]
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Require every CI job to pass
         env:
