@@ -75,7 +75,18 @@ jobs:
             packages/prana_core/pyproject.toml
             apps/linux/pyproject.toml
       - name: Install native audio dependencies
-        run: sudo apt-get update && sudo apt-get install --yes libsndfile1 portaudio19-dev
+        # The apt mirror stalls often enough to hang this job for hours, so cap
+        # each attempt and retry instead of waiting on a socket that never closes.
+        run: |
+          for attempt in 1 2 3; do
+            if sudo timeout 180 apt-get -o Acquire::Retries=3 update               && sudo timeout 180 apt-get install --yes --no-install-recommends                 libsndfile1 portaudio19-dev; then
+              exit 0
+            fi
+            echo "apt attempt $attempt did not finish; retrying" >&2
+            sleep 15
+          done
+          echo "apt failed after 3 attempts" >&2
+          exit 1
       - name: Install Station test dependencies
         run: |
           python -m pip install --upgrade pip
