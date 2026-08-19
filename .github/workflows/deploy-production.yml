@@ -41,7 +41,7 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_STAGING_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_STAGING_RELEASE_READER_SERVICE_ACCOUNT }}
           token_format: access_token
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ${{ vars.GCP_STAGING_REGION }}-docker.pkg.dev
           username: oauth2accesstoken
@@ -57,7 +57,7 @@ jobs:
           service_account: ${{ vars.GCP_PRODUCTION_DEPLOYER_SERVICE_ACCOUNT }}
           token_format: access_token
       - uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ${{ vars.GCP_PRODUCTION_REGION }}-docker.pkg.dev
           username: oauth2accesstoken
