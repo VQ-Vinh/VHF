@@ -917,30 +917,12 @@ class FirestoreRepository:
 
         query = station_ref.collection("sessions").document(session_id).collection("results")
         now = datetime.now(timezone.utc)
-        cutoff = now - timedelta(days=plan.history_unlock_delay_days)
-        recent_limit = (
-            limit
-            if plan.live_log_limit == 0
-            else min(limit, plan.live_log_limit)
-        )
-        recent = (
-            list(
-                query.where("timestamp", ">", cutoff)
-                .order_by("timestamp", direction=firestore.Query.DESCENDING)
-                .limit(recent_limit)
-                .stream()
-            )
-            if recent_limit
-            else []
-        )
-        remaining = max(0, limit - len(recent))
-        unlocked = list(
-            query.where("timestamp", "<=", cutoff)
-            .order_by("timestamp", direction=firestore.Query.DESCENDING)
-            .limit(remaining)
+        newest = list(
+            query.order_by("timestamp", direction=firestore.Query.DESCENDING)
+            .limit(limit)
             .stream()
         )
-        values = [snap.to_dict() for snap in (*unlocked, *recent)]
+        values = [snap.to_dict() for snap in newest]
         values.sort(key=lambda item: item.get("timestamp") or now)
         return values
 

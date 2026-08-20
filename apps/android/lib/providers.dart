@@ -130,14 +130,13 @@ final liveResultsProvider = StreamProvider.autoDispose.family<
   final user = ref.watch(authStateProvider).value;
   if (user == null) return Stream.value(const []);
   final api = ref.watch(apiProvider);
-  final limit = ref.watch(planEntitlementsProvider).liveLogLimit;
   return resilientPoll<List<TranslationResult>>(
     fetch: () async {
       final results = await api.stationLiveResults(
         key.stationId,
         timezoneOffsetMinutes: key.timezoneOffsetMinutes,
         timezone: key.timezone,
-        limit: limit <= 0 ? 1000 : limit,
+        limit: 1000,
       );
       return liveTranslationsForLocalDay(results, DateTime.now());
     },

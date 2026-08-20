@@ -40,8 +40,8 @@ abstract final class AppText {
       'history': 'Lịch sử',
       'enable_live_audio': 'Bật tự động phát âm thanh',
       'disable_live_audio': 'Tắt tự động phát âm thanh',
-      'input': 'Đầu vào',
-      'output': 'Đầu ra',
+      'rx_heard': 'Nghe được',
+      'rx_translate_to': 'Dịch sang',
       'detecting': 'Đang phát hiện',
       'translations': 'Bản dịch trực tiếp',
       'empty_title': 'Đang chờ tín hiệu thoại',
@@ -197,7 +197,6 @@ abstract final class AppText {
       'error_activation_invalid': 'Setup ID hoặc Activation Code không hợp lệ.',
       'error_station_already_claimed': 'Station đang thuộc một tài khoản khác.',
       'done': 'Đã hoàn tất',
-      'live_log_usage': 'Đang hiển thị {count}/{limit} log theo gói',
       'history_restricted':
           'Kết quả mới được giới hạn theo gói. Toàn bộ lịch sử sẽ mở khóa sau {days} ngày.',
       'error_connection_timeout':
@@ -215,10 +214,9 @@ abstract final class AppText {
           'Không thể phát giọng nói. Hãy kiểm tra công cụ Text-to-Speech của điện thoại.',
       'tx_title': 'Phát bản dịch qua VHF',
       'tx_subtitle': 'Giữ PTT để nói, sau đó xem lại bản dịch trước khi phát.',
-      'tx_output_language': 'Ngôn ngữ phát',
       'tx_hold_to_talk': 'GIỮ ĐỂ NÓI',
       'tx_release_to_stop': 'THẢ ĐỂ DỪNG',
-      'tx_language_short': 'NGÔN NGỮ TX',
+      'tx_transmit_in': 'Phát bằng',
       'tx_review_short': 'XEM LẠI',
       'tx_done_short': 'HOÀN TẤT',
       'tx_processing_short': 'ĐANG DỊCH',
@@ -227,7 +225,6 @@ abstract final class AppText {
       'tx_recording': 'Đang thu giọng nói',
       'tx_ptt_hint': 'Giữ nút trong khi nói. Nhả nút để tạo bản dịch.',
       'tx_max_duration': 'Tối đa {seconds} giây mỗi lần.',
-      'tx_max_duration_short': 'TỐI ĐA {seconds}s',
       'tx_processing': 'Đang tạo bản dịch',
       'tx_processing_body':
           'PRANA đang nhận dạng, dịch và chuẩn bị giọng phát mẫu.',
@@ -278,8 +275,8 @@ abstract final class AppText {
       'history': 'History',
       'enable_live_audio': 'Enable automatic audio playback',
       'disable_live_audio': 'Disable automatic audio playback',
-      'input': 'Input',
-      'output': 'Output',
+      'rx_heard': 'Heard',
+      'rx_translate_to': 'Translate to',
       'detecting': 'Detecting',
       'translations': 'Live translations',
       'empty_title': 'Waiting for speech',
@@ -441,7 +438,6 @@ abstract final class AppText {
       'error_station_already_claimed':
           'The Station already belongs to another account.',
       'done': 'Completed',
-      'live_log_usage': 'Showing {count}/{limit} plan logs',
       'history_restricted':
           'Recent results are limited by your plan. Full history unlocks after {days} day(s).',
       'error_connection_timeout':
@@ -460,10 +456,9 @@ abstract final class AppText {
       'tx_title': 'Transmit a translation over VHF',
       'tx_subtitle':
           'Hold PTT to speak, then review the translation before transmission.',
-      'tx_output_language': 'Transmit language',
       'tx_hold_to_talk': 'HOLD TO TALK',
       'tx_release_to_stop': 'RELEASE TO STOP',
-      'tx_language_short': 'TX LANGUAGE',
+      'tx_transmit_in': 'Transmit in',
       'tx_review_short': 'REVIEW',
       'tx_done_short': 'DONE',
       'tx_processing_short': 'TRANSLATING',
@@ -473,7 +468,6 @@ abstract final class AppText {
       'tx_ptt_hint':
           'Hold the button while speaking. Release it to create a translation.',
       'tx_max_duration': 'Maximum {seconds} seconds per transmission.',
-      'tx_max_duration_short': 'MAX {seconds}s',
       'tx_processing': 'Preparing translation',
       'tx_processing_body':
           'PRANA is transcribing, translating, and preparing a sample voice.',

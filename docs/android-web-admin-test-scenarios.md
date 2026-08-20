@@ -773,7 +773,7 @@ thủ công khi Station online/running/PTT ready.
 
 **Kết quả mong đợi**
 
-- RX và TX dùng cùng `history_unlock_delay_days`.
+- RX và TX dùng cùng `history_past_days`.
 - Grouping ngày theo timezone client, không làm đổi timestamp gốc.
 - User khác và identifier sai bị từ chối, không lộ sự tồn tại/object path.
 - Job legacy hoặc thiếu output trả trạng thái audio unavailable an toàn.
@@ -1145,13 +1145,12 @@ Case này chỉ chạy khi quản trị viên bật failure injection an toàn t
 
 ### E2E-01 — Admin đổi plan, Android nhận quyền mới
 
-1. Admin đổi `live_log_limit` của User A qua plan.
+1. Admin đổi History delay của User A từ 1 thành 0 qua plan.
 2. User A refresh Account và tạo thêm log.
-3. Admin đổi History delay từ 1 thành 0.
-4. User A refresh và mở ngày hiện tại.
+3. User A refresh và mở ngày hiện tại.
 
-**Mong đợi:** App nhận giới hạn mới; Live vẫn chỉ hiện log hôm nay; History ngày
-hiện tại mở được sau khi delay bằng 0.
+**Mong đợi:** App nhận quyền mới; Live chỉ hiện bản dịch mới nhất của hôm nay;
+History ngày hiện tại mở được sau khi delay bằng 0.
 
 ### E2E-02 — Android Start, Admin Stop
 

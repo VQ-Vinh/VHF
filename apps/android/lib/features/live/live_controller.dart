@@ -73,7 +73,13 @@ class LiveUxController extends ChangeNotifier {
   void synchronize(StationModel station, {required bool online}) {
     var next = state;
     if (!online && state.phase != LiveCommandPhase.offline) {
-      next = next.copyWith(phase: LiveCommandPhase.offline);
+      // Nothing is in flight once the Station is unreachable; keeping the
+      // pending value would leave the toggle describing a command that can no
+      // longer complete.
+      next = next.copyWith(
+        phase: LiveCommandPhase.offline,
+        clearPendingRunning: true,
+      );
     } else if (station.commandError != null &&
         station.commandFailedGeneration >= station.desired.generation &&
         (state.phase != LiveCommandPhase.failed ||

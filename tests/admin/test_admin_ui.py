@@ -17,10 +17,12 @@ from services.prana_admin.main import (
     _csrf_token,
     _station_release_data,
     _station_stop_transition,
+    _station_id_prefix,
     _station_transfer_data,
     app,
     templates,
 )
+from services.prana_admin.storage_paths import station_storage_prefix
 
 
 class _PlanSnapshot:
@@ -136,7 +138,7 @@ class AdminUiTests(unittest.TestCase):
         english_html = english.body.decode()
         self.assertIn("Operations overview", english_html)
         self.assertIn(
-            'href="/static/admin.css?v=admin-production-3"',
+            'href="/static/admin.css?v=admin-production-4"',
             english_html,
         )
         self.assertIn('src="/static/logo_mark.png"', english_html)
@@ -282,8 +284,8 @@ class AdminUiTests(unittest.TestCase):
         self.assertIn("Changes apply immediately", plan_html)
         self.assertIn('action="/plans/free"', plan_html)
         self.assertIn('name="daily_minutes"', plan_html)
-        self.assertIn('name="live_log_limit"', plan_html)
-        self.assertIn('name="history_unlock_delay_days"', plan_html)
+        self.assertNotIn('name="live_log_limit"', plan_html)
+        self.assertIn('name="history_past_days"', plan_html)
         self.assertIn('name="tx_max_recording_seconds"', plan_html)
         self.assertIn("data-plan-edit", plan_html)
         self.assertIn("data-plan-form", plan_html)
@@ -301,7 +303,7 @@ class AdminUiTests(unittest.TestCase):
                     "name": "Free Daily", "daily_minutes": 15,
                     "requests_per_minute": 45, "max_concurrency": 3,
                     "max_devices": 2, "sort_order": 10,
-                    "live_log_limit": 10, "history_unlock_delay_days": 1,
+                    "history_past_days": 7,
                     "tx_max_recording_seconds": 120,
                     "csrf_token": self.csrf(),
                 },
@@ -311,8 +313,8 @@ class AdminUiTests(unittest.TestCase):
         self.assertEqual(db.plan_ref.data["audio_seconds_limit"], 900)
         self.assertEqual(db.plan_ref.data["monthly_audio_seconds"], 900)
         self.assertEqual(db.plan_ref.data["quota_period"], "daily")
-        self.assertEqual(db.plan_ref.data["live_log_limit"], 10)
-        self.assertEqual(db.plan_ref.data["history_unlock_delay_days"], 1)
+        self.assertNotIn("live_log_limit", db.plan_ref.data)
+        self.assertEqual(db.plan_ref.data["history_past_days"], 7)
         self.assertEqual(db.plan_ref.data["tx_max_recording_seconds"], 120)
         self.assertEqual(
             db.audit[0]["details"]["after"]["tx_max_recording_seconds"],
@@ -456,6 +458,47 @@ class AdminUiTests(unittest.TestCase):
             cursor="", first_query="", next_query="",
         )
         self.assertIn("Station stop requested", audit.body.decode())
+
+    def test_station_detail_shows_the_bucket_folder_and_links_the_owner(self) -> None:
+        # An operator holding a GCS folder must be able to reach the owner, and
+        # an operator holding a user must be able to reach the folder.
+        scope = {
+            "type": "http", "method": "GET", "path": "/stations/0f90cd8e",
+            "query_string": b"", "headers": [], "scheme": "https",
+            "server": ("testserver", 443),
+        }
+        station = {
+            "id": "0f90cd8ef0561234567890abcdef1234",
+            "name": "VINH",
+            "owner_email": "owner@example.com",
+            "owner_uid": "uid-1",
+            "online": True,
+            "platform": "linux",
+            "last_seen": "2026-08-20 16:00",
+            "capture_state": "listening",
+            "desired_state": {"generation": 1},
+            "observed_generation": 1,
+            "storage_prefix": station_storage_prefix("VINH", "0f90cd8ef056"),
+        }
+        page = _render(
+            Request(scope), "station_detail.html", "operator@example.com",
+            "Station", "stations", station=station, audit=[], transfers=[],
+        )
+        body = page.body.decode()
+        self.assertIn("VHF-Storage/VINH_0f90cd8e/", body)
+        self.assertIn('href="/users/uid-1"', body)
+        self.assertIn("renamed", body)
+
+    def test_station_search_accepts_a_pasted_storage_folder(self) -> None:
+        self.assertEqual(_station_id_prefix("vinh_0f90cd8e"), "0f90cd8e")
+        self.assertEqual(_station_id_prefix("raspberrypi_85caeba2"), "85caeba2")
+        self.assertEqual(_station_id_prefix("0f90cd8e"), "0f90cd8e")
+        # A full id keeps using the direct document lookup, not the range query.
+        self.assertEqual(
+            _station_id_prefix("0f90cd8ef0561234567890abcdef1234"), ""
+        )
+        self.assertEqual(_station_id_prefix("VINH"), "")
+        self.assertEqual(_station_id_prefix(""), "")
 
     def test_cursor_rejects_invalid_values(self) -> None:
         self.assertEqual(_decode_cursor("not-a-valid-cursor"), "")

@@ -206,6 +206,64 @@ void main() {
     expect(subject.state.draft, isNull);
   });
 
+  test('a completed transmission clears itself without a DONE tap', () async {
+    final subject = TxController(
+      stationId: 'station-1',
+      repository: FakeTxRepository(
+        processingDelay: Duration.zero,
+        transmissionDelay: Duration.zero,
+      ),
+      queuePreviewDuration: Duration.zero,
+      completedLingerDuration: Duration.zero,
+    );
+    subject.setStationAvailability(
+      online: true,
+      running: true,
+      commandPending: false,
+    );
+    addTearDown(subject.dispose);
+    subject.startRecording();
+    await subject.stopRecording();
+    await subject.confirmTransmission('Cấp cứu.');
+    expect(subject.state.phase, TxPhase.completed);
+
+    // Let the linger timer fire; nothing else is tapped.
+    await Future<void>.delayed(Duration.zero);
+
+    expect(subject.state.phase, TxPhase.idle);
+    expect(subject.state.draft, isNull);
+  });
+
+  test('a stale linger timer never clears a later recording', () async {
+    final subject = TxController(
+      stationId: 'station-1',
+      repository: FakeTxRepository(
+        processingDelay: Duration.zero,
+        transmissionDelay: Duration.zero,
+      ),
+      queuePreviewDuration: Duration.zero,
+      completedLingerDuration: const Duration(milliseconds: 60),
+    );
+    subject.setStationAvailability(
+      online: true,
+      running: true,
+      commandPending: false,
+    );
+    addTearDown(subject.dispose);
+    subject.startRecording();
+    await subject.stopRecording();
+    await subject.confirmTransmission('Cấp cứu.');
+    expect(subject.state.phase, TxPhase.completed);
+
+    // Clearing by hand cancels the pending timer; a recording begun straight
+    // after must survive past the moment that timer would have fired.
+    subject.reset();
+    subject.startRecording();
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+
+    expect(subject.state.phase, TxPhase.recording);
+  });
+
   test('confirm sends the edited translation exactly once', () async {
     final repository = FakeTxRepository(
       processingDelay: Duration.zero,

@@ -31,12 +31,8 @@ class SubscriptionPlanTests(unittest.TestCase):
             ["available", "coming_soon", "coming_soon"],
         )
         self.assertEqual(
-            [plan.live_log_limit for plan in PLAN_CATALOG],
-            [10, 0, 0],
-        )
-        self.assertEqual(
-            [plan.history_unlock_delay_days for plan in PLAN_CATALOG],
-            [1, 0, 0],
+            [plan.history_past_days for plan in PLAN_CATALOG],
+            [0, 7, 30],
         )
         self.assertEqual(
             [plan.tx_max_recording_seconds for plan in PLAN_CATALOG],
@@ -48,8 +44,7 @@ class SubscriptionPlanTests(unittest.TestCase):
             audio_seconds_limit=600,
             requests_per_minute=30,
         )
-        self.assertEqual(legacy_free.live_log_limit, 10)
-        self.assertEqual(legacy_free.history_unlock_delay_days, 1)
+        self.assertEqual(legacy_free.history_past_days, 0)
         self.assertEqual(legacy_free.tx_max_recording_seconds, 60)
         now = datetime(2026, 7, 20, 23, 59, 59, tzinfo=timezone.utc)
         self.assertEqual(usage_period(PLAN_BY_ID["free"], now), "2026-07-20")
@@ -173,8 +168,7 @@ class SubscriptionPlanApiTests(unittest.TestCase):
         self.assertEqual(
             profile.json()["entitlements"],
             {
-                "live_log_limit": 10,
-                "history_unlock_delay_days": 1,
+                "history_past_days": 0,
                 "max_concurrency": 2,
                 "tx_max_recording_seconds": 60,
             },

@@ -279,7 +279,7 @@ có hai tab:
   source/target language, transcript, nội dung cuối, edited flag và attempt.
 
 TX output playback chỉ bật khi output đã tồn tại. Cả hai tab dùng cùng timezone
-và `history_unlock_delay_days`. Tab được giữ khi đi vào chi tiết ngày rồi quay
+và `history_past_days`. Tab được giữ khi đi vào chi tiết ngày rồi quay
 lại; đóng History và mở lại luôn bắt đầu ở RX.
 
 ## Public API và ranh giới tin cậy

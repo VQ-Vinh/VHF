@@ -17,6 +17,7 @@ class TxController extends ChangeNotifier {
     TxRecorder? recorder,
     Duration maximumDuration = const Duration(seconds: 60),
     this.queuePreviewDuration = const Duration(seconds: 1),
+    this.completedLingerDuration = const Duration(milliseconds: 1500),
   }) : _repository = repository,
        _recorder = recorder,
        _maximumDuration = maximumDuration,
@@ -31,8 +32,13 @@ class TxController extends ChangeNotifier {
   Duration get recordingMaximumDuration => _recordingMaximumDuration;
   final Duration queuePreviewDuration;
 
+  /// How long the completed job stays on screen before the control returns to
+  /// idle on its own. Injectable so tests need not wait in real time.
+  final Duration completedLingerDuration;
+
   TxState state = const TxState();
   Timer? _recordingTimer;
+  Timer? _completionTimer;
   DateTime? _recordingStartedAt;
   bool _stationOnline = true;
   bool _stationRunning = false;
@@ -249,10 +255,12 @@ class TxController extends ChangeNotifier {
     final draft = state.draft;
     if (draft != null && draft.status != 'review_ready') return;
     _stopRecordingTimer();
-    await _recorder?.cancel();
     final draftId = state.draft?.id;
+    // Leave reviewReady before awaiting anything, so nothing observes a
+    // discarded draft as still awaiting review.
     state = TxState(targetLanguage: state.targetLanguage);
     notifyListeners();
+    await _recorder?.cancel();
     if (draftId != null) {
       await _repository.cancelDraft(draftId);
     }
@@ -279,7 +287,7 @@ class TxController extends ChangeNotifier {
         final current = await _repository.getDraft(stationId, localDraft.id);
         if (_disposed) return;
         if (current.status == 'completed') {
-          state = state.copyWith(phase: TxPhase.completed, draft: current);
+          _enterCompleted(current);
           notifyListeners();
           return;
         }
@@ -347,7 +355,7 @@ class TxController extends ChangeNotifier {
       if (current.status == 'completed' || current.status == 'cancelled') {
         await _repository.clearActiveDraft(stationId);
         if (current.status == 'completed') {
-          state = state.copyWith(phase: TxPhase.completed, draft: current);
+          _enterCompleted(current);
           notifyListeners();
         }
         return;
@@ -381,8 +389,22 @@ class TxController extends ChangeNotifier {
 
   void reset() {
     _stopRecordingTimer();
+    _completionTimer?.cancel();
+    _completionTimer = null;
     state = TxState(targetLanguage: state.targetLanguage);
     notifyListeners();
+  }
+
+  /// Shows the finished job briefly, then clears it so the next transmission
+  /// needs no acknowledgement tap.
+  void _enterCompleted(TxDraft draft) {
+    state = state.copyWith(phase: TxPhase.completed, draft: draft);
+    _completionTimer?.cancel();
+    _completionTimer = Timer(completedLingerDuration, () {
+      // Leave whatever the user started during the linger untouched.
+      if (_disposed || state.phase != TxPhase.completed) return;
+      reset();
+    });
   }
 
   Future<void> _monitorTransmission(TxDraft draft) async {
@@ -418,7 +440,7 @@ class TxController extends ChangeNotifier {
           state = state.copyWith(draft: current);
         }
       } else if (current.status == 'completed') {
-        state = state.copyWith(phase: TxPhase.completed, draft: current);
+        _enterCompleted(current);
         _monitoredDraftId = null;
         unawaited(_repository.clearActiveDraft(stationId));
       } else if (current.status == 'failed') {
@@ -468,6 +490,7 @@ class TxController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _monitoredDraftId = null;
+    _completionTimer?.cancel();
     _stopRecordingTimer();
     unawaited(_recorder?.dispose() ?? Future<void>.value());
     super.dispose();
