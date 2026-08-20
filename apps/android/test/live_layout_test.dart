@@ -114,12 +114,14 @@ void main() {
         child: harness(
           size: const Size(360, 800),
           child: Scaffold(
-            body: LiveFeedHeader(onHistory: () {}, count: 2, limit: 10),
+            body: LiveFeedHeader(onHistory: () {}),
           ),
         ),
       ),
     );
 
+    // The plan-usage badge is gone now that only the newest result shows.
+    expect(find.textContaining(RegExp(r'\d+/\d+')), findsNothing);
     expect(find.byIcon(Icons.volume_up_outlined), findsOneWidget);
     expect(find.byIcon(Icons.history), findsOneWidget);
 
@@ -239,6 +241,51 @@ void main() {
     expect(find.text('RX STOPPING'), findsOneWidget);
     expect(find.byKey(const ValueKey('live-toggle-progress')), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('an offline Station stops the header spinning forever', (
+    tester,
+  ) async {
+    // Generation 2 was never observed: exactly the state a Station leaves
+    // behind when it drops out mid-command.
+    await tester.pumpWidget(
+      harness(
+        size: const Size(412, 915),
+        child: Scaffold(
+          appBar: LiveHeader(
+            station: station(
+              running: false,
+              desiredGeneration: 2,
+              observedGeneration: 1,
+            ),
+            online: false,
+            ux: const LiveUxState(phase: LiveCommandPhase.offline),
+            onToggle: null,
+            onSettings: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('live-toggle-progress')), findsNothing);
+    expect(find.text('Stopping…'), findsNothing);
+    expect(find.text('RX OFF'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  test('offline leaves no pending command behind', () {
+    final subject = LiveUxController(
+      stationId: 'station-1',
+      send: ({running, targetLanguage, retry = false}) async {},
+    );
+    addTearDown(subject.dispose);
+    final pending = station(desiredGeneration: 2, observedGeneration: 1);
+    subject.setRunning(pending, false);
+
+    subject.synchronize(pending, online: false);
+
+    expect(subject.state.phase, LiveCommandPhase.offline);
+    expect(subject.state.pendingRunning, isNull);
   });
 
   test('header and dock share the transition state until command applies', () {

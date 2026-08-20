@@ -571,27 +571,13 @@ class MemoryRepository:
         station = self.station_projections.get(uid, {}).get(station_id)
         if not station or not station.get("active", True):
             raise api_error(404, "STATION_NOT_FOUND", "Station was not found")
-        now = datetime.now(timezone.utc)
-        cutoff = now - timedelta(days=plan.history_unlock_delay_days)
         values = [
             dict(value)
             for (owner, station_key, session, _), value in self.station_results.items()
             if owner == uid and station_key == station_id and session == session_id
         ]
         values.sort(key=lambda item: _result_timestamp(item), reverse=True)
-        recent_limit = limit
-        if plan.live_log_limit:
-            recent_limit = min(recent_limit, plan.live_log_limit)
-        recent = [
-            item for item in values if _result_timestamp(item) > cutoff
-        ][:recent_limit]
-        unlocked = [
-            item for item in values if _result_timestamp(item) <= cutoff
-        ][: max(0, limit - len(recent))]
-        return sorted(
-            [*unlocked, *recent],
-            key=_result_timestamp,
-        )
+        return sorted(values[:limit], key=_result_timestamp)
 
     def list_station_live_results(
         self,

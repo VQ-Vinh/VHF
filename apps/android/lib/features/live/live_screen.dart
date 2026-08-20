@@ -35,7 +35,12 @@ bool canToggleLiveStation({
   required bool busy,
   required bool commandPending,
   bool commandFailed = false,
-}) => (online || running) && !busy && (!commandPending || commandFailed);
+}) =>
+    (online || running) &&
+    !busy &&
+    // An offline Station can never acknowledge the generation, so treating its
+    // command as pending would lock the toggle until it comes back.
+    (!commandPending || commandFailed || !online);
 
 class _LiveScreenState extends ConsumerState<LiveScreen>
     with WidgetsBindingObserver {
@@ -43,6 +48,12 @@ class _LiveScreenState extends ConsumerState<LiveScreen>
   late final TxController _txController;
   bool _requiresDiscardConfirmation = false;
   bool _reviewOpen = false;
+
+  /// Draft the sheet has already been opened for on its own. Without this the
+  /// sheet reopens itself: dismissing it by drag, scrim or back leaves the
+  /// phase on reviewReady, and the next controller notification re-triggers
+  /// the auto-open. The REVIEW button stays the deliberate way back in.
+  String? _autoReviewedDraftId;
 
   @override
   void initState() {
@@ -73,11 +84,19 @@ class _LiveScreenState extends ConsumerState<LiveScreen>
     if (requiresDiscard != _requiresDiscardConfirmation && mounted) {
       setState(() => _requiresDiscardConfirmation = requiresDiscard);
     }
-    if (_txController.state.phase == TxPhase.reviewReady && !_reviewOpen) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _showTxReview();
-      });
+    final draftId = _txController.state.draft?.id;
+    if (_txController.state.phase != TxPhase.reviewReady) {
+      // A new recording gets its own automatic review.
+      _autoReviewedDraftId = null;
+      return;
     }
+    if (_reviewOpen || draftId == null || draftId == _autoReviewedDraftId) {
+      return;
+    }
+    _autoReviewedDraftId = draftId;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _showTxReview();
+    });
   }
 
   @override
@@ -215,10 +234,12 @@ class _LiveScreenState extends ConsumerState<LiveScreen>
         );
         final results = ref.watch(liveResultsProvider(resultsKey));
         final items = results.value ?? const <TranslationResult>[];
+        // Results arrive oldest first, so the newest one — the only one the
+        // feed shows — is the last entry.
         final detectedLanguage =
-            items.isEmpty || items.first.language.isEmpty
+            items.isEmpty || items.last.language.isEmpty
                 ? null
-                : items.first.language;
+                : items.last.language;
         final targetLanguage =
             ux.optimisticLanguage ?? station.desired.targetLanguage;
         final processingErrorKey =
@@ -275,21 +296,24 @@ class _LiveScreenState extends ConsumerState<LiveScreen>
                         ? () => controller.retry(station)
                         : null,
               ),
-            LiveFeedHeader(
-              onHistory: _showHistory,
-              count: items.length,
-              limit: entitlements.liveLogLimit,
+            LiveFeedHeader(onHistory: _showHistory),
+            Expanded(
+              flex: 4,
+              child: _TranslationFeed(value: results, onRetry: retryConnection),
             ),
             Expanded(
-              child: _TranslationFeed(value: results, onRetry: retryConnection),
+              flex: 5,
+              child: TxTalkPad(
+                controller: _txController,
+                onReview: _showTxReview,
+                onConnectionRetry: retryConnection,
+              ),
             ),
             TxLiveDock(
               controller: _txController,
               stationState: stationDisplayState,
               stationOnline: online,
               apiOnline: apiOnline,
-              onReview: _showTxReview,
-              onConnectionRetry: retryConnection,
             ),
           ],
         );
@@ -374,7 +398,9 @@ class LiveHeader extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) {
     final running = station.desired.running;
-    final waiting = ux.busy || station.commandPending;
+    // Only a reachable Station can still be working on the command; otherwise
+    // the spinner would run forever. See canToggleLiveStation.
+    final waiting = ux.busy || (station.commandPending && online);
     final transitionRunning = ux.pendingRunning ?? station.desired.running;
     final buttonRunning = waiting ? transitionRunning : running;
     final stationDisplayState = liveStationDisplayState(
@@ -616,7 +642,7 @@ class LanguageStrip extends StatelessWidget {
         Expanded(
           child: _LanguageValue(
             key: const ValueKey('input-language-field'),
-            label: AppText.of(context, 'input'),
+            label: AppText.of(context, 'rx_heard'),
             value:
                 detectedLanguage == null
                     ? AppText.of(context, 'detecting')
@@ -636,7 +662,7 @@ class LanguageStrip extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              _LanguageLabel(label: AppText.of(context, 'output')),
+              _LanguageLabel(label: AppText.of(context, 'rx_translate_to')),
               const SizedBox(height: 1),
               SizedBox(
                 height: 40,
@@ -739,15 +765,8 @@ class _LanguageValue extends StatelessWidget {
 }
 
 class LiveFeedHeader extends ConsumerWidget {
-  const LiveFeedHeader({
-    super.key,
-    required this.onHistory,
-    required this.count,
-    required this.limit,
-  });
+  const LiveFeedHeader({super.key, required this.onHistory});
   final VoidCallback onHistory;
-  final int count;
-  final int limit;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -766,19 +785,6 @@ class LiveFeedHeader extends ConsumerWidget {
               color: PranaTheme.muted,
             ),
           ),
-          if (limit > 0) ...[
-            const SizedBox(width: 10),
-            Tooltip(
-              message: AppText.format(context, 'live_log_usage', {
-                'count': count,
-                'limit': limit,
-              }),
-              child: Text(
-                '$count/$limit',
-                style: const TextStyle(fontSize: 10, color: PranaTheme.muted),
-              ),
-            ),
-          ],
           const Spacer(),
           IconButton(
             key: const ValueKey('live-audio-toggle'),
@@ -806,61 +812,15 @@ class LiveFeedHeader extends ConsumerWidget {
   }
 }
 
-class _TranslationFeed extends StatefulWidget {
+/// Shows only the newest translation of the day. Everything older stays one tap
+/// away behind the history button in [LiveFeedHeader].
+class _TranslationFeed extends StatelessWidget {
   const _TranslationFeed({required this.value, required this.onRetry});
   final AsyncValue<List<TranslationResult>> value;
   final VoidCallback onRetry;
 
   @override
-  State<_TranslationFeed> createState() => _TranslationFeedState();
-}
-
-class _TranslationFeedState extends State<_TranslationFeed> {
-  final _scrollController = ScrollController();
-  String? _visibleResultSignature;
-
-  void _scrollToNewest({required bool animate}) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scrollController.hasClients) return;
-      final target = _scrollController.position.maxScrollExtent;
-      if (animate) {
-        _scrollController.animateTo(
-          target,
-          duration: const Duration(milliseconds: 240),
-          curve: Curves.easeOut,
-        );
-      } else {
-        _scrollController.jumpTo(target);
-      }
-    });
-  }
-
-  @override
-  void didUpdateWidget(covariant _TranslationFeed oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final items = widget.value.value ?? const <TranslationResult>[];
-    final signature = items.map((item) => item.requestId).join('|');
-    final hasNewResult =
-        signature.isNotEmpty && signature != _visibleResultSignature;
-    final nearNewest =
-        !_scrollController.hasClients ||
-        _scrollController.position.maxScrollExtent -
-                _scrollController.position.pixels <=
-            80;
-    if (hasNewResult && nearNewest) {
-      _scrollToNewest(animate: _visibleResultSignature != null);
-    }
-    _visibleResultSignature = signature;
-  }
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => widget.value.when(
+  Widget build(BuildContext context) => value.when(
     loading: () => const _ResultSkeleton(),
     error:
         (error, _) => Center(
@@ -896,7 +856,7 @@ class _TranslationFeedState extends State<_TranslationFeed> {
                 const SizedBox(height: 18),
                 FilledButton.icon(
                   key: const ValueKey('live-results-retry'),
-                  onPressed: widget.onRetry,
+                  onPressed: onRetry,
                   icon: const Icon(Icons.refresh),
                   label: Text(AppText.of(context, 'retry')),
                 ),
@@ -905,27 +865,23 @@ class _TranslationFeedState extends State<_TranslationFeed> {
           ),
         ),
     data: (items) {
-      if (items.isNotEmpty && _visibleResultSignature == null) {
-        _visibleResultSignature = items.map((item) => item.requestId).join('|');
-        _scrollToNewest(animate: false);
+      if (items.isEmpty) {
+        return EmptyState(
+          icon: Icons.graphic_eq,
+          title: AppText.of(context, 'empty_title'),
+          subtitle: AppText.of(context, 'empty_body'),
+        );
       }
-      return items.isEmpty
-          ? EmptyState(
-            icon: Icons.graphic_eq,
-            title: AppText.of(context, 'empty_title'),
-            subtitle: AppText.of(context, 'empty_body'),
-          )
-          : ListView.separated(
-            controller: _scrollController,
-            padding: const EdgeInsets.fromLTRB(16, 6, 16, 18),
-            itemCount: items.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 10),
-            itemBuilder:
-                (_, index) => TranslationResultCard(
-                  key: ValueKey(items[index].requestId),
-                  result: items[index],
-                ),
-          );
+      final newest = items.last;
+      // Scrollable so a long translation still fits without overflowing, but
+      // shrink-wrapped so a short one leaves the space to the talk button.
+      return SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
+        child: TranslationResultCard(
+          key: ValueKey(newest.requestId),
+          result: newest,
+        ),
+      );
     },
   );
 }
@@ -1037,9 +993,11 @@ class _RetryingBanner extends StatelessWidget {
 class _ResultSkeleton extends StatelessWidget {
   const _ResultSkeleton();
   @override
-  Widget build(BuildContext context) => ListView.builder(
-    padding: const EdgeInsets.all(16),
-    itemCount: 4,
-    itemBuilder: (_, _) => const Card(child: SizedBox(height: 116)),
+  Widget build(BuildContext context) => const Padding(
+    padding: EdgeInsets.fromLTRB(16, 6, 16, 12),
+    child: Align(
+      alignment: Alignment.topCenter,
+      child: Card(child: SizedBox(height: 116, width: double.infinity)),
+    ),
   );
 }

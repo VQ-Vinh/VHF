@@ -6,6 +6,10 @@ from typing import Literal
 from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
 
 
+# Today is always readable; these say how many days before today stay open.
+_DEFAULT_HISTORY_PAST_DAYS = {"free": 0, "plus": 7, "pro": 30}
+
+
 class Plan(BaseModel):
     id: str
     name: str = Field(min_length=1, max_length=40)
@@ -19,10 +23,8 @@ class Plan(BaseModel):
     max_concurrency: int = Field(default=2, ge=1, le=10)
     max_devices: int = Field(default=2, ge=1, le=10)
     max_stations: int = Field(default=2, ge=1, le=20)
-    # Zero means unlimited. Existing Firestore plan documents are normalized
-    # by plan ID so the Free policy takes effect before an admin saves it.
-    live_log_limit: int = Field(default=0, ge=0, le=1_000)
-    history_unlock_delay_days: int = Field(default=0, ge=0, le=30)
+    # How many days before today stay viewable. 0 means today only.
+    history_past_days: int = Field(default=0, ge=0, le=365)
     tx_max_recording_seconds: int = Field(default=60, ge=5, le=120)
 
     @model_validator(mode="before")
@@ -34,10 +36,10 @@ class Plan(BaseModel):
             data.setdefault("quota_period", "monthly")
         if not data.get("monthly_audio_seconds") and data.get("audio_seconds_limit"):
             data["monthly_audio_seconds"] = data["audio_seconds_limit"]
-        if "live_log_limit" not in data:
-            data["live_log_limit"] = 10 if data.get("id") == "free" else 0
-        if "history_unlock_delay_days" not in data:
-            data["history_unlock_delay_days"] = 1 if data.get("id") == "free" else 0
+        if "history_past_days" not in data:
+            data["history_past_days"] = _DEFAULT_HISTORY_PAST_DAYS.get(
+                str(data.get("id") or ""), 0
+            )
         data.setdefault("tx_max_recording_seconds", 60)
         return data
 
@@ -120,8 +122,7 @@ class Usage(BaseModel):
 
 
 class PlanEntitlements(BaseModel):
-    live_log_limit: int = Field(default=10, ge=0, le=1_000)
-    history_unlock_delay_days: int = Field(default=1, ge=0, le=30)
+    history_past_days: int = Field(default=0, ge=0, le=365)
     max_concurrency: int = Field(default=2, ge=1, le=10)
     tx_max_recording_seconds: int = Field(default=60, ge=5, le=120)
 

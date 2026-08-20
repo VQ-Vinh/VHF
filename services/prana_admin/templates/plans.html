@@ -24,8 +24,7 @@
         <label><span>{{ t('plans.concurrency') }}</span><input name="max_concurrency" type="number" min="1" max="10" value="{{ plan.max_concurrency }}" required disabled></label>
         <label><span>{{ t('plans.devices') }}</span><input name="max_devices" type="number" min="1" max="10" value="{{ plan.max_devices }}" required disabled></label>
         <label><span>{{ t('plans.stations') }}</span><input name="max_stations" type="number" min="1" max="20" value="{{ plan.max_stations or 2 }}" required disabled></label>
-        <label><span>{{ t('plans.live_logs') }}</span><input name="live_log_limit" type="number" min="0" max="1000" value="{{ plan.live_log_limit }}" required disabled></label>
-        <label><span>{{ t('plans.history_delay') }}</span><input name="history_unlock_delay_days" type="number" min="0" max="30" value="{{ plan.history_unlock_delay_days }}" required disabled></label>
+        <label><span>{{ t('plans.history_past_days') }}</span><input name="history_past_days" type="number" min="0" max="365" value="{{ plan.history_past_days }}" required disabled></label>
         <label><span>{{ t('plans.tx_max_recording') }}</span><input name="tx_max_recording_seconds" type="number" min="5" max="120" value="{{ plan.tx_max_recording_seconds|default(60, true) }}" required disabled></label>
         <label><span>{{ t('plans.sort_order') }}</span><input name="sort_order" type="number" min="0" max="1000" value="{{ plan.sort_order }}" required disabled></label>
       </div>

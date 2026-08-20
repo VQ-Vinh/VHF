@@ -5,13 +5,14 @@
 <div class="detail-grid">
   <section class="panel"><div class="panel-heading"><div><h2>{{ t('stations.runtime') }}</h2><p>{{ t('stations.runtime_hint') }}</p></div></div>
     <dl class="definition-list">
-      <div><dt>{{ t('stations.owner') }}</dt><dd>{{ station.owner_email }}</dd></div>
+      <div><dt>{{ t('stations.owner') }}</dt><dd>{% if station.owner_uid %}<a class="text-link" href="/users/{{ station.owner_uid }}">{{ station.owner_email }}</a>{% else %}{{ station.owner_email }}{% endif %}</dd></div>
       <div><dt>{{ t('stations.platform') }}</dt><dd>{{ station.platform or '-' }}</dd></div>
       <div><dt>{{ t('stations.last_seen') }}</dt><dd>{{ station.last_seen }}</dd></div>
       <div><dt>{{ t('stations.capture') }}</dt><dd>{{ station.capture_state or 'idle' }}</dd></div>
       <div><dt>{{ t('stations.session') }}</dt><dd><code>{{ station.session_id or '-' }}</code></dd></div>
       <div><dt>{{ t('stations.version') }}</dt><dd>{{ station.app_version or '-' }}</dd></div>
       <div><dt>{{ t('stations.error') }}</dt><dd>{{ station.last_error or '-' }}</dd></div>
+      <div><dt>{{ t('stations.storage_folder') }}</dt><dd><code>{{ station.storage_prefix }}</code><small>{{ t('stations.storage_folder_hint') }}</small></dd></div>
     </dl>
   </section>
   <section class="panel"><div class="panel-heading"><div><h2>{{ t('stations.control') }}</h2><p>{{ t('stations.control_hint') }}</p></div></div>

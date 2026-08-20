@@ -671,7 +671,7 @@ class StationApiTests(unittest.TestCase):
         self.assertEqual(desired["generation"], 1)
         self.assertNotIn("auto_start_capture", desired)
 
-    def test_result_listing_enforces_plan_history_and_live_limits(self):
+    def test_result_listing_returns_the_newest_results(self):
         self.create_and_claim()
         now = datetime.now(timezone.utc)
         for sequence, timestamp in enumerate(
@@ -696,10 +696,6 @@ class StationApiTests(unittest.TestCase):
                 self.station_id,
                 response,
             )
-        self.repo.plans["free"] = self.repo.plans["free"].model_copy(
-            update={"live_log_limit": 2, "history_unlock_delay_days": 1}
-        )
-
         response = self.client.get(
             f"/v1/stations/{self.station_id}/sessions/session-1/results"
         )
@@ -707,10 +703,10 @@ class StationApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(
             [item["sequence"] for item in response.json()],
-            [1, 3, 4],
+            [1, 2, 3, 4],
         )
 
-    def test_live_results_merge_today_across_sessions_and_apply_plan_limit(self):
+    def test_live_results_merge_today_across_sessions_and_honour_limit(self):
         self.create_and_claim()
         local_timezone = timezone(timedelta(hours=7))
         local_now = datetime.now(timezone.utc).astimezone(local_timezone)
@@ -733,13 +729,9 @@ class StationApiTests(unittest.TestCase):
                     timestamp=timestamp.astimezone(timezone.utc),
                 ).model_dump(mode="json"),
             )
-        self.repo.plans["free"] = self.repo.plans["free"].model_copy(
-            update={"live_log_limit": 2}
-        )
-
         response = self.client.get(
             f"/v1/stations/{self.station_id}/live/results",
-            params={"timezone_offset_minutes": 420, "limit": 1000},
+            params={"timezone_offset_minutes": 420, "limit": 2},
         )
 
         self.assertEqual(response.status_code, 200, response.text)
@@ -752,7 +744,7 @@ class StationApiTests(unittest.TestCase):
             ["session-3", "session-4"],
         )
 
-    def test_history_groups_sessions_by_local_day_and_locks_today(self):
+    def test_history_groups_sessions_by_local_day_and_locks_past_days(self):
         self.create_and_claim()
         local_timezone = timezone(timedelta(hours=7))
         local_today = datetime.now(timezone.utc).astimezone(local_timezone).date()
@@ -794,30 +786,29 @@ class StationApiTests(unittest.TestCase):
             [item["date"] for item in days],
             [local_today.isoformat(), previous_day.isoformat()],
         )
-        self.assertTrue(days[0]["locked"])
-        self.assertFalse(days[1]["locked"])
+        # Free keeps history_past_days at 0: today reads, anything older locks.
+        self.assertFalse(days[0]["locked"])
+        self.assertTrue(days[1]["locked"])
         locked = self.client.get(
             f"/v1/stations/{self.station_id}/history/days/"
-            f"{local_today.isoformat()}/results",
+            f"{previous_day.isoformat()}/results",
             params={"timezone_offset_minutes": 420},
         )
         self.assertEqual(locked.status_code, 403, locked.text)
+        self.assertEqual(locked.json()["detail"]["code"], "HISTORY_LOCKED")
         unlocked = self.client.get(
             f"/v1/stations/{self.station_id}/history/days/"
-            f"{previous_day.isoformat()}/results",
+            f"{local_today.isoformat()}/results",
             params={"timezone_offset_minutes": 420},
         )
         self.assertEqual(unlocked.status_code, 200, unlocked.text)
         self.assertEqual(
             [item["request_id"] for item in unlocked.json()["items"]],
-            ["day-request-1"],
+            ["day-request-2"],
         )
 
-    def test_history_paginates_all_sessions_and_zero_delay_unlocks_today(self):
+    def test_history_paginates_all_sessions_for_today(self):
         self.create_and_claim()
-        self.repo.plans["free"] = self.repo.plans["free"].model_copy(
-            update={"history_unlock_delay_days": 0}
-        )
         now = datetime.now(timezone.utc)
         for sequence in range(1001):
             self.repo.publish_station_result(
@@ -1043,9 +1034,6 @@ class StationApiTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200, response.text)
             self.assertEqual(response.json()["status"], "completed")
 
-            self.repo.plans["free"] = self.repo.plans["free"].model_copy(
-                update={"history_unlock_delay_days": 0}
-            )
             days = self.client.get(
                 f"/v1/stations/{self.station_id}/tx/history/days",
                 params={"timezone_offset_minutes": 420},

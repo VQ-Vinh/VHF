@@ -19,11 +19,14 @@ from google.cloud import firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
 
 from services.prana_admin.i18n import translator
+from services.prana_admin.storage_paths import station_storage_prefix
 
 
 BASE_DIR = Path(__file__).resolve().parent
 USER_STATUSES = ("registered", "email_verified", "pending_payment", "active", "expired", "suspended")
 EDITABLE_PLAN_IDS = ("free", "plus", "pro")
+# Mirrors _DEFAULT_HISTORY_PAST_DAYS in services/prana_api/models.py.
+_DEFAULT_HISTORY_PAST_DAYS = {"free": 0, "plus": 7, "pro": 30}
 PAGE_SIZE = 25
 AUDIT_PAGE_SIZE = 50
 CSRF_COOKIE = "prana_admin_csrf"
@@ -313,11 +316,10 @@ def _plan_rows(db) -> list[dict]:
         item.setdefault("availability", "available")
         item.setdefault("sort_order", 0)
         item.setdefault("max_stations", 2)
-        item.setdefault("live_log_limit", 10 if snap.id == "free" else 0)
         item.setdefault("tx_max_recording_seconds", 60)
         item.setdefault(
-            "history_unlock_delay_days",
-            1 if snap.id == "free" else 0,
+            "history_past_days",
+            _DEFAULT_HISTORY_PAST_DAYS.get(snap.id, 0),
         )
         plans.append(item)
     return sorted(plans, key=lambda item: (int(item["sort_order"]), item["id"]))
@@ -326,6 +328,19 @@ def _plan_rows(db) -> list[dict]:
 def _aggregate_count(query) -> int:
     result = query.count(alias="total").get()
     return int(result[0][0].value) if result else 0
+
+
+def _station_id_prefix(query_text: str) -> str:
+    """Pull a Station id prefix out of a pasted GCS folder name.
+
+    Operators copy folders like ``VINH_0f90cd8e`` straight from the bucket. The
+    trailing 8 hex characters are the Station id prefix, and matching on those
+    survives a Station rename, which the folder name itself does not.
+    """
+    candidate = query_text.rsplit("_", 1)[-1]
+    if len(candidate) == 8 and all(char in "0123456789abcdef" for char in candidate):
+        return candidate
+    return ""
 
 
 def _station_row(db, snap, now: datetime | None = None) -> dict:
@@ -346,6 +361,11 @@ def _station_row(db, snap, now: datetime | None = None) -> dict:
         "online": online,
         "owner_email": owner_data.get("email", "-"),
         "last_seen": _format_datetime(last_seen),
+        # Built from the registry name, which is what the API uses when it
+        # uploads, so this matches the bucket for anything recorded from now on.
+        "storage_prefix": station_storage_prefix(
+            str(data.get("name") or ""), snap.id
+        ),
     }
 
 
@@ -420,7 +440,10 @@ def stations_page(
         snapshots = [snap] if snap.exists else []
         has_more = False
     else:
-        if normalized and "@" in normalized:
+        id_prefix = _station_id_prefix(normalized)
+        if id_prefix:
+            query = query.start_at([id_prefix]).end_at([id_prefix + ""])
+        elif normalized and "@" in normalized:
             owners = list(
                 db.collection("users")
                 .where(filter=FieldFilter("email_lower", "==", normalized))
@@ -436,7 +459,7 @@ def stations_page(
         if query is not None:
             if platform:
                 query = query.where(filter=FieldFilter("platform", "==", platform))
-            cursor_id = _decode_cursor(cursor)
+            cursor_id = "" if id_prefix else _decode_cursor(cursor)
             if cursor_id:
                 cursor_doc = db.collection("station_registry").document(cursor_id).get()
                 if cursor_doc.exists:
@@ -1005,8 +1028,7 @@ def update_plan(
     max_concurrency: int = Form(...),
     max_devices: int = Form(...),
     max_stations: int = Form(2),
-    live_log_limit: int | None = Form(None),
-    history_unlock_delay_days: int | None = Form(None),
+    history_past_days: int | None = Form(None),
     tx_max_recording_seconds: int = Form(60),
     sort_order: int = Form(...),
     csrf_token: str = Form(),
@@ -1016,10 +1038,8 @@ def update_plan(
     _verify_csrf(request, email, csrf_token)
     if plan_id not in EDITABLE_PLAN_IDS:
         raise HTTPException(404, "Plan is not editable")
-    if live_log_limit is None:
-        live_log_limit = 10 if plan_id == "free" else 0
-    if history_unlock_delay_days is None:
-        history_unlock_delay_days = 1 if plan_id == "free" else 0
+    if history_past_days is None:
+        history_past_days = _DEFAULT_HISTORY_PAST_DAYS.get(plan_id, 0)
     display_name = name.strip()
     if not display_name or len(display_name) > 40:
         raise HTTPException(422, "Plan name must contain 1 to 40 characters")
@@ -1029,12 +1049,7 @@ def update_plan(
         "max_concurrency": (max_concurrency, 1, 10),
         "max_devices": (max_devices, 1, 10),
         "max_stations": (max_stations, 1, 20),
-        "live_log_limit": (live_log_limit, 0, 1_000),
-        "history_unlock_delay_days": (
-            history_unlock_delay_days,
-            0,
-            30,
-        ),
+        "history_past_days": (history_past_days, 0, 365),
         "tx_max_recording_seconds": (tx_max_recording_seconds, 5, 120),
         "sort_order": (sort_order, 0, 1_000),
     }
@@ -1059,8 +1074,7 @@ def update_plan(
         "max_concurrency": max_concurrency,
         "max_devices": max_devices,
         "max_stations": max_stations,
-        "live_log_limit": live_log_limit,
-        "history_unlock_delay_days": history_unlock_delay_days,
+        "history_past_days": history_past_days,
         "tx_max_recording_seconds": tx_max_recording_seconds,
         "sort_order": sort_order,
         "updated_at": firestore.SERVER_TIMESTAMP,

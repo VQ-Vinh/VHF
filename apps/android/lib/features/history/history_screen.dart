@@ -179,8 +179,10 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                             }),
                           ),
                           trailing: Icon(
+                            // A locked day is past the plan window, so it will
+                            // never unlock on its own.
                             day.locked
-                                ? Icons.lock_clock_outlined
+                                ? Icons.lock_outline
                                 : Icons.chevron_right,
                           ),
                           onTap:

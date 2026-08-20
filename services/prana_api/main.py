@@ -310,7 +310,8 @@ def _history_timestamp(value: dict) -> datetime:
 
 
 def _history_unlocked(history_date: date, plan: Plan, local_today: date) -> bool:
-    return history_date + timedelta(days=plan.history_unlock_delay_days) <= local_today
+    """Today is always readable; older days only within the plan's window."""
+    return history_date >= local_today - timedelta(days=plan.history_past_days)
 
 
 def _station_history_values(
@@ -413,10 +414,7 @@ def me(identity: Identity = Depends(require_identity), repo: Repository = Depend
         plan = repo.get_plan(account.plan_id)
         usage = repo.get_usage(identity.uid, plan)
     entitlements = {
-        "live_log_limit": plan.live_log_limit if plan else 10,
-        "history_unlock_delay_days": (
-            plan.history_unlock_delay_days if plan else 1
-        ),
+        "history_past_days": plan.history_past_days if plan else 0,
         "max_concurrency": plan.max_concurrency if plan else 2,
         "tx_max_recording_seconds": (
             plan.tx_max_recording_seconds if plan else 60
@@ -469,10 +467,7 @@ def update_me(
         **account.model_dump(),
         usage=usage,
         entitlements={
-            "live_log_limit": plan.live_log_limit if plan else 10,
-            "history_unlock_delay_days": (
-                plan.history_unlock_delay_days if plan else 1
-            ),
+            "history_past_days": plan.history_past_days if plan else 0,
             "max_concurrency": plan.max_concurrency if plan else 2,
             "tx_max_recording_seconds": (
                 plan.tx_max_recording_seconds if plan else 60
@@ -504,8 +499,7 @@ def select_subscription(
         **account.model_dump(),
         usage=repo.get_usage(account.uid, plan),
         entitlements={
-            "live_log_limit": plan.live_log_limit,
-            "history_unlock_delay_days": plan.history_unlock_delay_days,
+            "history_past_days": plan.history_past_days,
             "max_concurrency": plan.max_concurrency,
             "tx_max_recording_seconds": plan.tx_max_recording_seconds,
         },
@@ -752,7 +746,7 @@ def list_station_history_day_results(
         raise api_error(
             403,
             "HISTORY_LOCKED",
-            "Full history is not available until the configured unlock date",
+            "This day is outside the history window for your plan",
         )
     safe_limit = max(1, min(limit, 1000))
     try:
@@ -795,17 +789,12 @@ def list_station_live_results(
     start_at = local_start.astimezone(timezone.utc)
     end_at = (local_start + timedelta(days=1)).astimezone(timezone.utc)
     safe_limit = max(1, min(limit, 1000))
-    entitled_limit = (
-        safe_limit
-        if plan.live_log_limit == 0
-        else min(safe_limit, plan.live_log_limit)
-    )
     return repo.list_station_live_results(
         account.uid,
         station_id,
         start_at,
         end_at,
-        entitled_limit,
+        safe_limit,
     )
 
 
@@ -1556,7 +1545,7 @@ def list_tx_history_day_jobs(
     local_timezone = _history_timezone(timezone_offset_minutes, timezone_name)
     local_today = datetime.now(timezone.utc).astimezone(local_timezone).date()
     if not _history_unlocked(history_date, plan, local_today):
-        raise api_error(403, "HISTORY_LOCKED", "Full history is not available until the configured unlock date")
+        raise api_error(403, "HISTORY_LOCKED", "This day is outside the history window for your plan")
     try:
         offset = int(cursor or "0")
     except ValueError as exc:

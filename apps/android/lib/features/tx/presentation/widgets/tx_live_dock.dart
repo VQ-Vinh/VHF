@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../../../core/localization.dart';
@@ -15,16 +17,12 @@ class TxLiveDock extends StatelessWidget {
     required this.stationState,
     required this.stationOnline,
     required this.apiOnline,
-    required this.onReview,
-    required this.onConnectionRetry,
   });
 
   final TxController controller;
   final String stationState;
   final bool stationOnline;
   final bool apiOnline;
-  final VoidCallback onReview;
-  final VoidCallback onConnectionRetry;
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
@@ -34,7 +32,6 @@ class TxLiveDock extends StatelessWidget {
       final recording = state.phase == TxPhase.recording;
       return Container(
         key: const ValueKey('tx-live-dock'),
-        constraints: const BoxConstraints(minHeight: 88),
         decoration: BoxDecoration(
           color: recording ? const Color(0xFFFFF3F4) : const Color(0xFFDCE9ED),
         ),
@@ -47,55 +44,110 @@ class TxLiveDock extends StatelessWidget {
             ),
           ),
         ),
-        padding: EdgeInsets.fromLTRB(12, recording ? 6 : 8, 12, 10),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            if (recording) ...[
-              _RecordingStatus(
-                duration: state.duration,
-                maximumDuration: controller.recordingMaximumDuration,
-              ),
-              const SizedBox(height: 4),
-            ],
-            if (state.failure == TxFailure.stationOfflineDuringTx) ...[
-              _OfflineTxNotice(settled: state.draft?.status == 'failed'),
-              const SizedBox(height: 4),
-            ],
-            Stack(
-              alignment: Alignment.center,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: _RadioStatus(
-                        stationState: recording ? 'TX' : stationState,
-                        stationOnline: stationOnline,
-                        apiOnline: apiOnline,
-                      ),
-                    ),
-                    const SizedBox(width: 128),
-                    Expanded(
-                      child: _DockLanguage(
-                        controller: controller,
-                        enabled: state.canChangeLanguage && stationOnline,
-                      ),
-                    ),
-                  ],
-                ),
-                SizedBox(
-                  key: const ValueKey('tx-center-control'),
-                  width: 112,
-                  child: _CenterControl(
-                    controller: controller,
-                    onReview: onReview,
-                    onConnectionRetry: onConnectionRetry,
+            Expanded(
+              flex: 3,
+              child: SizedBox(
+                height: 40,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: _RadioStatus(
+                    stationState: recording ? 'TX' : stationState,
+                    stationOnline: stationOnline,
+                    apiOnline: apiOnline,
                   ),
                 ),
-              ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              flex: 2,
+              child: _DockLanguage(
+                controller: controller,
+                enabled: state.canChangeLanguage && stationOnline,
+              ),
             ),
           ],
         ),
+      );
+    },
+  );
+}
+
+/// The talk control lifted out of the dock so the circle can float in the free
+/// space above it. Every [TxPhase] renders here, so the control never jumps
+/// between two regions of the screen as the transmission progresses.
+class TxTalkPad extends StatelessWidget {
+  const TxTalkPad({
+    super.key,
+    required this.controller,
+    required this.onReview,
+    required this.onConnectionRetry,
+  });
+
+  final TxController controller;
+  final VoidCallback onReview;
+  final VoidCallback onConnectionRetry;
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: controller,
+    builder: (context, _) {
+      final state = controller.state;
+      final recording = state.phase == TxPhase.recording;
+      final notice = state.failure == TxFailure.stationOfflineDuringTx;
+      return LayoutBuilder(
+        key: const ValueKey('tx-talk-pad'),
+        builder: (context, constraints) {
+          // Whatever the status lines above the circle need, plus room for the
+          // 1.08 recording pulse, so the circle can never overflow the pad.
+          final reserved = (recording ? 28.0 : 0) + (notice ? 26.0 : 0) + 16;
+          final available = math.max(constraints.maxHeight - reserved, 0.0);
+          final diameter = math
+              .min(available / 1.08, constraints.maxWidth * .58)
+              .clamp(112.0, 200.0);
+          // Landscape leaves the pad shorter than the smallest circle plus the
+          // fixed-height phase controls, so scale the block down rather than
+          // let it overflow.
+          return Center(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              // FittedBox hands its child unbounded width, which breaks the
+              // Flexible status rows; pin it back to the pad's width.
+              child: SizedBox(
+                width: constraints.maxWidth,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (recording) ...[
+                      _RecordingStatus(
+                        duration: state.duration,
+                        maximumDuration: controller.recordingMaximumDuration,
+                      ),
+                      const SizedBox(height: 4),
+                    ],
+                    if (notice) ...[
+                      _OfflineTxNotice(
+                        settled: state.draft?.status == 'failed',
+                      ),
+                      const SizedBox(height: 4),
+                    ],
+                    _CenterControl(
+                      key: const ValueKey('tx-center-control'),
+                      controller: controller,
+                      diameter: diameter,
+                      onReview: onReview,
+                      onConnectionRetry: onConnectionRetry,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
       );
     },
   );
@@ -113,19 +165,23 @@ class _RadioStatus extends StatelessWidget {
   final bool apiOnline;
 
   @override
-  Widget build(BuildContext context) => Column(
+  // Height matches the language field beside it so the two read as one band.
+  Widget build(BuildContext context) => Row(
     mainAxisSize: MainAxisSize.min,
-    crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      _StatusLine(
-        label: stationOnline ? stationState : 'OFFLINE',
-        ok: stationOnline,
-        tx: stationState == 'TX',
+      Flexible(
+        child: _StatusLine(
+          label: stationOnline ? stationState : 'OFFLINE',
+          ok: stationOnline,
+          tx: stationState == 'TX',
+        ),
       ),
-      const SizedBox(height: 8),
-      _StatusLine(
-        label: apiOnline ? AppText.of(context, 'api_ready') : 'API OFFLINE',
-        ok: apiOnline,
+      const SizedBox(width: 12),
+      Flexible(
+        child: _StatusLine(
+          label: apiOnline ? AppText.of(context, 'api_ready') : 'API OFFLINE',
+          ok: apiOnline,
+        ),
       ),
     ],
   );
@@ -171,12 +227,15 @@ class _StatusLine extends StatelessWidget {
 
 class _CenterControl extends StatelessWidget {
   const _CenterControl({
+    super.key,
     required this.controller,
+    required this.diameter,
     required this.onReview,
     required this.onConnectionRetry,
   });
 
   final TxController controller;
+  final double diameter;
   final VoidCallback onReview;
   final VoidCallback onConnectionRetry;
 
@@ -185,7 +244,7 @@ class _CenterControl extends StatelessWidget {
     final state = controller.state;
     if (state.phase == TxPhase.idle || state.phase == TxPhase.recording) {
       return TxPttButton(
-        compact: true,
+        diameter: diameter,
         enabled: controller.canStartRecording,
         recording: state.phase == TxPhase.recording,
         onHoldStart: controller.startRecording,
@@ -196,18 +255,22 @@ class _CenterControl extends StatelessWidget {
       );
     }
     if (state.phase == TxPhase.reviewReady) {
-      return _DockAction(
+      return _PhaseCircle(
         key: const ValueKey('tx-open-review'),
+        diameter: diameter,
         icon: Icons.rate_review_outlined,
         label: AppText.of(context, 'tx_review_short'),
         onPressed: onReview,
       );
     }
     if (state.phase == TxPhase.completed) {
-      return _DockAction(
+      // Not a button: the controller clears this on its own after a moment.
+      return _PhaseCircle(
+        key: const ValueKey('tx-done-indicator'),
+        diameter: diameter,
         icon: Icons.check_circle_outline,
         label: AppText.of(context, 'tx_done_short'),
-        onPressed: controller.reset,
+        muted: true,
       );
     }
     if (state.phase == TxPhase.failed ||
@@ -217,7 +280,8 @@ class _CenterControl extends StatelessWidget {
         state.phase == TxPhase.stationOffline) {
       final retryConnection =
           state.draft == null && state.failure == TxFailure.stationOffline;
-      return _DockAction(
+      return _PhaseCircle(
+        diameter: diameter,
         icon:
             state.failure == TxFailure.stationOfflineDuringTx
                 ? Icons.cloud_off_outlined
@@ -241,7 +305,9 @@ class _CenterControl extends StatelessWidget {
         error: true,
       );
     }
-    return _DockProgress(
+    return _PhaseCircle(
+      diameter: diameter,
+      muted: true,
       label: AppText.of(
         context,
         state.phase == TxPhase.processing
@@ -254,44 +320,97 @@ class _CenterControl extends StatelessWidget {
   }
 }
 
-class _DockAction extends StatelessWidget {
-  const _DockAction({
+/// Every non-recording TX phase renders as the same circle as the PTT button,
+/// so the control keeps one shape and one footprint across the whole flow.
+class _PhaseCircle extends StatelessWidget {
+  const _PhaseCircle({
     super.key,
-    required this.icon,
+    required this.diameter,
     required this.label,
-    required this.onPressed,
+    this.icon,
+    this.onPressed,
     this.error = false,
+    this.muted = false,
   });
 
-  final IconData icon;
+  final double diameter;
   final String label;
+
+  /// Null renders a spinner instead: the step is still in flight.
+  final IconData? icon;
   final VoidCallback? onPressed;
   final bool error;
 
+  /// Soft fill for steps the user only watches rather than acts on.
+  final bool muted;
+
   @override
-  Widget build(BuildContext context) => SizedBox(
-    height: 58,
-    child: FilledButton(
-      style: FilledButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        backgroundColor:
-            error ? Theme.of(context).colorScheme.error : PranaTheme.brandBlue,
+  Widget build(BuildContext context) {
+    final disabled = onPressed == null && !muted;
+    final background =
+        muted
+            ? PranaTheme.brandBlueSoft
+            : disabled
+            ? const Color(0xFFB8C7CB)
+            : error
+            ? Theme.of(context).colorScheme.error
+            : PranaTheme.brandBlue;
+    final foreground = muted ? PranaTheme.brandBlue : Colors.white;
+    final circle = Container(
+      width: diameter,
+      height: diameter,
+      padding: EdgeInsets.symmetric(horizontal: diameter * .12),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: background,
+        border:
+            muted
+                ? Border.all(color: const Color(0xFF9EBCC2))
+                : Border.all(
+                  color: background.withValues(alpha: .22),
+                  width: 10,
+                ),
       ),
-      onPressed: onPressed,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, size: 20),
-          const SizedBox(height: 3),
+          if (icon == null)
+            SizedBox(
+              width: diameter * .22,
+              height: diameter * .22,
+              child: CircularProgressIndicator(
+                strokeWidth: 3,
+                valueColor: AlwaysStoppedAnimation<Color>(foreground),
+              ),
+            )
+          else
+            Icon(icon, size: diameter * .26, color: foreground),
+          SizedBox(height: diameter * .05),
           Text(
             label,
-            maxLines: 1,
-            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: foreground,
+              fontSize: (diameter * .085).clamp(11, 15),
+              fontWeight: FontWeight.w900,
+              letterSpacing: .4,
+            ),
           ),
         ],
       ),
-    ),
-  );
+    );
+    if (onPressed == null) return circle;
+    return Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onPressed,
+        child: circle,
+      ),
+    );
+  }
 }
 
 class _RecordingStatus extends StatelessWidget {
@@ -373,40 +492,6 @@ class _OfflineTxNotice extends StatelessWidget {
   );
 }
 
-class _DockProgress extends StatelessWidget {
-  const _DockProgress({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    height: 58,
-    padding: const EdgeInsets.symmetric(horizontal: 8),
-    decoration: BoxDecoration(
-      color: PranaTheme.brandBlueSoft,
-      borderRadius: BorderRadius.circular(10),
-      border: Border.all(color: const Color(0xFF9EBCC2)),
-    ),
-    child: Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        const SizedBox(
-          width: 18,
-          height: 18,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-        const SizedBox(height: 5),
-        Text(
-          label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900),
-        ),
-      ],
-    ),
-  );
-}
-
 class _DockLanguage extends StatelessWidget {
   const _DockLanguage({required this.controller, required this.enabled});
 
@@ -417,91 +502,91 @@ class _DockLanguage extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     key: const ValueKey('tx-language-region'),
     mainAxisSize: MainAxisSize.min,
-    crossAxisAlignment: CrossAxisAlignment.center,
+    crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
+      // Mirrors _LanguageLabel of the RX strip, which uppercases the same
+      // Title Case entry the tooltip below shows as written.
       Text(
-        AppText.of(context, 'tx_language_short'),
+        AppText.of(context, 'tx_transmit_in').toUpperCase(),
         maxLines: 1,
-        textAlign: TextAlign.center,
+        overflow: TextOverflow.ellipsis,
         style: const TextStyle(
-          fontSize: 9,
-          fontWeight: FontWeight.w900,
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
           color: PranaTheme.muted,
-          letterSpacing: .5,
+          letterSpacing: .7,
         ),
       ),
-      const SizedBox(height: 4),
-      LayoutBuilder(
-        builder: (context, constraints) {
-          final width = constraints.maxWidth < 96 ? constraints.maxWidth : 96.0;
-          return Align(
-            alignment: Alignment.center,
-            child: SizedBox(
-              width: width,
-              child: PopupMenuButton<String>(
-                key: const ValueKey('tx-dock-language'),
-                enabled: enabled,
-                padding: EdgeInsets.zero,
-                position: PopupMenuPosition.over,
-                tooltip: AppText.of(context, 'tx_language_short'),
-                onSelected: controller.setTargetLanguage,
-                itemBuilder:
-                    (context) =>
-                        supportedLanguages.entries
-                            .map(
-                              (entry) => PopupMenuItem<String>(
-                                value: entry.key,
-                                child: Row(
-                                  children: [
-                                    Expanded(child: Text(entry.value)),
-                                    if (entry.key ==
-                                        controller.state.targetLanguage)
-                                      const Icon(
-                                        Icons.check,
-                                        size: 18,
-                                        color: PranaTheme.brandBlue,
-                                      ),
-                                  ],
-                                ),
+      const SizedBox(height: 1),
+      PopupMenuButton<String>(
+        key: const ValueKey('tx-dock-language'),
+        enabled: enabled,
+        padding: EdgeInsets.zero,
+        position: PopupMenuPosition.over,
+        tooltip: AppText.of(context, 'tx_transmit_in'),
+        onSelected: controller.setTargetLanguage,
+        itemBuilder:
+            (context) =>
+                supportedLanguages.entries
+                    .map(
+                      (entry) => PopupMenuItem<String>(
+                        value: entry.key,
+                        child: Row(
+                          children: [
+                            Expanded(child: Text(entry.value)),
+                            if (entry.key == controller.state.targetLanguage)
+                              const Icon(
+                                Icons.check,
+                                size: 18,
+                                color: PranaTheme.brandBlue,
                               ),
-                            )
-                            .toList(),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Flexible(
-                      child: Text(
-                        supportedLanguages[controller.state.targetLanguage] ??
-                            controller.state.targetLanguage.toUpperCase(),
-                        key: const ValueKey('tx-language-value'),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color:
-                              enabled
-                                  ? PranaTheme.navy
-                                  : Theme.of(context).disabledColor,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
+                          ],
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Icon(
-                      Icons.keyboard_arrow_down,
-                      key: const ValueKey('tx-language-chevron'),
-                      size: 16,
-                      color:
-                          enabled
-                              ? PranaTheme.muted
-                              : Theme.of(context).disabledColor,
-                    ),
-                  ],
+                    )
+                    .toList(),
+        // Same frame as _LanguageValue on the INPUT/OUTPUT strip, whose border
+        // and radius come from theme.dart's inputDecorationTheme.
+        child: Container(
+          height: 40,
+          width: double.infinity,
+          alignment: Alignment.centerLeft,
+          padding: const EdgeInsets.symmetric(horizontal: 11),
+          decoration: BoxDecoration(
+            color: PranaTheme.surface,
+            border: Border.all(color: const Color(0xFFB9CDD2)),
+            borderRadius: BorderRadius.circular(11),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  supportedLanguages[controller.state.targetLanguage] ??
+                      controller.state.targetLanguage.toUpperCase(),
+                  key: const ValueKey('tx-language-value'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color:
+                        enabled
+                            ? PranaTheme.navy
+                            : Theme.of(context).disabledColor,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
-            ),
-          );
-        },
+              Icon(
+                Icons.arrow_drop_down,
+                key: const ValueKey('tx-language-chevron'),
+                color:
+                    enabled
+                        ? PranaTheme.muted
+                        : Theme.of(context).disabledColor,
+              ),
+            ],
+          ),
+        ),
       ),
     ],
   );

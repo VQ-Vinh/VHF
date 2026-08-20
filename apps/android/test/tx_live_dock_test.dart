@@ -76,14 +76,20 @@ void main() {
       ),
       body: Column(
         children: [
-          const Expanded(child: SizedBox()),
+          const Expanded(flex: 5, child: SizedBox()),
+          Expanded(
+            flex: 4,
+            child: TxTalkPad(
+              controller: subject,
+              onReview: () {},
+              onConnectionRetry: onConnectionRetry ?? () {},
+            ),
+          ),
           TxLiveDock(
             controller: subject,
             stationState: 'IDLE',
             stationOnline: stationOnline,
             apiOnline: apiOnline,
-            onReview: () {},
-            onConnectionRetry: onConnectionRetry ?? () {},
           ),
         ],
       ),
@@ -124,23 +130,36 @@ void main() {
 
     expect(find.text('RX IDLE'), findsOneWidget);
     expect(find.text('API READY'), findsOneWidget);
-    expect(find.text('TX LANGUAGE'), findsOneWidget);
-    expect(find.text('MAX 60s'), findsOneWidget);
+    expect(find.text('TRANSMIT IN'), findsOneWidget);
+    expect(find.textContaining('MAX'), findsNothing);
     final regionCenter =
         tester.getCenter(find.byKey(const ValueKey('tx-language-region'))).dx;
     final controlCenter =
         tester.getCenter(find.byKey(const ValueKey('tx-dock-language'))).dx;
     expect(controlCenter, closeTo(regionCenter, .1));
-    final dockCenter =
-        tester.getCenter(find.byKey(const ValueKey('tx-live-dock'))).dx;
+    final padCenter =
+        tester.getCenter(find.byKey(const ValueKey('tx-talk-pad'))).dx;
     final pttCenter =
         tester.getCenter(find.byKey(const ValueKey('tx-center-control'))).dx;
-    expect(pttCenter, closeTo(dockCenter, .1));
+    expect(pttCenter, closeTo(padCenter, .1));
+    // The talk button now floats above the dock instead of sitting inside it.
+    final padBottom =
+        tester.getBottomLeft(find.byKey(const ValueKey('tx-talk-pad'))).dy;
+    final dockTop =
+        tester.getTopLeft(find.byKey(const ValueKey('tx-live-dock'))).dy;
+    expect(padBottom, lessThanOrEqualTo(dockTop));
+    // The field mirrors the RX strip: value left, arrow trailing.
     final valueRight =
         tester.getTopRight(find.byKey(const ValueKey('tx-language-value'))).dx;
     final chevronLeft =
         tester.getTopLeft(find.byKey(const ValueKey('tx-language-chevron'))).dx;
-    expect(chevronLeft - valueRight, closeTo(8, .1));
+    final fieldRight =
+        tester.getTopRight(find.byKey(const ValueKey('tx-dock-language'))).dx;
+    expect(chevronLeft, greaterThanOrEqualTo(valueRight));
+    expect(
+      tester.getBottomRight(find.byKey(const ValueKey('tx-language-chevron'))).dx,
+      lessThanOrEqualTo(fieldRight),
+    );
 
     await tester.tap(find.byKey(const ValueKey('tx-dock-language')));
     await tester.pumpAndSettle();
@@ -190,6 +209,20 @@ void main() {
         commandPending: false,
       ),
       isFalse,
+    );
+  });
+
+  test('an offline Station never leaves the toggle stuck on a pending command', () {
+    // The generation is only acknowledged by a reachable Station, so a command
+    // pending while offline must not disable the toggle for good.
+    expect(
+      canToggleLiveStation(
+        online: false,
+        running: true,
+        busy: false,
+        commandPending: true,
+      ),
+      isTrue,
     );
   });
 
