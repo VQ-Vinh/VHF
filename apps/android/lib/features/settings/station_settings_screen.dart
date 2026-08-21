@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/localization.dart';
@@ -152,6 +153,14 @@ class _StationSettingsScreenState extends ConsumerState<StationSettingsScreen> {
     } finally {
       if (mounted) setState(() => refreshing = false);
     }
+  }
+
+  Future<void> _copyStationCode(String code) async {
+    await Clipboard.setData(ClipboardData(text: code));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(AppText.of(context, 'station_code_copied'))),
+    );
   }
 
   @override
@@ -355,6 +364,21 @@ class _StationSettingsScreenState extends ConsumerState<StationSettingsScreen> {
             child: Column(
               children: [
                 _InformationRow(
+                  key: const ValueKey('station-code-row'),
+                  icon: Icons.tag,
+                  title: AppText.of(context, 'station_code'),
+                  value:
+                      station.storageFolder.isNotEmpty
+                          ? station.storageFolder
+                          : '—',
+                  hint: AppText.of(context, 'station_code_hint'),
+                  onCopy:
+                      station.storageFolder.isEmpty
+                          ? null
+                          : () => _copyStationCode(station.storageFolder),
+                ),
+                const Divider(height: 24),
+                _InformationRow(
                   icon: Icons.graphic_eq,
                   title: AppText.of(context, 'active_capture'),
                   value:
@@ -453,16 +477,21 @@ class _SettingsCard extends StatelessWidget {
 
 class _InformationRow extends StatelessWidget {
   const _InformationRow({
+    super.key,
     required this.icon,
     required this.title,
     required this.value,
     this.maxLines = 2,
+    this.hint,
+    this.onCopy,
   });
 
   final IconData icon;
   final String title;
   final String value;
   final int maxLines;
+  final String? hint;
+  final VoidCallback? onCopy;
 
   @override
   Widget build(BuildContext context) => Row(
@@ -498,9 +527,26 @@ class _InformationRow extends StatelessWidget {
                 height: 1.35,
               ),
             ),
+            if (hint != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                hint!,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: PranaTheme.muted,
+                  height: 1.3,
+                ),
+              ),
+            ],
           ],
         ),
       ),
+      if (onCopy != null)
+        IconButton(
+          key: const ValueKey('station-code-copy'),
+          tooltip: AppText.of(context, 'copy'),
+          onPressed: onCopy,
+          icon: const Icon(Icons.copy_outlined, color: PranaTheme.brandBlue),
+        ),
     ],
   );
 }

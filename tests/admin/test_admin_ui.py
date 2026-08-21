@@ -487,7 +487,7 @@ class AdminUiTests(unittest.TestCase):
         body = page.body.decode()
         self.assertIn("VHF-Storage/VINH_0f90cd8e/", body)
         self.assertIn('href="/users/uid-1"', body)
-        self.assertIn("renamed", body)
+        self.assertIn("pairing time", body)
 
     def test_station_search_accepts_a_pasted_storage_folder(self) -> None:
         self.assertEqual(_station_id_prefix("vinh_0f90cd8e"), "0f90cd8e")

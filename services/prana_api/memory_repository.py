@@ -7,6 +7,7 @@ import hashlib
 from datetime import datetime, timedelta, timezone
 
 from services.prana_api.errors import api_error
+from services.prana_api.storage_paths import station_storage_folder
 from services.prana_api.models import (
     Device,
     Plan,
@@ -202,9 +203,11 @@ class MemoryRepository:
 
     @staticmethod
     def _station(station_id: str, data: dict) -> Station:
+        name = data.get("name", "PRANA station")
         return Station(
             station_id=station_id,
-            name=data.get("name", "PRANA station"),
+            name=name,
+            storage_folder=station_storage_folder(name, station_id),
             platform=data.get("platform", "unknown"),
             active=data.get("active", True),
             online=data.get("online", False),

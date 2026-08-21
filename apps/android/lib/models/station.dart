@@ -109,6 +109,7 @@ class StationModel {
   const StationModel({
     required this.id,
     required this.name,
+    this.storageFolder = '',
     required this.platform,
     required this.active,
     required this.captureState,
@@ -137,6 +138,10 @@ class StationModel {
 
   final String id;
   final String name;
+
+  /// Bucket folder holding this Station's recordings. Owners quote it when
+  /// they ask support to extract audio. Empty until the Station beats once.
+  final String storageFolder;
   final String platform;
   final bool active;
   final String captureState;
@@ -176,6 +181,7 @@ class StationModel {
     return StationModel(
       id: doc.id,
       name: map['name'] as String? ?? 'PRANA station',
+      storageFolder: map['storage_folder'] as String? ?? '',
       platform: map['platform'] as String? ?? 'Unknown',
       active: map['active'] as bool? ?? true,
       captureState: map['capture_state'] as String? ?? 'idle',

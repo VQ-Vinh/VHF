@@ -9,6 +9,7 @@ from google.cloud import firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
 
 from services.prana_api.errors import api_error
+from services.prana_api.storage_paths import station_storage_folder
 from services.prana_api.models import (
     Device,
     Plan,
@@ -392,9 +393,14 @@ class FirestoreRepository:
     @staticmethod
     def _station_from_projection(station_id: str, data: dict) -> Station:
         desired = data.get("desired_state") or {}
+        name = data.get("name", "PRANA station")
         return Station(
             station_id=station_id,
-            name=data.get("name", "PRANA station"),
+            name=name,
+            storage_folder=(
+                data.get("storage_folder")
+                or station_storage_folder(name, station_id)
+            ),
             platform=data.get("platform", "unknown"),
             active=bool(data.get("active", True)),
             online=bool(data.get("online", False)),
@@ -465,6 +471,9 @@ class FirestoreRepository:
             projection = {
                 "station_id": station_id,
                 "name": registry.get("name", "PRANA station"),
+                "storage_folder": station_storage_folder(
+                    str(registry.get("name") or ""), station_id
+                ),
                 "platform": registry.get("platform", "unknown"),
                 "active": True,
                 "online": False,
@@ -604,6 +613,9 @@ class FirestoreRepository:
             projection = {
                 "station_id": station_id,
                 "name": registry.get("name", "PRANA station"),
+                "storage_folder": station_storage_folder(
+                    str(registry.get("name") or ""), station_id
+                ),
                 "platform": registry.get("platform", "unknown"),
                 "active": True,
                 "online": False,
@@ -818,6 +830,11 @@ class FirestoreRepository:
         )
         visible = {
             "online": True,
+            # Refreshed on every beat so Stations paired before this field
+            # existed pick it up without a migration.
+            "storage_folder": station_storage_folder(
+                str(registry.get("name") or ""), station_id
+            ),
             "capture_state": heartbeat.capture_state,
             "session_id": heartbeat.session_id,
             "sequence": heartbeat.sequence,

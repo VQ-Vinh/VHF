@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -16,9 +17,11 @@ void main() {
     String audioDeviceId = 'device-id',
     int observedGeneration = 1,
     int desiredGeneration = 1,
+    String storageFolder = 'Station_station-',
   }) => StationModel(
     id: 'station-1',
     name: 'Station',
+    storageFolder: storageFolder,
     platform: 'windows',
     active: true,
     captureState: 'idle',
@@ -93,6 +96,60 @@ void main() {
   FilledButton saveButton(WidgetTester tester) => tester.widget<FilledButton>(
     find.widgetWithText(FilledButton, 'Lưu thay đổi'),
   );
+
+  testWidgets('owners can read and copy the code support asks for', (
+    tester,
+  ) async {
+    final copied = <MethodCall>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') copied.add(call);
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
+    await tester.pumpWidget(harness(station(storageFolder: 'VINH_0f90cd8e')));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('station-code-row')),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Mã trạm'), findsOneWidget);
+    expect(find.text('VINH_0f90cd8e'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('station-code-copy')));
+    await tester.pumpAndSettle();
+
+    expect(copied, hasLength(1));
+    expect(copied.single.arguments['text'], 'VINH_0f90cd8e');
+    expect(find.text('Đã chép mã trạm'), findsOneWidget);
+  });
+
+  testWidgets('a Station that has never beaten offers nothing to copy', (
+    tester,
+  ) async {
+    await tester.pumpWidget(harness(station(storageFolder: '')));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('station-code-row')),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Mã trạm'), findsOneWidget);
+    expect(find.byKey(const ValueKey('station-code-copy')), findsNothing);
+  });
 
   testWidgets('save is enabled only while capture settings are dirty', (
     tester,
