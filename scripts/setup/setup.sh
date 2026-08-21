@@ -23,7 +23,9 @@ if [ ! -x "$ROOT/.venv/dev/bin/python" ]; then
     "$PYTHON" -m venv "$ROOT/.venv/dev"
 fi
 
-"$ROOT/.venv/dev/bin/python" -m pip install --upgrade pip
+# setuptools is the build backend for the editable installs below, and
+# --no-build-isolation will not fetch it. Python 3.12 stopped seeding it.
+"$ROOT/.venv/dev/bin/python" -m pip install --upgrade pip setuptools wheel
 "$ROOT/.venv/dev/bin/python" -m pip install --no-build-isolation -e "$ROOT/packages/prana_core"
 "$ROOT/.venv/dev/bin/python" -m pip install --no-build-isolation -e "$ROOT/apps/linux"
 mkdir -p "$ROOT/VHF_Storage/audio" "$ROOT/VHF_Storage/results"

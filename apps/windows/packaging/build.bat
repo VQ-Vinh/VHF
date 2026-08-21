@@ -27,6 +27,10 @@ if not exist "%VENV%\Scripts\python.exe" (
 )
 
 echo [2/7] Installing project dependencies...
+REM setuptools is the build backend for the editable installs, and
+REM --no-build-isolation will not fetch it. Python 3.12 stopped seeding it.
+"%VENV%\Scripts\python.exe" -m pip install --upgrade pip setuptools wheel
+if errorlevel 1 goto :error
 "%VENV%\Scripts\python.exe" -m pip install --no-build-isolation -e "%ROOT%\packages\prana_core"
 if errorlevel 1 goto :error
 "%VENV%\Scripts\python.exe" -m pip install --no-build-isolation -e "%ROOT%\apps\windows"

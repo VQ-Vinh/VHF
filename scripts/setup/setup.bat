@@ -26,7 +26,9 @@ if exist "%ROOT%\.venv\dev\Scripts\python.exe" (
 )
 
 echo [*] Installing Station dependencies...
-"%ROOT%\.venv\dev\Scripts\python.exe" -m pip install --upgrade pip
+REM setuptools is the build backend for the editable installs below, and
+REM --no-build-isolation will not fetch it. Python 3.12 stopped seeding it.
+"%ROOT%\.venv\dev\Scripts\python.exe" -m pip install --upgrade pip setuptools wheel
 if errorlevel 1 exit /b 1
 "%ROOT%\.venv\dev\Scripts\python.exe" -m pip uninstall --yes prana-elex-linux >nul 2>&1
 "%ROOT%\.venv\dev\Scripts\python.exe" -m pip install --no-build-isolation -e "%ROOT%\packages\prana_core"
@@ -48,7 +50,7 @@ if exist "%ROOT%\.venv\backend\Scripts\python.exe" (
 )
 
 echo [*] Installing API and Admin dependencies...
-"%ROOT%\.venv\backend\Scripts\python.exe" -m pip install --upgrade pip
+"%ROOT%\.venv\backend\Scripts\python.exe" -m pip install --upgrade pip setuptools wheel
 if errorlevel 1 exit /b 1
 "%ROOT%\.venv\backend\Scripts\python.exe" -m pip install -r "%ROOT%\services\prana_api\requirements.txt"
 if errorlevel 1 exit /b 1
