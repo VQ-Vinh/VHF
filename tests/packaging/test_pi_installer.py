@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import re
 import subprocess
 import unittest
@@ -140,6 +141,56 @@ class ShellEntryPointModeTests(unittest.TestCase):
             path for path, mode in self._modes("*.sh").items() if mode == "100644"
         )
         self.assertEqual(offenders, [], "shell scripts committed without +x")
+
+
+def _calls_main(body: list[ast.stmt]) -> bool:
+    """Whether running this block as a script would call main().
+
+    Accepts either a bare module-level call or one guarded by __main__; both
+    execute under PyInstaller, and the repo uses each style somewhere.
+    """
+    for node in body:
+        if (
+            isinstance(node, ast.Expr)
+            and isinstance(node.value, ast.Call)
+            and isinstance(node.value.func, ast.Name)
+            and node.value.func.id == "main"
+        ):
+            return True
+        if isinstance(node, ast.If) and _calls_main(node.body):
+            return True
+    return False
+
+
+class FrozenEntryPointTests(unittest.TestCase):
+    """Every PyInstaller spec must point at a script that actually runs main().
+
+    A frozen bundle executes its entry file as a script, so an entry module that
+    only defines main() exits 0 having done nothing. systemd then reports a
+    service that started and stopped cleanly, with no error to go on.
+    """
+
+    SPECS = (
+        "apps/linux/packaging/PRANA_ELEX.spec",
+        "apps/windows/packaging/PRANA_Station.spec",
+        "apps/windows/packaging/PRANA_ELEX.spec",
+    )
+
+    def test_spec_entry_scripts_invoke_main(self) -> None:
+        for name in self.SPECS:
+            with self.subTest(spec=name):
+                spec = (ROOT / name).read_text(encoding="utf-8")
+                match = re.search(
+                    r'Analysis\(\s*\[str\(PROJECT_ROOT / "([^"]+)"\)\]', spec
+                )
+                self.assertIsNotNone(match, "cannot find the Analysis entry script")
+                entry = ROOT / match.group(1)
+                self.assertTrue(entry.is_file(), f"{entry} does not exist")
+                tree = ast.parse(entry.read_text(encoding="utf-8"))
+                self.assertTrue(
+                    _calls_main(tree.body),
+                    f"{match.group(1)} never calls main() when run as a script",
+                )
 
 
 class BuildBackendSeedingTests(unittest.TestCase):

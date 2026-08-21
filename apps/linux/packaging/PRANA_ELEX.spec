@@ -30,7 +30,7 @@ hiddenimports = [
 ]
 
 a = Analysis(
-    [str(PROJECT_ROOT / "apps/linux/src/prana_linux/station.py")],
+    [str(PROJECT_ROOT / "apps/linux/src/prana_linux/station_frozen_entry.py")],
     pathex=[
         str(PROJECT_ROOT / "packages/prana_core/src"),
         str(PROJECT_ROOT / "apps/linux/src"),
