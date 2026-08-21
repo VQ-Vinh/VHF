@@ -68,6 +68,7 @@ echo "[2/7] Installing project and PyInstaller..."
 
 echo "[CHECK] Validating production client configuration..."
 "$VENV/bin/python" "$ROOT/tools/packaging/validate_client_config.py" \
+    --platform linux-arm64 \
     "$ROOT/apps/linux/config/default.toml"
 
 echo "[3/7] Cleaning Linux ARM64 outputs only..."
