@@ -16,6 +16,7 @@ class ReleaseValidatorTests(unittest.TestCase):
         for relative in (
             "PRANA_ELEX.exe",
             "_internal/config/default.toml",
+            "_internal/prana_core/VERSION",
             "_internal/prana_windows/ui/resources/styles.qss",
             "_internal/prana_windows/ui/resources/google-g.svg",
         ):
@@ -33,6 +34,14 @@ class ReleaseValidatorTests(unittest.TestCase):
     def test_valid_windows_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             self.assertEqual(validate("windows", self._windows_bundle(Path(temporary))), 0)
+
+    def test_missing_core_version_file_is_rejected(self) -> None:
+        # prana_core reads VERSION through importlib.resources at import time,
+        # so a bundle without it crashes on start, long before main().
+        with tempfile.TemporaryDirectory() as temporary:
+            bundle = self._windows_bundle(Path(temporary))
+            (bundle / "_internal/prana_core/VERSION").unlink()
+            self.assertEqual(validate("windows", bundle), 1)
 
     def test_credentials_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

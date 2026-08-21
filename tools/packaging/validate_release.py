@@ -17,16 +17,20 @@ FORBIDDEN_NAMES = {
 }
 FORBIDDEN_SUFFIXES = {".pfx", ".p12", ".key"}
 
+# prana_core resolves its version through importlib.resources at import time, so
+# a bundle without this file crashes before main() with FileNotFoundError.
 REQUIRED_FILES = {
     "windows": {
         "PRANA_ELEX.exe",
         "_internal/config/default.toml",
+        "_internal/prana_core/VERSION",
         "_internal/prana_windows/ui/resources/styles.qss",
         "_internal/prana_windows/ui/resources/google-g.svg",
     },
     "linux-arm64": {
         "PRANA_Station",
         "_internal/config/default.toml",
+        "_internal/prana_core/VERSION",
     },
 }
 

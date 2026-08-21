@@ -49,6 +49,20 @@ class RaspberryPiInstallerTests(unittest.TestCase):
         self.assertIn('LABEL_DIR="/var/lib/prana-elex/label"', self.script)
         self.assertIn('--output "$LABEL_DIR"', self.script)
 
+    def test_a_relative_deb_path_is_made_absolute(self) -> None:
+        # apt treats a relative path as a package name and splits it on "/", so
+        # "--deb installers/linux/x.deb" fails with "Unable to locate package
+        # installers/linux" instead of installing the file.
+        self.assertIn('DEB_PATH="$(readlink -f "$DEB_PATH")"', self.script)
+        resolve = self.script.index('readlink -f "$DEB_PATH"')
+        self.assertLess(
+            resolve,
+            self.script.index('apt-get install -y "$DEB_PATH"'),
+            "the path must be resolved before apt sees it",
+        )
+        # The checksum must cover the same file apt installs.
+        self.assertLess(resolve, self.script.index("sha256sum"))
+
     def test_package_is_verified_before_it_is_installed(self) -> None:
         self.assertIn("set -euo pipefail", self.script)
         self.assertIn("sha256sum", self.script)
