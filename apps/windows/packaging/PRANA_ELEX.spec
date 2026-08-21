@@ -13,6 +13,9 @@ datas += [
     (str(PROJECT_ROOT / "apps/windows/src/prana_windows/ui/resources/styles.qss"), "prana_windows/ui/resources"),
     (str(PROJECT_ROOT / "apps/windows/src/prana_windows/ui/resources/google-g.svg"), "prana_windows/ui/resources"),
     (str(PROJECT_ROOT / "apps/windows/config/default.toml"), "config"),
+    # prana_core reads this at import time via importlib.resources; without it
+    # the frozen app dies with FileNotFoundError before reaching main().
+    (str(PROJECT_ROOT / "packages/prana_core/src/prana_core/VERSION"), "prana_core"),
 ]
 
 hiddenimports = [

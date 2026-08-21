@@ -69,6 +69,9 @@ trap cleanup EXIT
 # --- Obtain the package ------------------------------------------------------
 if [[ -n "$DEB_PATH" ]]; then
     [[ -f "$DEB_PATH" ]] || fail "Khong tim thay file: $DEB_PATH"
+    # apt reads a relative path as a package name and splits it on "/", so
+    # "installers/linux/x.deb" becomes the unknown package "installers/linux".
+    DEB_PATH="$(readlink -f "$DEB_PATH")"
     say "Dung goi co san: $DEB_PATH"
     if [[ -f "$DEB_PATH.sha256" ]]; then
         expected="$(awk '{print $1}' "$DEB_PATH.sha256")"
