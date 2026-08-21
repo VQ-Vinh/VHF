@@ -4,7 +4,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tools.packaging.validate_release import validate
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from tools.packaging.validate_release import _validate_linux_dependencies, validate
 
 
 class ReleaseValidatorTests(unittest.TestCase):
@@ -50,3 +53,56 @@ class ReleaseValidatorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LinuxDependencyCheckTests(unittest.TestCase):
+    """The ldd sweep, which runs only on Linux.
+
+    torch ships hashed copies of libgomp, libgfortran and the ARM compute
+    kernels inside torch.libs/, resolved at run time from the bundle. Bare ldd
+    cannot see them, so every Pi build failed validation on libraries that were
+    sitting in the bundle all along.
+    """
+
+    def _run(self, ldd_lines: list[str], names: list[str]) -> list[str]:
+        files = {name: Path(name) for name in names}
+        completed = SimpleNamespace(stdout="\n".join(ldd_lines), stderr="")
+        with (
+            patch("tools.packaging.validate_release.platform.system", return_value="Linux"),
+            patch("tools.packaging.validate_release._elf_machine", return_value=183),
+            patch(
+                "tools.packaging.validate_release.subprocess.run",
+                return_value=completed,
+            ),
+        ):
+            return _validate_linux_dependencies(files)
+
+    def test_libraries_carried_in_the_bundle_are_not_missing(self) -> None:
+        errors = self._run(
+            ["\tlibgomp-947d5fa1.so.1.0.0 => not found"],
+            ["PRANA_Station", "_internal/torch.libs/libgomp-947d5fa1.so.1.0.0"],
+        )
+        self.assertEqual(errors, [])
+
+    def test_cuda_libraries_are_expected_to_be_absent(self) -> None:
+        # torchaudio comes in through silero-vad, names the CUDA runtime even in
+        # CPU builds, and reaches for it only on a GPU the station will not have.
+        errors = self._run(
+            [
+                "	libcudart.so.13 => not found",
+                "	libc10_cuda.so => not found",
+                "	libtorch_cuda.so => not found",
+            ],
+            ["PRANA_Station"],
+        )
+        self.assertEqual(errors, [])
+
+    def test_a_library_absent_from_the_bundle_still_fails(self) -> None:
+        # The check must keep catching a real packaging gap, such as a system
+        # library that Depends forgot to name.
+        errors = self._run(
+            ["\tlibasound.so.2 => not found"],
+            ["PRANA_Station"],
+        )
+        self.assertTrue(errors)
+        self.assertIn("libasound.so.2", errors[0])

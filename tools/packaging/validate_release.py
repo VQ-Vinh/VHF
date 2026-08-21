@@ -66,7 +66,27 @@ def _validate_linux_dependencies(files: dict[str, Path]) -> list[str]:
     if platform.system() != "Linux":
         return []
 
+    # ldd resolves against the system loader path, which knows nothing about the
+    # libraries PyInstaller lays down beside the executable. torch ships its own
+    # hashed copies of libgomp, libgfortran and the ARM compute kernels under
+    # torch.libs/, and the bootloader points the loader at them at run time. A
+    # soname is genuinely missing only when the bundle does not carry it either.
+    bundled = {path.name for path in files.values()}
+
     errors: list[str] = []
+    # torchaudio arrives transitively through silero-vad, which imports it at
+    # module level, so it cannot be excluded from the bundle. Its shared object
+    # names the CUDA runtime even in CPU builds and reaches for it only when a
+    # GPU is present -- which never happens on an ARM station.
+    optional_gpu = (
+        "libcuda",
+        "libcudart",
+        "libcudnn",
+        "libcublas",
+        "libnvrtc",
+        "libc10_cuda",
+        "libtorch_cuda",
+    )
     for relative, path in files.items():
         if _elf_machine(path) is None:
             continue
@@ -76,10 +96,14 @@ def _validate_linux_dependencies(files: dict[str, Path]) -> list[str]:
             text=True,
             check=False,
         )
-        output = f"{result.stdout}\n{result.stderr}"
-        if "not found" in output:
-            missing = [line.strip() for line in output.splitlines() if "not found" in line]
-            errors.extend(f"{relative}: {line}" for line in missing)
+        for stream in (result.stdout, result.stderr):
+            for line in stream.splitlines():
+                if "not found" not in line:
+                    continue
+                soname = line.strip().split(" =>", 1)[0].strip()
+                if soname in bundled or soname.startswith(optional_gpu):
+                    continue
+                errors.append(f"{relative}: {line.strip()}")
     return errors
 
 
