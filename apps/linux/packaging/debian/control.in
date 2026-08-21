@@ -5,6 +5,6 @@ Priority: optional
 Architecture: arm64
 Maintainer: @VENDOR@
 Installed-Size: @INSTALLED_SIZE@
-Depends: libc6, libstdc++6, libgcc-s1, libasound2, libportaudio2, libsndfile1, liblgpio1, alsa-utils
+Depends: libc6, libstdc++6, libgcc-s1, libasound2t64 | libasound2, libportaudio2, libsndfile1, liblgpio1, alsa-utils
 Description: PRANA ELEX headless marine VHF station
  Captures VHF audio and receives desired state from the PRANA backend.

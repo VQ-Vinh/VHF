@@ -62,6 +62,14 @@ class RaspberryPiInstallerTests(unittest.TestCase):
         self.assertIn("aarch64", self.script)
         self.assertIn('[[ "$(uname -s)" == "Linux" ]]', self.script)
 
+    def test_accepts_the_releases_the_package_is_built_for(self) -> None:
+        # The installer must not warn on a release build.sh happily builds on.
+        build = (
+            ROOT / "apps" / "linux" / "packaging" / "build.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn("bookworm|trixie", build)
+        self.assertIn("bookworm|trixie", self.script)
+
     def test_carries_no_secrets_and_downloads_over_https(self) -> None:
         lowered = self.script.lower()
         for needle in ("private key", "gcs-service-account", "ghp_", "authorization:"):
