@@ -1,5 +1,6 @@
 *.bat text eol=crlf
 *.sh text eol=lf
 /buildlinux text eol=lf
-/scripts/packaging/linux-arm64/debian/postinst text eol=lf
-/scripts/packaging/linux-arm64/debian/postrm text eol=lf
+/apps/linux/packaging/debian/postinst text eol=lf
+/apps/linux/packaging/debian/postrm text eol=lf
+/apps/linux/packaging/debian/prana-station.service text eol=lf

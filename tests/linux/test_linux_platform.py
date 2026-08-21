@@ -104,6 +104,33 @@ class LinuxPlatformTests(unittest.TestCase):
         self.assertIn("lgpio>=0.2.2.0; platform_machine == 'aarch64'", manifest)
         self.assertIn("liblgpio1", control)
 
+    def test_debian_maintainer_scripts_keep_unix_line_endings(self) -> None:
+        # build.sh copies these straight from the working tree into the .deb.
+        # A CRLF postinst makes dpkg fail with "/bin/sh^M: bad interpreter", and
+        # .gitattributes is the only thing holding the line on Windows checkouts.
+        attributes = Path(".gitattributes").read_text(encoding="utf-8")
+        debian = Path("apps/linux/packaging/debian")
+        for name in ("postinst", "postrm", "prana-station.service"):
+            path = debian / name
+            self.assertIn(f"/{path.as_posix()} text eol=lf", attributes, name)
+            self.assertNotIn(b"\r\n", path.read_bytes(), name)
+
+    def test_package_depends_on_the_alsa_tools_capture_requires(self) -> None:
+        # pulse.py refuses to capture without arecord, and the Pi installer
+        # calls amixer/alsactl. Raspberry Pi OS Lite ships none of them.
+        control = Path("apps/linux/packaging/debian/control.in").read_text(
+            encoding="utf-8"
+        )
+        depends = next(
+            line for line in control.splitlines() if line.startswith("Depends:")
+        )
+        self.assertIn("alsa-utils", depends)
+
+        backend = Path("apps/linux/src/prana_linux/audio/pulse.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('shutil.which("arecord")', backend)
+
 
 if __name__ == "__main__":
     unittest.main()

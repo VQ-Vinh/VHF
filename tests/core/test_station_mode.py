@@ -7,8 +7,10 @@ import tempfile
 import io
 import wave
 import threading
+from contextlib import redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from prana_core.station.client import (
     StationApiClient,
@@ -19,7 +21,13 @@ from prana_core.backend.client import BackendApiError
 from prana_core.station.identity import StationIdentity
 from prana_core.station.runtime import StationRuntime
 from prana_core.audio.capabilities import normalize_audio_devices
-from prana_core.station.label import grouped, qr_payload, write_label
+from prana_core.station.commands import provision_station
+from prana_core.station.label import (
+    grouped,
+    print_ascii_qr,
+    qr_payload,
+    write_label,
+)
 from prana_core.pipeline.orchestrator import PipelineState
 
 
@@ -150,6 +158,48 @@ class StationModeTests(unittest.TestCase):
                 qr_payload(setup_id, activation_code),
                 f"prana-elex:///activate?v=1&id={setup_id}&code={activation_code}",
             )
+
+    def test_provision_prints_a_scannable_qr_for_headless_installs(self) -> None:
+        # A Pi has no screen, so the installer's only channel is stdout. Printing
+        # the URL alone would leave the owner nothing to point a phone at.
+        store = DictStore()
+        client = SimpleNamespace(
+            identity=SimpleNamespace(id="0f90cd8ef0561234"),
+            provision=lambda activation_hash: {"setup_id": "ABCDEFGH23"},
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "label"
+            buffer = io.StringIO()
+            with (
+                patch(
+                    "prana_core.station.commands.create_station_client",
+                    return_value=(None, client),
+                ),
+                redirect_stdout(buffer),
+            ):
+                provision_station(Path("unused.toml"), None, output, store)
+            printed = buffer.getvalue()
+
+        activation_code = store.get("station_activation_code")
+        self.assertEqual(store.get("station_setup_id"), "ABCDEFGH23")
+        self.assertIn("Setup ID: ABCDEFGH23", printed)
+        self.assertIn(grouped(activation_code), printed)
+        self.assertIn(qr_payload("ABCDEFGH23", activation_code), printed)
+        # The QR itself, not just its payload.
+        self.assertTrue(
+            any(block in printed for block in ("█", "▀", "▄")),
+            "provision must render an ASCII QR",
+        )
+
+    def test_ascii_qr_degrades_on_a_console_that_cannot_draw_it(self) -> None:
+        # prana-station-provision also runs on Windows, whose default code page
+        # cannot encode the block glyphs. Losing the drawing is acceptable;
+        # crashing the provisioning run is not.
+        payload = qr_payload("ABCDEFGH23", "ABCDEFGH23456789")
+        for encoding, expected in (("utf-8", True), ("cp1252", False)):
+            stream = io.TextIOWrapper(io.BytesIO(), encoding=encoding)
+            with redirect_stdout(stream):
+                self.assertIs(print_ascii_qr(payload), expected)
 
     def test_desired_state_controls_pipeline_language_and_retry(self) -> None:
         class Orchestrator:

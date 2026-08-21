@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from html import escape
+from io import StringIO
 from pathlib import Path
 
 import qrcode
@@ -13,6 +14,25 @@ def grouped(value: str) -> str:
 
 def qr_payload(setup_id: str, activation_code: str) -> str:
     return f"prana-elex:///activate?v=1&id={setup_id}&code={activation_code}"
+
+
+def print_ascii_qr(payload: str) -> bool:
+    """Draw the QR in the terminal so a headless install can be scanned on sight.
+
+    Returns False when the console cannot render the block glyphs, which is the
+    normal case on a Windows code page. Callers there still have the printed URL
+    and the PNG/SVG label, so this must degrade rather than raise.
+    """
+    code = qrcode.QRCode(border=1)
+    code.add_data(payload)
+    code.make(fit=True)
+    buffer = StringIO()
+    code.print_ascii(out=buffer, invert=True)
+    try:
+        print(buffer.getvalue())
+    except UnicodeEncodeError:
+        return False
+    return True
 
 
 def _font(size: int):
