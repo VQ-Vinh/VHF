@@ -55,9 +55,10 @@ ARCH="$(uname -m)"
 if [[ -r /etc/os-release ]]; then
     # shellcheck disable=SC1091
     . /etc/os-release
-    if [[ "${VERSION_CODENAME:-}" != "bookworm" ]]; then
-        warn "Da kiem thu tren Raspberry Pi OS Bookworm; dang chay '${VERSION_CODENAME:-unknown}'."
-    fi
+    case "${VERSION_CODENAME:-}" in
+        bookworm|trixie) ;;
+        *) warn "Da kiem thu tren Raspberry Pi OS Bookworm va Trixie; dang chay '${VERSION_CODENAME:-unknown}'." ;;
+    esac
 fi
 command -v curl >/dev/null || fail "Thieu curl. Chay: apt-get install -y curl"
 

@@ -115,6 +115,24 @@ class LinuxPlatformTests(unittest.TestCase):
             self.assertIn(f"/{path.as_posix()} text eol=lf", attributes, name)
             self.assertNotIn(b"\r\n", path.read_bytes(), name)
 
+    def test_package_installs_on_both_bookworm_and_trixie(self) -> None:
+        # Trixie's 64-bit time_t transition renamed libasound2 to libasound2t64
+        # and left no installable libasound2, so the Bookworm-era name alone
+        # makes apt refuse the package outright. Only that one library moved --
+        # libportaudio2, libsndfile1 and liblgpio1 kept their names.
+        control = Path("apps/linux/packaging/debian/control.in").read_text(
+            encoding="utf-8"
+        )
+        depends = next(
+            line for line in control.splitlines() if line.startswith("Depends:")
+        )
+        self.assertIn("libasound2t64 | libasound2", depends)
+        for unchanged in ("libportaudio2", "libsndfile1", "liblgpio1"):
+            self.assertIn(unchanged, depends)
+
+        script = Path("apps/linux/packaging/build.sh").read_text(encoding="utf-8")
+        self.assertIn("bookworm|trixie", script)
+
     def test_package_depends_on_the_alsa_tools_capture_requires(self) -> None:
         # pulse.py refuses to capture without arecord, and the Pi installer
         # calls amixer/alsactl. Raspberry Pi OS Lite ships none of them.

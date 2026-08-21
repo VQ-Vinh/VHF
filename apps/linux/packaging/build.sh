@@ -24,7 +24,13 @@ MODEL="$(tr -d '\0' </proc/device-tree/model)"
 [[ -r /etc/os-release ]] || fail "Cannot identify the operating system."
 # shellcheck disable=SC1091
 source /etc/os-release
-[[ "${VERSION_CODENAME:-}" == "bookworm" ]] || fail "Raspberry Pi OS Bookworm is required."
+# PyInstaller links the bundle against this machine's glibc, so the package runs
+# on the release it was built on and newer, never older. Building on the oldest
+# release you still support is therefore the safe choice.
+case "${VERSION_CODENAME:-}" in
+    bookworm|trixie) ;;
+    *) fail "Raspberry Pi OS Bookworm or Trixie is required, found: ${VERSION_CODENAME:-unknown}." ;;
+esac
 
 AVAILABLE_KB="$(df -Pk "$ROOT" | awk 'NR==2 {print $4}')"
 [[ "$AVAILABLE_KB" -ge 12582912 ]] || fail "At least 12 GiB free disk space is required."
