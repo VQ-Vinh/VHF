@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -71,6 +72,52 @@ class RaspberryPiInstallerTests(unittest.TestCase):
     def test_cleans_up_its_download_directory(self) -> None:
         self.assertIn("mktemp -d", self.script)
         self.assertIn("trap cleanup EXIT", self.script)
+
+
+class ShellEntryPointModeTests(unittest.TestCase):
+    """Git mode bits, not file contents.
+
+    Windows checkouts cannot express the executable bit, so a script committed
+    as 100644 looks fine locally and fails only on a fresh Linux clone with
+    "Permission denied" -- exactly where there is no repository to repair it.
+    """
+
+    ENTRY_POINTS = (
+        "buildlinux",
+        "install.sh",
+        "release-pi.sh",
+        "apps/linux/build.sh",
+        "apps/linux/run.sh",
+        "apps/linux/packaging/build.sh",
+        "scripts/setup/setup.sh",
+    )
+
+    @staticmethod
+    def _modes(*patterns: str) -> dict[str, str]:
+        listing = subprocess.run(
+            ["git", "ls-files", "-s", *patterns],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        modes = {}
+        for line in listing.splitlines():
+            meta, path = line.split("	", 1)
+            modes[path] = meta.split()[0]
+        return modes
+
+    def test_shell_entry_points_are_committed_executable(self) -> None:
+        modes = self._modes(*self.ENTRY_POINTS)
+        for path in self.ENTRY_POINTS:
+            self.assertIn(path, modes, f"{path} is not tracked")
+            self.assertEqual(modes[path], "100755", f"{path} is not executable")
+
+    def test_every_tracked_shell_script_is_executable(self) -> None:
+        offenders = sorted(
+            path for path, mode in self._modes("*.sh").items() if mode == "100644"
+        )
+        self.assertEqual(offenders, [], "shell scripts committed without +x")
 
 
 class RaspberryPiReleaseScriptTests(unittest.TestCase):
