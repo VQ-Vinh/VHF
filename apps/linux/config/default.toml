@@ -22,8 +22,11 @@ energy_threshold = 300
 silero_model_path = ""
 
 [backend]
-api_url = "https://REPLACE_WITH_PRANA_API_URL"
-firebase_api_key = "REPLACE_WITH_FIREBASE_WEB_API_KEY"
+api_url = "https://prana-api-owuilj5d4a-uc.a.run.app"
+# The station signs every request with its Ed25519 key and never signs a
+# user in, so it reads neither of the two values below. They stay only for
+# schema parity with the Windows build.
+firebase_api_key = ""
 google_oauth_client_id = "515336425252-aqkkoc9j9pmji0bsedg7g8hid398ee21.apps.googleusercontent.com"
 timeout_seconds = 150
 

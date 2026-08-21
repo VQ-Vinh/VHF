@@ -5,7 +5,15 @@ import tomllib
 from pathlib import Path
 
 
-def validate(path: Path) -> list[str]:
+# Only builds that sign a user in need the Firebase and Google OAuth values.
+# The Raspberry Pi station authenticates with an Ed25519 signature per request
+# and never reads them, so demanding them there forces a credential into a
+# bundle that has no use for it. validate_release.py already scopes the same
+# two checks this way.
+SIGN_IN_PLATFORMS = {"windows"}
+
+
+def validate(path: Path, platform_name: str = "windows") -> list[str]:
     try:
         with path.open("rb") as stream:
             backend = tomllib.load(stream).get("backend", {})
@@ -17,6 +25,8 @@ def validate(path: Path) -> list[str]:
     google_client_id = str(backend.get("google_oauth_client_id", ""))
     if not api_url.startswith("https://") or "REPLACE_WITH" in api_url:
         errors.append("backend.api_url must be the production HTTPS Cloud Run URL")
+    if platform_name not in SIGN_IN_PLATFORMS:
+        return errors
     if not api_key or "REPLACE_WITH" in api_key:
         errors.append("backend.firebase_api_key must contain the Firebase Web API key")
     if (
@@ -32,8 +42,9 @@ def validate(path: Path) -> list[str]:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate public client build configuration")
     parser.add_argument("config", type=Path)
+    parser.add_argument("--platform", default="windows", choices=["windows", "linux-arm64"])
     args = parser.parse_args()
-    errors = validate(args.config)
+    errors = validate(args.config, args.platform)
     for error in errors:
         print(f"[ERROR] {error}")
     if errors:
