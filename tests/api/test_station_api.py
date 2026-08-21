@@ -19,6 +19,7 @@ from services.prana_api.auth import Identity, require_identity
 from services.prana_api.main import app, get_repository, get_tx_repository
 from services.prana_api.google_services import ModelResult
 from services.prana_api.memory_repository import MemoryRepository
+from services.prana_api.storage_paths import station_storage_folder
 from services.prana_api.models import Plan, ProcessingResponse, UserAccount
 from services.prana_api.security import canonical_request, canonical_station_request, station_payload_hash
 from services.prana_api.tx_repository import MemoryTxRepository
@@ -501,6 +502,13 @@ class StationApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 204, response.text)
         station = self.client.get("/v1/stations").json()[0]
+        # Owners quote this to support when they ask for a recording, and it is
+        # exactly the bucket folder, so it must not drift from the archive rule.
+        self.assertEqual(
+            station["storage_folder"],
+            station_storage_folder(station["name"], self.station_id),
+        )
+        self.assertTrue(station["storage_folder"].endswith(self.station_id[:8]))
         self.assertEqual(station["observed_generation"], 1)
         self.assertEqual(station["sequence"], 4)
         self.assertEqual(station["ptt_mode"], "unavailable")

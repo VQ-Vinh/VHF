@@ -14,30 +14,13 @@ from google.genai import types
 
 from services.prana_api.config import Settings
 from services.prana_api.models import ProcessingResponse
+from services.prana_api.storage_paths import station_storage_folder
 
 logger = logging.getLogger(__name__)
 
 _STATION_AUDIO_FILENAME = re.compile(
     r"^(?P<date>\d{8})_\d{6}_(?P<sequence>\d{4})\.wav$"
 )
-
-
-def station_storage_folder(station_name: str, station_id: str) -> str:
-    """Return a readable, path-safe and collision-resistant Station folder."""
-    cleaned = []
-    previous_separator = False
-    for character in station_name.strip():
-        if character.isalnum() or character in {"-", "_", "."}:
-            cleaned.append(character)
-            previous_separator = False
-        elif character.isspace() or character in {"/", "\\"}:
-            if cleaned and not previous_separator:
-                cleaned.append("-")
-                previous_separator = True
-    slug = "".join(cleaned).strip("-_.")[:64].rstrip("-_.")
-    if not slug:
-        slug = "PRANA-Station"
-    return f"{slug}_{station_id[:8]}"
 
 
 def station_audio_filename(

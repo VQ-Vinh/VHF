@@ -341,6 +341,9 @@ class StationHeartbeat(BaseModel):
 class Station(BaseModel):
     station_id: str
     name: str
+    # The bucket folder holding this Station's recordings. Quoted by owners when
+    # they ask support to extract audio, and searchable in the admin.
+    storage_folder: str = ""
     platform: str
     active: bool = True
     online: bool = False
