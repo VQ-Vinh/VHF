@@ -59,7 +59,10 @@ else
 fi
 
 echo "[2/7] Installing project and PyInstaller..."
-"$VENV/bin/python" -m pip install --upgrade pip
+# --no-build-isolation means the build backend must already live in this venv,
+# and Python 3.12 dropped setuptools from the venv seed. Both pyproject files
+# declare setuptools.build_meta, so seed it explicitly.
+"$VENV/bin/python" -m pip install --upgrade pip setuptools wheel
 "$VENV/bin/python" -m pip install --no-build-isolation -e "$ROOT/packages/prana_core"
 "$VENV/bin/python" -m pip install --no-build-isolation -e "$ROOT/apps/linux" pyinstaller
 

@@ -128,6 +128,47 @@ class ShellEntryPointModeTests(unittest.TestCase):
         self.assertEqual(offenders, [], "shell scripts committed without +x")
 
 
+class BuildBackendSeedingTests(unittest.TestCase):
+    """Every script that pairs a fresh venv with --no-build-isolation.
+
+    That flag tells pip the build backend is already present, but Python 3.12
+    stopped seeding setuptools into new venvs. Bookworm's 3.11 hid this; Trixie
+    ships 3.13, where the editable install dies with
+    "Cannot import 'setuptools.build_meta'".
+    """
+
+    SCRIPTS = (
+        "apps/linux/packaging/build.sh",
+        "apps/windows/packaging/build.bat",
+        "scripts/setup/setup.sh",
+        "scripts/setup/setup.bat",
+    )
+
+    def test_no_build_isolation_is_always_preceded_by_a_seeded_backend(self) -> None:
+        for name in self.SCRIPTS:
+            with self.subTest(script=name):
+                lines = [
+                    line.strip()
+                    for line in (ROOT / name).read_text(encoding="utf-8").splitlines()
+                ]
+                code = [
+                    (index, line)
+                    for index, line in enumerate(lines)
+                    if not line.startswith(("#", "REM ", "::"))
+                ]
+                seeds = [i for i, line in code if "pip setuptools wheel" in line]
+                isolated = [i for i, line in code if "--no-build-isolation" in line]
+
+                self.assertTrue(isolated, "script no longer uses --no-build-isolation")
+                self.assertTrue(seeds, "setuptools is never installed")
+                # Seeding afterwards does not help the install that already failed.
+                self.assertLess(
+                    min(seeds),
+                    min(isolated),
+                    "setuptools must be seeded before the editable install",
+                )
+
+
 class RaspberryPiReleaseScriptTests(unittest.TestCase):
     def setUp(self) -> None:
         self.script = RELEASE.read_text(encoding="utf-8")
