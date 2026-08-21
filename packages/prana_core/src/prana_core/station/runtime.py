@@ -19,6 +19,7 @@ from prana_core.pipeline.orchestrator import PipelineOrchestrator, PipelineState
 from prana_core.audio.base import AudioBackend
 from prana_core.audio.capabilities import capability_hash, normalize_audio_devices
 from prana_core.station.client import StationApiClient
+from prana_core.station.label import print_ascii_qr
 from prana_core.station.ptt import NullPttController, PttController
 
 logger = get_logger(__name__)
@@ -97,15 +98,7 @@ class StationRuntime:
         print("\nPair this station in PRANA ELEX Mobile")
         print(f"Code: {pairing['pairing_code']}")
         print(f"Link: {pairing['qr_payload']}")
-        try:
-            import qrcode
-
-            qr = qrcode.QRCode(border=1)
-            qr.add_data(pairing["qr_payload"])
-            qr.make(fit=True)
-            qr.print_ascii(invert=True)
-        except ImportError:
-            logger.info("Install the qrcode extra to render an ASCII QR code")
+        print_ascii_qr(pairing["qr_payload"])
         self._pairing_expires_at = time.monotonic() + 9 * 60
 
     def _desired(self) -> dict | None:

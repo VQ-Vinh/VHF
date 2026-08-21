@@ -11,7 +11,7 @@ from prana_core.common.logger import configure_utf8_stdio, setup_logger
 from prana_core.config.schema import AppConfig, load_config
 from prana_core.station.client import StationApiClient
 from prana_core.station.identity import StationIdentity
-from prana_core.station.label import grouped, qr_payload, write_label
+from prana_core.station.label import grouped, print_ascii_qr, qr_payload, write_label
 from prana_core.station.runtime import StationRuntime
 from prana_core.station.ptt import NullPttController, PttController
 
@@ -83,10 +83,15 @@ def provision_station(
     store.set("station_setup_id", setup_id)
     store.set("station_provisioned", "1")
     png_path, svg_path = write_label(output, setup_id, activation_code)
+    payload = qr_payload(setup_id, activation_code)
     print(f"Station ID: {client.identity.id}")
     print(f"Setup ID: {setup_id}")
     print(f"Activation code: {grouped(activation_code)}")
-    print(f"QR: {qr_payload(setup_id, activation_code)}")
+    print(f"QR: {payload}")
+    # A headless install has no other way to show the owner what to scan.
+    print()
+    if not print_ascii_qr(payload):
+        print("Console cannot draw the QR; scan the PNG label instead.")
     print(f"PNG label: {png_path.resolve()}")
     print(f"SVG label: {svg_path.resolve()}")
     print("Keep the label private until the device is delivered.")

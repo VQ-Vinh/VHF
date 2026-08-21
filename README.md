@@ -168,23 +168,44 @@ Muốn chạy đồng thời Station và Android Emulator:
 
 ## Setup Raspberry Pi Station
 
-### 1. Clone và cài dependency
+### Cài đặt (một lệnh)
 
-Trên Raspberry Pi:
+Chuẩn bị: Raspberry Pi OS **Bookworm 64-bit** mới flash, cắm mạng, cắm USB
+SoundCard. Không cần clone repo, không cần Python.
 
 ```bash
-git clone https://github.com/VQ-Vinh/VHF.git
-cd VHF
-
-sudo apt update
-sudo apt install -y \
-  python3-venv python3-dev build-essential \
-  alsa-utils portaudio19-dev libsndfile1-dev libasound2-dev
-
-./scripts/setup/setup.sh
+curl -fsSL https://raw.githubusercontent.com/VQ-Vinh/VHF/main/install.sh | sudo bash
 ```
 
-### 2. Kiểm tra USB SoundCard
+Script tải gói `.deb` bản mới nhất, đối chiếu SHA-256, cài bằng `apt`, đặt gain
+micro, provision thiết bị rồi **in mã QR ngay trên terminal**. Đăng nhập PRANA
+ELEX trên điện thoại rồi quét mã đó là xong.
+
+Nếu chưa publish release, cài từ file build tay:
+
+```bash
+sudo ./install.sh --deb prana-elex_1.1.0_arm64.deb
+```
+
+Các cờ khác: `--version <tag>` ghim phiên bản, `--skip-provision` chỉ cài,
+`--skip-audio-gain` không đụng tới gain ALSA.
+
+Chạy lại script bất cứ lúc nào để **nâng cấp**: nó in lại đúng Setup ID cũ và
+không sinh danh tính mới.
+
+> **Không nhân bản thẻ nhớ đã provision.** `station_id`, khoá riêng Ed25519 và mã
+> kích hoạt gắn với từng máy. Nhân bản một thẻ đã provision khiến mọi Pi dùng
+> chung một danh tính, và ai cũng claim được trạm của người khác. Mỗi máy phải tự
+> chạy `install.sh`.
+
+Kiểm tra sau khi cài:
+
+```bash
+systemctl status prana-station
+journalctl -u prana-station -f
+```
+
+### Kiểm tra USB SoundCard
 
 ```bash
 arecord -l
@@ -194,8 +215,7 @@ aplay -l
 Thu WAV raw để kiểm tra phần cứng trước khi chạy pipeline:
 
 ```bash
-arecord -D hw:CARD=Device,DEV=0 \
-  -t wav -f S16_LE -c 1 -r 44100 -d 10 rx-test.wav
+arecord -D hw:CARD=Device,DEV=0   -t wav -f S16_LE -c 1 -r 44100 -d 10 rx-test.wav
 ```
 
 Nếu `CARD=Device` không tồn tại, dùng card/device được `arecord -l` trả về.
@@ -209,7 +229,7 @@ min_silence_duration_ms: 1500
 max_segment_duration_ms: 15000
 ```
 
-Đặt và lưu gain:
+`install.sh` tự đặt gain này. Đặt tay khi cần:
 
 ```bash
 amixer -c 3 cset name='Mic Capture Volume' 18
@@ -219,24 +239,57 @@ sudo alsactl store 3
 Card index có thể thay đổi giữa các thiết bị; kiểm tra lại bằng `arecord -l` và
 `amixer -c <card>`.
 
-### 3. Provision và tạo QR
+### Phát hành bản `.deb` mới
+
+`apps/linux/packaging/build.sh` chỉ chạy được **trên chính Pi 4B Bookworm** (nó
+kiểm `/proc/device-tree/model`), nên gói đầu tiên phải build trên một con Pi.
+Chạy trên Pi đó, bằng user thường (không `sudo`):
 
 ```bash
-.venv/dev/bin/prana-station-provision \
-  --config apps/linux/config/default.toml \
-  --output ~/prana-station-label
+curl -fsSL https://raw.githubusercontent.com/VQ-Vinh/VHF/main/release-pi.sh | bash
+```
+
+Script clone mã nguồn về `~/prana-elex-src`, chạy `./buildlinux`, rồi
+`gh release create` kèm cả file `.sha256`. Cần `gh auth login` trước.
+
+Lần đầu mất 15-30 phút vì phải biên dịch `torch` và `lgpio`. Các lần sau nhanh
+hơn nhiều vì giữ lại checkout và venv. Chạy lại trên tag đã có thì ghi đè file
+đính kèm (`--clobber`) thay vì báo lỗi.
+
+Sau bước này, **mọi Raspberry Pi khác chỉ cần lệnh `install.sh`** ở đầu chương —
+không máy nào phải clone repo nữa. `install.sh` đọc release mới nhất qua GitHub
+API nên không cần sửa gì thêm khi lên phiên bản mới.
+
+### Phát triển từ source
+
+Chỉ dành cho người sửa code. Người dựng thiết bị dùng `install.sh` ở trên.
+
+```bash
+git clone https://github.com/VQ-Vinh/VHF.git
+cd VHF
+
+sudo apt update
+sudo apt install -y   python3-venv python3-dev build-essential   alsa-utils portaudio19-dev libsndfile1-dev libasound2-dev
+
+./scripts/setup/setup.sh
+```
+
+Provision và tạo QR:
+
+```bash
+.venv/dev/bin/prana-station-provision   --config apps/linux/config/default.toml   --output ~/prana-station-label
 ```
 
 In hoặc chuyển QR label cho người sở hữu Station. Không chia sẻ private identity
 trong `~/.config/prana-elex/`.
 
-### 4. Chạy từ source
+Chạy:
 
 ```bash
 ./apps/linux/run.sh
 ```
 
-### 5. Chạy bằng systemd
+### Chạy bằng systemd
 
 Nếu đã cài gói `.deb`:
 
