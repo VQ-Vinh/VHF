@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:prana_mobile/features/tx/application/fake_tx_repository.dart';
 import 'package:prana_mobile/features/tx/application/tx_controller.dart';
@@ -92,6 +94,62 @@ class _LostConfirmRepository implements TxRepository {
 
   @override
   Future<String?> activeDraftId(String stationId) async => null;
+
+  @override
+  Future<void> clearActiveDraft(String stationId) async {}
+}
+
+/// Reproduces the window between the confirm POST leaving the phone and the
+/// server moving the draft off review_ready. The tracking key is written before
+/// the POST -- deliberately, so a kill mid-flight is still recoverable -- and
+/// the Live screen calls restore once a second, so the window is wide open.
+class _RestoreRacesConfirmRepository implements TxRepository {
+  final Completer<void> _confirmed = Completer<void>();
+  String? _activeId;
+  String? confirmedTranslation;
+
+  /// Lets the POST return and moves the server row on, the way the real one
+  /// does once synthesis finishes.
+  void releaseConfirm() {
+    _status = 'completed';
+    if (!_confirmed.isCompleted) _confirmed.complete();
+  }
+
+  String _status = 'review_ready';
+
+  TxDraft _draft(String status) => TxDraft(
+    id: 'draft-1',
+    stationId: 'station-1',
+    duration: const Duration(seconds: 1),
+    targetLanguage: 'vi',
+    transcript: 'Mayday',
+    translation: 'Ban cu',
+    status: status,
+  );
+
+  @override
+  Future<TxDraft> processRecording(TxRecordingInput input) async =>
+      _draft('review_ready');
+
+  @override
+  Future<void> confirmTransmission(TxDraft draft, String translation) async {
+    _activeId = draft.id;
+    confirmedTranslation = translation;
+    await _confirmed.future;
+  }
+
+  @override
+  Future<TxDraft> getDraft(String stationId, String draftId) async =>
+      _draft(_status);
+
+  @override
+  Future<void> cancelDraft(String draftId) async {}
+
+  @override
+  Future<TxDraft> retryTransmission(TxDraft draft) async => _draft('queued');
+
+  @override
+  Future<String?> activeDraftId(String stationId) async => _activeId;
 
   @override
   Future<void> clearActiveDraft(String stationId) async {}
@@ -446,4 +504,40 @@ void main() {
       expect(repository.retryCalls, 0);
     },
   );
+
+  test('restore does not reopen review over a confirmed edit', () async {
+    final repository = _RestoreRacesConfirmRepository();
+    final subject = TxController(
+      stationId: 'station-1',
+      repository: repository,
+      queuePreviewDuration: Duration.zero,
+    );
+    subject.setStationAvailability(
+      online: true,
+      running: true,
+      commandPending: false,
+    );
+    addTearDown(subject.dispose);
+
+    subject.startRecording();
+    await subject.stopRecording();
+    expect(subject.state.phase, TxPhase.reviewReady);
+
+    final confirming = subject.confirmTransmission('Ban da sua');
+
+    // The Live screen ticks once a second while the POST is still in flight.
+    await subject.restoreActiveTransmission();
+    expect(subject.state.phase, isNot(TxPhase.reviewReady));
+    expect(subject.state.draft!.translation, 'Ban da sua');
+
+    final phases = <TxPhase>[];
+    subject.addListener(() => phases.add(subject.state.phase));
+
+    repository.releaseConfirm();
+    await confirming;
+
+    expect(repository.confirmedTranslation, 'Ban da sua');
+    expect(phases, contains(TxPhase.queued));
+    expect(subject.state.phase, TxPhase.completed);
+  });
 }
