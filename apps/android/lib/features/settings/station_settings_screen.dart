@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/localization.dart';
@@ -155,14 +154,6 @@ class _StationSettingsScreenState extends ConsumerState<StationSettingsScreen> {
     }
   }
 
-  Future<void> _copyStationCode(String code) async {
-    await Clipboard.setData(ClipboardData(text: code));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(AppText.of(context, 'station_code_copied'))),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final value = ref.watch(stationProvider(widget.stationId));
@@ -217,8 +208,18 @@ class _StationSettingsScreenState extends ConsumerState<StationSettingsScreen> {
         const <StationAudioDevice>[];
     var selectedTxDevice = txDeviceId ?? station.desired.txAudioDeviceId;
     if (!outputDevices.any((item) => item.id == selectedTxDevice)) {
-      selectedTxDevice = outputDevices.isEmpty ? '' : outputDevices.first.id;
+      // VHF is half-duplex on one sound card, so transmit through the card we
+      // record on whenever it can play; otherwise take the only one that can.
+      selectedTxDevice =
+          outputDevices.any((item) => item.id == selectedDevice)
+              ? selectedDevice
+              : outputDevices.isEmpty
+              ? ''
+              : outputDevices.first.id;
     }
+    // Nothing to ask while a single card can transmit. Add a second one and
+    // rescan, and the picker appears on its own.
+    final txChoiceNeeded = outputDevices.length > 1;
     final txDeviceChanged = selectedTxDevice != station.desired.txAudioDeviceId;
     final hasChanges =
         (devices.isNotEmpty || outputDevices.isNotEmpty) &&
@@ -313,7 +314,46 @@ class _StationSettingsScreenState extends ConsumerState<StationSettingsScreen> {
                       (item) => item.id == selectedDevice,
                     ),
                   ),
+                if (txChoiceNeeded) ...[
+                  const SizedBox(height: 18),
+                  // RX and TX share one sound card, so they belong in one card.
+                  DropdownButtonFormField<String>(
+                    key: const ValueKey('tx-output-device'),
+                    initialValue:
+                        selectedTxDevice.isEmpty ? null : selectedTxDevice,
+                    isExpanded: true,
+                    decoration: InputDecoration(
+                      labelText: AppText.of(context, 'tx_output_device'),
+                    ),
+                    items:
+                        outputDevices
+                            .map(
+                              (device) => DropdownMenuItem(
+                                value: device.id,
+                                child: Text(
+                                  device.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            )
+                            .toList(),
+                    onChanged:
+                        controlsEnabled
+                            ? (value) => setState(() => txDeviceId = value)
+                            : null,
+                  ),
+                ] else if (selectedTxDevice.isNotEmpty)
+                  // Silent auto-pick would hide where transmissions go.
+                  _TxRoute(
+                    key: const ValueKey('tx-output-route'),
+                    name:
+                        outputDevices
+                            .firstWhere((item) => item.id == selectedTxDevice)
+                            .name,
+                  ),
                 const SizedBox(height: 14),
+                // Last: the rescan refreshes the lists behind both dropdowns.
                 OutlinedButton.icon(
                   onPressed:
                       online && !operationPending && !refreshing
@@ -333,51 +373,9 @@ class _StationSettingsScreenState extends ConsumerState<StationSettingsScreen> {
           ),
           const SizedBox(height: 14),
           _SettingsCard(
-            title: AppText.of(context, 'tx_output'),
-            child: DropdownButtonFormField<String>(
-              initialValue: selectedTxDevice.isEmpty ? null : selectedTxDevice,
-              isExpanded: true,
-              decoration: InputDecoration(
-                labelText: AppText.of(context, 'tx_output_device'),
-              ),
-              items:
-                  outputDevices
-                      .map(
-                        (device) => DropdownMenuItem(
-                          value: device.id,
-                          child: Text(
-                            device.name,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      )
-                      .toList(),
-              onChanged:
-                  controlsEnabled
-                      ? (value) => setState(() => txDeviceId = value)
-                      : null,
-            ),
-          ),
-          const SizedBox(height: 14),
-          _SettingsCard(
             title: AppText.of(context, 'station_information'),
             child: Column(
               children: [
-                _InformationRow(
-                  key: const ValueKey('station-code-row'),
-                  icon: Icons.tag,
-                  title: AppText.of(context, 'station_code'),
-                  value:
-                      station.storageFolder.isNotEmpty
-                          ? station.storageFolder
-                          : '—',
-                  hint: AppText.of(context, 'station_code_hint'),
-                  onCopy:
-                      station.storageFolder.isEmpty
-                          ? null
-                          : () => _copyStationCode(station.storageFolder),
-                ),
-                const Divider(height: 24),
                 _InformationRow(
                   icon: Icons.graphic_eq,
                   title: AppText.of(context, 'active_capture'),
@@ -477,21 +475,16 @@ class _SettingsCard extends StatelessWidget {
 
 class _InformationRow extends StatelessWidget {
   const _InformationRow({
-    super.key,
     required this.icon,
     required this.title,
     required this.value,
     this.maxLines = 2,
-    this.hint,
-    this.onCopy,
   });
 
   final IconData icon;
   final String title;
   final String value;
   final int maxLines;
-  final String? hint;
-  final VoidCallback? onCopy;
 
   @override
   Widget build(BuildContext context) => Row(
@@ -527,26 +520,9 @@ class _InformationRow extends StatelessWidget {
                 height: 1.35,
               ),
             ),
-            if (hint != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                hint!,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: PranaTheme.muted,
-                  height: 1.3,
-                ),
-              ),
-            ],
           ],
         ),
       ),
-      if (onCopy != null)
-        IconButton(
-          key: const ValueKey('station-code-copy'),
-          tooltip: AppText.of(context, 'copy'),
-          onPressed: onCopy,
-          icon: const Icon(Icons.copy_outlined, color: PranaTheme.brandBlue),
-        ),
     ],
   );
 }
@@ -587,6 +563,34 @@ class _InlineMessage extends StatelessWidget {
         Icon(icon, size: 19, color: color),
         const SizedBox(width: 8),
         Expanded(child: Text(text, style: TextStyle(color: color))),
+      ],
+    ),
+  );
+}
+
+/// Where transmissions leave the Station when there is only one way out.
+class _TxRoute extends StatelessWidget {
+  const _TxRoute({super.key, required this.name});
+
+  final String name;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: 14),
+    child: Row(
+      children: [
+        const Icon(Icons.volume_up_outlined, size: 17, color: PranaTheme.brandBlue),
+        const SizedBox(width: 7),
+        Expanded(
+          child: Text(
+            '${AppText.of(context, 'tx_output_via')}: $name',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: PranaTheme.muted),
+          ),
+        ),
       ],
     ),
   );

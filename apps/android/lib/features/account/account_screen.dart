@@ -1,10 +1,11 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
-import '../../core/app_config.dart';
 import '../../core/localization.dart';
+import '../../core/theme.dart';
 import '../../core/user_region.dart';
 import '../../core/widgets.dart';
 import '../../providers.dart';
@@ -174,6 +175,14 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     } finally {
       if (mounted) setState(() => busy = false);
     }
+  }
+
+  Future<void> _copyStationCode(String code) async {
+    await Clipboard.setData(ClipboardData(text: code));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(AppText.of(context, 'station_code_copied'))),
+    );
   }
 
   Future<bool> _confirm(String name, {bool removingStation = false}) async =>
@@ -518,36 +527,48 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                         ),
                       ),
                     ),
-                    ...stations.map(
-                      (station) => ListTile(
-                        dense: true,
-                        visualDensity: const VisualDensity(vertical: -2),
-                        leading: const Icon(Icons.radio),
-                        title: Text(station['name']?.toString() ?? 'Station'),
-                        subtitle: Text(station['platform']?.toString() ?? ''),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.link_off),
-                          onPressed:
-                              busy
-                                  ? null
-                                  : () async {
-                                    if (await _confirm(
-                                      station['name']?.toString() ?? 'Station',
-                                      removingStation: true,
-                                    )) {
-                                      await _action(
-                                        () => ref
-                                            .read(apiProvider)
-                                            .removeStation(
-                                              station['station_id'].toString(),
-                                            ),
-                                        refreshData: true,
-                                      );
-                                    }
-                                  },
+                    ...stations.map((station) {
+                      final name = station['name']?.toString() ?? 'Station';
+                      final code =
+                          station['storage_folder']?.toString() ?? '';
+                      return StationAccountTile(
+                        stationId: station['station_id'].toString(),
+                        name: name,
+                        platform: station['platform']?.toString() ?? '',
+                        stationCode: code,
+                        onCopyCode:
+                            code.isEmpty ? null : () => _copyStationCode(code),
+                        onRemove:
+                            busy
+                                ? null
+                                : () async {
+                                  if (await _confirm(
+                                    name,
+                                    removingStation: true,
+                                  )) {
+                                    await _action(
+                                      () => ref
+                                          .read(apiProvider)
+                                          .removeStation(
+                                            station['station_id'].toString(),
+                                          ),
+                                      refreshData: true,
+                                    );
+                                  }
+                                },
+                      );
+                    }),
+                    // Said once for the whole list rather than under each row.
+                    if (stations.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(14, 2, 14, 12),
+                        child: Text(
+                          AppText.of(context, 'station_code_hint'),
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: const Color(0xFF65767D),
+                          ),
                         ),
                       ),
-                    ),
                   ],
                 ),
                 _Section(
@@ -575,12 +596,6 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                       trailing: const Icon(Icons.chevron_right, size: 20),
                       onTap: busy ? null : _pickCountry,
                     ),
-                    ListTile(
-                      dense: true,
-                      visualDensity: const VisualDensity(vertical: -3),
-                      title: Text(AppText.of(context, 'environment')),
-                      trailing: Text(AppConfig.flavor),
-                    ),
                   ],
                 ),
                 if (message != null)
@@ -605,6 +620,75 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
       value == value.roundToDouble()
           ? value.toInt().toString()
           : value.toStringAsFixed(1);
+}
+
+/// One paired Station, with the code owners quote when they ask the
+/// manufacturer to pull recordings. Kept free of providers so it can be tested
+/// without standing up the whole account screen.
+class StationAccountTile extends StatelessWidget {
+  const StationAccountTile({
+    super.key,
+    required this.stationId,
+    required this.name,
+    required this.platform,
+    required this.stationCode,
+    required this.onCopyCode,
+    required this.onRemove,
+  });
+
+  final String stationId;
+  final String name;
+  final String platform;
+
+  /// Empty until the Station has beaten at least once.
+  final String stationCode;
+  final VoidCallback? onCopyCode;
+  final VoidCallback? onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ListTile(
+      dense: true,
+      visualDensity: const VisualDensity(vertical: -2),
+      leading: const Icon(Icons.radio),
+      title: Text(name),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (platform.isNotEmpty) Text(platform),
+          if (stationCode.isNotEmpty)
+            Text(
+              stationCode,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: PranaTheme.navy,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+        ],
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Copying an empty string would be worse than offering nothing.
+          if (stationCode.isNotEmpty)
+            IconButton(
+              key: ValueKey('station-code-copy-$stationId'),
+              tooltip: AppText.of(context, 'copy'),
+              icon: const Icon(Icons.copy_outlined),
+              onPressed: onCopyCode,
+            ),
+          IconButton(
+            key: ValueKey('station-remove-$stationId'),
+            icon: const Icon(Icons.link_off),
+            onPressed: onRemove,
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _Section extends StatelessWidget {

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -18,6 +17,7 @@ void main() {
     int observedGeneration = 1,
     int desiredGeneration = 1,
     String storageFolder = 'Station_station-',
+    bool secondSoundCard = false,
   }) => StationModel(
     id: 'station-1',
     name: 'Station',
@@ -31,6 +31,7 @@ void main() {
       retryGeneration: 0,
       captureMode: captureMode,
       audioDeviceId: audioDeviceId,
+      txAudioDeviceId: 'device-id',
       generation: desiredGeneration,
     ),
     observedGeneration: observedGeneration,
@@ -40,17 +41,8 @@ void main() {
     capabilities: StationCapabilities(
       capabilityHash: 'hash',
       captureModes: const ['device', 'loopback'],
-      audioDevices: const [
-        StationAudioDevice(
-          id: 'device-id',
-          name: 'Microphone (Realtek Audio)',
-          mode: 'device',
-          inputChannels: 1,
-          outputChannels: 0,
-          sampleRate: 48000,
-          hostApi: 'Windows WASAPI',
-        ),
-        StationAudioDevice(
+      audioDevices: [
+        const StationAudioDevice(
           id: 'loopback-id',
           name: 'Speaker (Realtek Audio) [Loopback]',
           mode: 'loopback',
@@ -59,6 +51,26 @@ void main() {
           sampleRate: 48000,
           hostApi: 'Windows WASAPI',
         ),
+        // The USB card the radio is wired to: half-duplex, in and out.
+        const StationAudioDevice(
+          id: 'device-id',
+          name: 'USB Audio Device: - (hw:3,0)',
+          mode: 'device',
+          inputChannels: 1,
+          outputChannels: 2,
+          sampleRate: 44100,
+          hostApi: 'ALSA',
+        ),
+        if (secondSoundCard)
+          const StationAudioDevice(
+            id: 'second-output-id',
+            name: 'USB Audio Device: - (hw:4,0)',
+            mode: 'device',
+            inputChannels: 1,
+            outputChannels: 2,
+            sampleRate: 44100,
+            hostApi: 'ALSA',
+          ),
       ],
       storagePath:
           r'D:\A very long Station storage folder\with several nested folders',
@@ -97,58 +109,13 @@ void main() {
     find.widgetWithText(FilledButton, 'Lưu thay đổi'),
   );
 
-  testWidgets('owners can read and copy the code support asks for', (
-    tester,
-  ) async {
-    final copied = <MethodCall>[];
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      SystemChannels.platform,
-      (call) async {
-        if (call.method == 'Clipboard.setData') copied.add(call);
-        return null;
-      },
-    );
-    addTearDown(
-      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-        SystemChannels.platform,
-        null,
-      ),
-    );
-
+  testWidgets('the station code moved out to Account and plan', (tester) async {
     await tester.pumpWidget(harness(station(storageFolder: 'VINH_0f90cd8e')));
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(
-      find.byKey(const ValueKey('station-code-row')),
-      200,
-      scrollable: find.byType(Scrollable).first,
-    );
-    await tester.pumpAndSettle();
 
-    expect(find.text('Mã trạm'), findsOneWidget);
-    expect(find.text('VINH_0f90cd8e'), findsOneWidget);
-
-    await tester.tap(find.byKey(const ValueKey('station-code-copy')));
-    await tester.pumpAndSettle();
-
-    expect(copied, hasLength(1));
-    expect(copied.single.arguments['text'], 'VINH_0f90cd8e');
-    expect(find.text('Đã chép mã trạm'), findsOneWidget);
-  });
-
-  testWidgets('a Station that has never beaten offers nothing to copy', (
-    tester,
-  ) async {
-    await tester.pumpWidget(harness(station(storageFolder: '')));
-    await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(
-      find.byKey(const ValueKey('station-code-row')),
-      200,
-      scrollable: find.byType(Scrollable).first,
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('Mã trạm'), findsOneWidget);
-    expect(find.byKey(const ValueKey('station-code-copy')), findsNothing);
+    expect(find.text('Mã trạm'), findsNothing);
+    expect(find.text('VINH_0f90cd8e'), findsNothing);
+    expect(find.byIcon(Icons.copy_outlined), findsNothing);
   });
 
   testWidgets('save is enabled only while capture settings are dirty', (
@@ -166,6 +133,55 @@ void main() {
 
     await tester.tap(find.text('DEVICE'));
     await tester.pump();
+    expect(saveButton(tester).onPressed, isNull);
+  });
+
+  testWidgets('one sound card asks nothing but still says where TX goes', (
+    tester,
+  ) async {
+    await tester.pumpWidget(harness(station()));
+    await tester.pumpAndSettle();
+
+    // Half-duplex on a single card: no second question to answer.
+    expect(find.text('Nguồn thu'), findsOneWidget);
+    expect(find.text('Đầu ra TX'), findsNothing);
+    expect(find.byKey(const ValueKey('tx-output-device')), findsNothing);
+    // ...but the route is stated rather than silently assumed.
+    expect(find.byKey(const ValueKey('tx-output-route')), findsOneWidget);
+    expect(
+      find.textContaining('Phát TX qua: USB Audio Device: - (hw:3,0)'),
+      findsOneWidget,
+    );
+    // The Laptop-only wording is gone; a Station can be a Pi.
+    expect(find.textContaining('Laptop'), findsNothing);
+  });
+
+  testWidgets('a second sound card brings the TX picker back', (tester) async {
+    await tester.pumpWidget(harness(station(secondSoundCard: true)));
+    await tester.pumpAndSettle();
+
+    final txField = find.byKey(const ValueKey('tx-output-device'));
+    expect(txField, findsOneWidget);
+    expect(find.byKey(const ValueKey('tx-output-route')), findsNothing);
+    expect(find.text('Thiết bị phát (TX)'), findsOneWidget);
+
+    // One card holds the title, both dropdowns, and the rescan.
+    final audioCard = find.ancestor(
+      of: find.text('Nguồn thu'),
+      matching: find.byType(Card),
+    );
+    expect(audioCard, findsOneWidget);
+    expect(find.descendant(of: audioCard, matching: txField), findsOneWidget);
+    final rescan = find.widgetWithText(OutlinedButton, 'Quét lại thiết bị');
+    expect(find.descendant(of: audioCard, matching: rescan), findsOneWidget);
+
+    // RX device, then TX device, then the rescan that refreshes both.
+    final rxTop = tester.getTopLeft(find.text('Thiết bị âm thanh')).dy;
+    final txTop = tester.getTopLeft(txField).dy;
+    expect(txTop, greaterThan(rxTop));
+    expect(tester.getTopLeft(rescan).dy, greaterThan(txTop));
+
+    // TX still defaults to the card RX records on.
     expect(saveButton(tester).onPressed, isNull);
   });
 
