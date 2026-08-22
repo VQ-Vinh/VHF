@@ -340,6 +340,15 @@ class TxController extends ChangeNotifier {
 
   Future<void> restoreActiveTransmission({String? stationJobId}) async {
     if (_restoreInProgress || _monitoredDraftId != null) return;
+    // Recovery for a job this session knows nothing about -- a cold start, or a
+    // monitor that died. While the user is recording, reviewing or confirming,
+    // the local draft is the authoritative one. Letting the server copy land
+    // here reopened the review sheet on top of the edit just sent: the confirm
+    // POST synthesizes speech inline and takes seconds, and the draft still
+    // reads review_ready for all of them.
+    if (state.phase != TxPhase.idle && state.phase != TxPhase.stationOffline) {
+      return;
+    }
     _restoreInProgress = true;
     try {
       final stored = await _repository.activeDraftId(stationId);
