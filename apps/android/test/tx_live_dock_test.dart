@@ -226,6 +226,58 @@ void main() {
     );
   });
 
+  test('a draft is auto-reviewed once, however the phase moves', () {
+    // The draft the user just recorded opens its review on its own.
+    expect(
+      shouldAutoOpenTxReview(
+        phase: TxPhase.reviewReady,
+        draftId: 'draft-1',
+        autoReviewedDraftId: null,
+        reviewOpen: false,
+      ),
+      isTrue,
+    );
+    // The regression: confirming leaves reviewReady, and a restore landing
+    // mid-POST puts it back with the server's pre-edit copy. The sheet must
+    // stay shut -- REVIEW is the way back in.
+    expect(
+      shouldAutoOpenTxReview(
+        phase: TxPhase.reviewReady,
+        draftId: 'draft-1',
+        autoReviewedDraftId: 'draft-1',
+        reviewOpen: false,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldAutoOpenTxReview(
+        phase: TxPhase.reviewReady,
+        draftId: 'draft-1',
+        autoReviewedDraftId: null,
+        reviewOpen: true,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldAutoOpenTxReview(
+        phase: TxPhase.processing,
+        draftId: 'draft-1',
+        autoReviewedDraftId: null,
+        reviewOpen: false,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldAutoOpenTxReview(
+        phase: TxPhase.reviewReady,
+        draftId: null,
+        autoReviewedDraftId: null,
+        reviewOpen: false,
+      ),
+      isFalse,
+    );
+  });
+
   test('failed START unlocks the station toggle while command is pending', () {
     expect(
       canToggleLiveStation(
