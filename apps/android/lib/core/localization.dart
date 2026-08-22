@@ -106,7 +106,6 @@ abstract final class AppText {
       'confirm_sign_out_body': 'Bạn có chắc muốn đăng xuất khỏi PRANA ELEX?',
       'tagline': 'Theo dõi và điều khiển trạm VHF của bạn.',
       'account_plan': 'Tài khoản và gói',
-      'environment': 'Môi trường',
       'sign_out': 'Đăng xuất',
       'email_verified': 'Email đã xác minh',
       'email_unverified': 'Email chưa xác minh',
@@ -141,8 +140,8 @@ abstract final class AppText {
       'device_scan_timeout':
           'Station chưa phản hồi kết quả quét. Hãy kiểm tra kết nối.',
       'audio_source': 'Nguồn thu',
-      'tx_output': 'Đầu ra TX',
-      'tx_output_device': 'Thiết bị phát âm thanh trên Laptop',
+      'tx_output_device': 'Thiết bị phát (TX)',
+      'tx_output_via': 'Phát TX qua',
       'tx_start_required_short': 'HÃY START',
       'tx_translation_edit_hint': 'Chỉnh nội dung sẽ được phát trước khi gửi',
       'station_information': 'Thông tin Station',
@@ -346,7 +345,6 @@ abstract final class AppText {
           'Are you sure you want to sign out of PRANA ELEX?',
       'tagline': 'Monitor and control your VHF stations.',
       'account_plan': 'Account and plan',
-      'environment': 'Environment',
       'sign_out': 'Sign out',
       'email_verified': 'Email verified',
       'email_unverified': 'Email not verified',
@@ -384,8 +382,8 @@ abstract final class AppText {
       'device_scan_timeout':
           'The Station did not return scan results. Check its connection.',
       'audio_source': 'Audio source',
-      'tx_output': 'TX output',
-      'tx_output_device': 'Laptop audio output',
+      'tx_output_device': 'Transmit device (TX)',
+      'tx_output_via': 'TX plays through',
       'tx_start_required_short': 'START FIRST',
       'tx_translation_edit_hint':
           'Edit the text that will be spoken before sending',
