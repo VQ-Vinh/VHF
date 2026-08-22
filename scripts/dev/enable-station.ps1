@@ -58,8 +58,9 @@ function Stop-ManagedProcess {
 }
 
 function Test-ApiHealth {
+    param([int]$TimeoutSec = 5)
     try {
-        $response = Invoke-WebRequest -UseBasicParsing -Uri $apiHealthUrl -TimeoutSec 2
+        $response = Invoke-WebRequest -UseBasicParsing -Uri $apiHealthUrl -TimeoutSec $TimeoutSec
         return $response.StatusCode -eq 200
     } catch {
         return $false
@@ -192,7 +193,20 @@ if ($LocalApi -and -not (Test-ApiHealth)) {
 }
 
 $apiMode = if ($LocalApi) { "local development" } else { "Cloud" }
-if (-not (Test-ApiHealth)) {
+$apiReady = Test-ApiHealth
+if (-not $apiReady -and -not $LocalApi) {
+    # Cloud Run scales to zero, so the first request after an idle period waits
+    # for a container to boot. A single short probe read that as "API is down"
+    # and stopped the whole script -- while the probe itself was what woke the
+    # service up, so the next run mysteriously worked.
+    Write-Host "[PRANA] Dang danh thuc Cloud API (cold start)..." -ForegroundColor Cyan
+    $deadline = (Get-Date).AddSeconds(90)
+    while (-not $apiReady -and (Get-Date) -lt $deadline) {
+        $apiReady = Test-ApiHealth -TimeoutSec 20
+        if (-not $apiReady) { Start-Sleep -Seconds 2 }
+    }
+}
+if (-not $apiReady) {
     throw "Khong the ket noi $apiMode API tai $apiHealthUrl."
 }
 Write-Host "[PRANA] $apiMode API READY: $apiHealthUrl" -ForegroundColor Green

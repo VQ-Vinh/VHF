@@ -48,6 +48,22 @@ def test_enable_station_uses_cloud_without_customer_adc_by_default() -> None:
     assert local_branch < script.index("Confirm-GoogleAdc", local_branch)
 
 
+def test_cloud_health_check_waits_out_a_cold_start() -> None:
+    # Cloud Run scales to zero. A single 2 s probe reported the service as down
+    # while it was still booting -- and that probe was what started it, so the
+    # next run worked and the failure looked random.
+    script = _read("scripts/dev/enable-station.ps1")
+
+    assert "-Uri $apiHealthUrl -TimeoutSec 2" not in script
+    assert "param([int]$TimeoutSec = 5)" in script
+    assert "Test-ApiHealth -TimeoutSec 20" in script
+    wake = script.index("Dang danh thuc Cloud API")
+    assert wake < script.index("Khong the ket noi $apiMode API")
+    # The wait is for the cloud path only; a local API that is not up must fail
+    # fast rather than hang for 90 seconds.
+    assert "if (-not $apiReady -and -not $LocalApi) {" in script
+
+
 def test_runtime_logs_and_pids_stay_outside_recording_storage() -> None:
     script = _read("scripts/dev/enable-station.ps1")
 
