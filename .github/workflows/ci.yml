@@ -93,8 +93,8 @@ jobs:
           python -m pip install --no-build-isolation -e packages/prana_core
           python -m pip install --no-build-isolation --no-deps -e apps/linux
           python -m pip install keyring pyaudio pytest
-      - name: Run core, Linux and packaging tests
-        run: python -m pytest tests/core tests/linux tests/packaging
+      - name: Run core, Linux, packaging and convention tests
+        run: python -m pytest tests/core tests/linux tests/packaging tests/conventions
 
   windows:
     name: Windows tests

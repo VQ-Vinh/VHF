@@ -17,11 +17,25 @@ Keep new modules under the existing package boundaries and place tests in the ma
 
 Create the local environment with `scripts\setup\setup.bat` (Windows) or `./scripts/setup/setup.sh` (Pi/Linux). Use `enable_station_api.bat` to run the Windows Station against the Cloud API; this customer/remote workflow must not require Google Cloud CLI or ADC. Developers may explicitly use `enable_station_api.bat -LocalApi` when testing the backend locally, which is the only mode that may require ADC. Use `run_android_emulator.bat` for Flutter development, and `scripts\dev\run-cli.bat` (or `run-cli.sh`) for batch transcription.
 
-Run all tests from the repository root:
+Run tests from the repository root, but not all of them in one environment --
+no environment has every dependency, and CI does not either. It splits the same
+way, one job per group:
 
 ```bash
-python -m pytest
+# API and Admin: needs both services' requirements (.venv/backend)
+python -m pytest tests/api tests/admin
+
+# Core, Station and repo rules: needs prana_core and apps/linux (.venv/dev)
+python -m pytest tests/core tests/linux tests/packaging tests/conventions
+
+# Windows desktop: needs prana_core and apps/windows
+python -m pytest tests/windows
 ```
+
+A bare `python -m pytest` fails at collection with `ModuleNotFoundError`, which
+looks like a broken checkout and is not one. When you add a suite directory,
+add it to the matching job in `.github/workflows/ci.yml`; a test in
+`tests/conventions/` fails if you forget.
 
 GitHub Actions owns the required `CI / gate` check. A merge to `main` may
 automatically deploy only the changed API/Admin service to staging after that
