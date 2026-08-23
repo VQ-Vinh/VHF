@@ -67,10 +67,6 @@ installers/*
 *.aab
 *.deb
 *.exe
-!generate_station_qr.bat
-!enable_station_api.bat
-!run_android_emulator.bat
-!build_android_apk.bat
 *.spec
 !apps/windows/packaging/PRANA_ELEX.spec
 !apps/windows/packaging/PRANA_Station.spec
@@ -91,6 +87,3 @@ apps/android/android/app/google-services.json
 apps/android/android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
 apps/android/config/*.json
 !apps/android/config/*.example.json
-
-# Old structure (removed)
-src/vhf_processor/

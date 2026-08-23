@@ -20,7 +20,7 @@ def test_windows_setup_creates_station_and_backend_environments() -> None:
 
 
 def test_qr_generation_uses_dev_environment_and_private_output() -> None:
-    script = _read("generate_station_qr.bat")
+    script = _read("apps/windows/scripts/generate-station-qr.bat")
 
     assert r".venv\dev\Scripts\prana-station-provision.exe" in script
     assert 'set "QR_OUTPUT=%PROJECT_ROOT%stations"' in script

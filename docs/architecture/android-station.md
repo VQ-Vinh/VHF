@@ -336,5 +336,5 @@ Chưa có:
 - watchdog phần cứng độc lập với process/nguồn điện.
 
 Kịch bản kiểm thử tương ứng nằm tại
-[android-web-admin-test-scenarios.md](android-web-admin-test-scenarios.md).
-Hướng dẫn staging nằm tại [staging-e2e-test-guide.md](staging-e2e-test-guide.md).
+[android-web-admin-scenarios.md](../testing/android-web-admin-scenarios.md).
+Hướng dẫn staging nằm tại [staging-e2e-guide.md](../testing/staging-e2e-guide.md).

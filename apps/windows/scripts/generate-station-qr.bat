@@ -1,7 +1,8 @@
 @echo off
 setlocal
 
-set "PROJECT_ROOT=%~dp0"
+rem Three levels up from apps\windows\scripts\ is the repository root.
+for %%I in ("%~dp0..\..\..") do set "PROJECT_ROOT=%%~fI\"
 set "PROVISION_EXE=%PROJECT_ROOT%.venv\dev\Scripts\prana-station-provision.exe"
 set "STATION_CONFIG=%PROJECT_ROOT%apps\windows\config\default.toml"
 set "QR_OUTPUT=%PROJECT_ROOT%stations"
