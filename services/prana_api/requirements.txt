@@ -1,13 +1,13 @@
-fastapi==0.139.0
-uvicorn[standard]==0.35.0
-python-multipart==0.0.20
+fastapi==0.141.1
+uvicorn[standard]==0.52.3
+python-multipart==0.0.32
 pydantic==2.13.4
-pydantic-settings==2.10.1
+pydantic-settings==2.15.0
 firebase-admin==7.1.0
-google-cloud-firestore==2.21.0
-google-cloud-storage==3.3.0
+google-cloud-firestore==2.28.1
+google-cloud-storage==3.13.1
 google-cloud-texttospeech==2.29.0
-google-genai==1.28.0
+google-genai==2.18.1
 cryptography==45.0.6
 httpx==0.28.1
 # python:*-slim ships no system tz database, so zoneinfo finds nothing without this.
