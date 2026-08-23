@@ -42,6 +42,23 @@ bool canToggleLiveStation({
     // command as pending would lock the toggle until it comes back.
     (!commandPending || commandFailed || !online);
 
+/// Whether the review sheet may open itself for this draft.
+///
+/// The memory is keyed on the draft, not on the phase. Keying it on the phase
+/// meant leaving reviewReady erased it, so anything that pushed the phase back
+/// -- a restore landing mid-confirm -- reopened the sheet over an edit the user
+/// had already sent. The REVIEW button stays the deliberate way back in.
+bool shouldAutoOpenTxReview({
+  required TxPhase phase,
+  required String? draftId,
+  required String? autoReviewedDraftId,
+  required bool reviewOpen,
+}) =>
+    phase == TxPhase.reviewReady &&
+    draftId != null &&
+    !reviewOpen &&
+    draftId != autoReviewedDraftId;
+
 class _LiveScreenState extends ConsumerState<LiveScreen>
     with WidgetsBindingObserver {
   String? _dismissedProcessingError;
@@ -85,12 +102,18 @@ class _LiveScreenState extends ConsumerState<LiveScreen>
       setState(() => _requiresDiscardConfirmation = requiresDiscard);
     }
     final draftId = _txController.state.draft?.id;
-    if (_txController.state.phase != TxPhase.reviewReady) {
-      // A new recording gets its own automatic review.
+    if (draftId == null) {
+      // Recording, cancelling and resetting all clear the draft, so the next
+      // one gets its own automatic review.
       _autoReviewedDraftId = null;
       return;
     }
-    if (_reviewOpen || draftId == null || draftId == _autoReviewedDraftId) {
+    if (!shouldAutoOpenTxReview(
+      phase: _txController.state.phase,
+      draftId: draftId,
+      autoReviewedDraftId: _autoReviewedDraftId,
+      reviewOpen: _reviewOpen,
+    )) {
       return;
     }
     _autoReviewedDraftId = draftId;
