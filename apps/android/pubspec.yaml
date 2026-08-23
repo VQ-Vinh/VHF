@@ -24,7 +24,7 @@ dependencies:
   just_audio: ^0.10.5
   mobile_scanner: ^7.4.0
   path_provider: ^2.1.5
-  record: ^6.1.2
+  record: ^7.1.1
   uuid: ^4.5.1
 
 dev_dependencies:
