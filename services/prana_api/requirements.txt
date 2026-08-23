@@ -7,7 +7,7 @@ firebase-admin==7.1.0
 google-cloud-firestore==2.28.1
 google-cloud-storage==3.13.1
 google-cloud-texttospeech==2.29.0
-google-genai==2.18.1
+google-genai==2.19.0
 cryptography==45.0.6
 httpx==0.28.1
 # python:*-slim ships no system tz database, so zoneinfo finds nothing without this.
