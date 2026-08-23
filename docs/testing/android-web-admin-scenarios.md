@@ -186,7 +186,7 @@ GPIO trước; chỉ nối VHF/PTT sau khi timing và watchdog đã PASS.
 **Các bước**
 
 1. Đăng nhập User A và chọn thêm Station.
-2. Quét QR hợp lệ được tạo bởi `generate_station_qr.bat`.
+2. Quét QR hợp lệ được tạo bởi `apps\windows\scripts\generate-station-qr.bat`.
 3. Xác nhận ghép.
 4. Quét lại cùng QR bằng User A.
 

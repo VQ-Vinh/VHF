@@ -67,7 +67,7 @@ if not exist "%ROOT%\VHF_Storage\results" mkdir "%ROOT%\VHF_Storage\results"
 
 echo.
 echo [OK] Windows setup complete.
-echo      Generate Station QR: generate_station_qr.bat
+echo      Generate Station QR: apps\windows\scripts\generate-station-qr.bat
 echo      Start Station with Cloud API: enable_station_api.bat
 echo      Developer local API mode: enable_station_api.bat -LocalApi
 pause

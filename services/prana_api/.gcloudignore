@@ -12,7 +12,6 @@ dist/
 docs/
 infra/
 installers/
-logo/
 packages/
 release/
 scripts/

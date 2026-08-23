@@ -58,11 +58,11 @@ dữ liệu chỉ nằm ở backend.
 
 Tài liệu kỹ thuật chi tiết:
 
-- [Kiến trúc tổng quát](docs/architecture.md)
-- [Kiến trúc Android và Station](docs/android-station-architecture.md)
-- [Sơ đồ tổng quan](docs/architecture-overview.md)
-- [CI/CD](docs/cicd.md)
-- [Kịch bản kiểm thử Android và Web Admin](docs/android-web-admin-test-scenarios.md)
+- [Kiến trúc tổng quát](docs/architecture/code-boundaries.md)
+- [Kiến trúc Android và Station](docs/architecture/android-station.md)
+- [Sơ đồ tổng quan](docs/architecture/runtime-dataflow.md)
+- [CI/CD](docs/operations/cicd.md)
+- [Kịch bản kiểm thử Android và Web Admin](docs/testing/android-web-admin-scenarios.md)
 
 ## Yêu cầu
 
@@ -130,7 +130,7 @@ script; môi trường đã tạo sẽ được tái sử dụng.
 Sau khi setup:
 
 ```powershell
-.\generate_station_qr.bat
+.\apps\windows\scripts\generate-station-qr.bat
 ```
 
 QR PNG/SVG được tạo trong thư mục `stations/`. QR chứa thông tin kích hoạt
