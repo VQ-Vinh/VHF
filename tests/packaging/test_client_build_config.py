@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -62,6 +63,25 @@ class ClientBuildConfigTests(unittest.TestCase):
         self.assertEqual(validate(config, "linux-arm64"), [])
         text = config.read_text(encoding="utf-8")
         self.assertNotIn("AIza", text)
+
+    def test_the_shipped_desktop_configs_carry_the_sign_in_key(self):
+        # The counterpart to the station rule above. The desktop app signs users
+        # in, so stripping this key to "match" the station would break sign-in at
+        # runtime with nothing failing at build time.
+        root = Path(__file__).resolve().parents[2]
+        for name in ("default.toml", "staging.toml"):
+            with self.subTest(config=name):
+                config = root / "apps/windows/config" / name
+                with config.open("rb") as stream:
+                    backend = tomllib.load(stream)["backend"]
+                self.assertTrue(backend["firebase_api_key"].startswith("AIza"))
+
+    def test_the_shipped_desktop_release_config_validates(self):
+        # staging.toml is deliberately excluded: it points at 127.0.0.1 for the
+        # -LocalApi workflow, so the release rules do not apply to it.
+        root = Path(__file__).resolve().parents[2]
+        config = root / "apps/windows/config/default.toml"
+        self.assertEqual(validate(config, "windows"), [])
 
 
 if __name__ == "__main__":
