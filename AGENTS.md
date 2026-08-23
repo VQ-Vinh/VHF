@@ -7,8 +7,8 @@ The repository contains a Python 3.11+ desktop/Pi client and two FastAPI service
 - `packages/prana_core/src/prana_core/` — platform-neutral pipeline, VAD, storage, backend and station protocol.
 - `apps/windows/`, `apps/linux/`, and `apps/android/` — platform composition roots and build assets.
 - `services/prana_api/` and `services/prana_admin/` — public API and IAP-protected admin service.
-- `tests/` — suites grouped by `core/`, `windows/`, `linux/`, `api/`, `admin/`, and `packaging/`.
-- Platform TOML files live beside their app; shared release validators live in `tools/packaging/`.
+- `tests/` — suites grouped by `core/`, `windows/`, `linux/`, `api/`, `admin/`, `packaging/`, and `conventions/`. `packaging/` exercises the release tooling and the artifacts it produces; `conventions/` reads tracked files as text to pin repository rules that no runtime check would catch.
+- Platform TOML files live beside their app; shared release validators live in `tools/packaging/`. The Windows configs commit a Firebase Web API key because the desktop app signs users in and that key is public by design; the Linux station signs nobody in and ships it empty, and the Android config is generated per build and stays out of git. Each config carries a comment saying so.
 - `infra/terraform/` — Google Cloud infrastructure; `docs/` — architecture and operational notes.
 
 Keep new modules under the existing package boundaries and place tests in the matching subsystem directory.

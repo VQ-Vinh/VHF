@@ -23,6 +23,11 @@ silero_model_path = ""
 
 [backend]
 api_url = "https://prana-api-owuilj5d4a-uc.a.run.app"
+# The desktop app signs users in through Firebase, so the build has to carry
+# this key. Google designs the Web API key to be public: it names the project
+# and authorises nothing. Firestore rules and API key restrictions are what
+# protect the data. The Linux station signs nobody in and ships this empty;
+# the Android config is generated per build and stays out of git.
 firebase_api_key = "AIzaSyBTG4ltR5PJMH9_TmsKPSF3fNSUgbCbevU"
 google_oauth_client_id = "515336425252-aqkkoc9j9pmji0bsedg7g8hid398ee21.apps.googleusercontent.com"
 timeout_seconds = 150
