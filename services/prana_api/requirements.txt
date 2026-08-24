@@ -11,4 +11,4 @@ google-genai==2.19.0
 cryptography==45.0.6
 httpx==0.28.1
 # python:*-slim ships no system tz database, so zoneinfo finds nothing without this.
-tzdata==2025.2
+tzdata==2026.3
