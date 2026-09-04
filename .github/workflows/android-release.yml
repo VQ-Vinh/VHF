@@ -6,6 +6,7 @@ on:
       - 'v[0-9]+.[0-9]+.[0-9]+'
 
 permissions:
+  checks: read
   contents: write
 
 concurrency:
@@ -16,12 +17,15 @@ jobs:
   release:
     name: Signed APK and AAB
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment: android-production
     defaults:
       run:
         working-directory: apps/android
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           flutter-version: '3.44.8'
@@ -43,6 +47,20 @@ jobs:
           [[ "$version" == "$core_version" ]]
           [[ "$version" == "$mobile_version" ]]
           echo "RELEASE_VERSION=$version" >> "$GITHUB_ENV"
+      - name: Require protected main ancestry and successful CI gate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          checks="$(gh api \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "/repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs?per_page=100")"
+          jq -e 'any(.check_runs[]; .name == "gate" and .conclusion == "success")' \
+            <<<"$checks" >/dev/null
       - name: Restore protected production config and signing key
         shell: bash
         env:

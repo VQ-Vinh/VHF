@@ -518,6 +518,12 @@ resource "google_artifact_registry_repository_iam_member" "release_reader_images
   member     = google_service_account.release_reader.member
 }
 
+resource "google_project_iam_member" "release_reader_run" {
+  project = var.project_id
+  role    = "roles/run.viewer"
+  member  = google_service_account.release_reader.member
+}
+
 resource "google_project_iam_member" "deployer_run" {
   project = var.project_id
   role    = "roles/run.admin"

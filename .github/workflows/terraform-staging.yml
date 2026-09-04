@@ -16,6 +16,7 @@ jobs:
     name: Plan
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment: staging-infra-plan
     defaults:
       run:
@@ -46,27 +47,36 @@ jobs:
         run: |
           set -euo pipefail
           terraform show -json staging.tfplan > "$RUNNER_TEMP/plan.json"
-          add="$(jq '[.resource_changes[]? | select(.change.actions == ["create"])] | length' "$RUNNER_TEMP/plan.json")"
-          change="$(jq '[.resource_changes[]? | select(.change.actions == ["update"])] | length' "$RUNNER_TEMP/plan.json")"
+          add="$(jq '[.resource_changes[]? | select(.change.actions | index("create"))] | length' "$RUNNER_TEMP/plan.json")"
+          change="$(jq '[.resource_changes[]? | select(.change.actions | index("update"))] | length' "$RUNNER_TEMP/plan.json")"
           destroy="$(jq '[.resource_changes[]? | select(.change.actions | index("delete"))] | length' "$RUNNER_TEMP/plan.json")"
           {
             echo '### Terraform staging plan'
             echo "- Create: $add"
             echo "- Update: $change"
             echo "- Delete/replace: $destroy"
-            if [[ "$destroy" != 0 ]]; then
-              echo ''
-              echo '**Destructive or replacement actions require careful approval:**'
-              jq -r '.resource_changes[]? | select(.change.actions | index("delete")) | "- `\(.address)`: \(.change.actions | join(" → "))"' "$RUNNER_TEMP/plan.json"
-            fi
           } >> "$GITHUB_STEP_SUMMARY"
-      - name: Remove plaintext variables before artifact upload
+      - name: Encrypt the saved plan
+        shell: bash
+        env:
+          TFPLAN_ENCRYPTION_KEY: ${{ secrets.TFPLAN_ENCRYPTION_KEY }}
+        run: |
+          set -euo pipefail
+          test "${#TFPLAN_ENCRYPTION_KEY}" -ge 32
+          key_file="$RUNNER_TEMP/tfplan.key"
+          printf '%s' "$TFPLAN_ENCRYPTION_KEY" > "$key_file"
+          chmod 600 "$key_file"
+          gpg --batch --yes --pinentry-mode loopback --cipher-algo AES256 \
+            --passphrase-file "$key_file" --symmetric \
+            --output staging.tfplan.gpg staging.tfplan
+          test -s staging.tfplan.gpg
+      - name: Remove plaintext Terraform material
         if: always()
-        run: rm -f ci.auto.tfvars
+        run: rm -f ci.auto.tfvars staging.tfplan "$RUNNER_TEMP/tfplan.key" "$RUNNER_TEMP/plan.json"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: terraform-staging-${{ github.sha }}
-          path: infra/terraform/staging.tfplan
+          path: infra/terraform/staging.tfplan.gpg
           retention-days: 1
           if-no-files-found: error
 
@@ -74,6 +84,7 @@ jobs:
     name: Apply approved plan
     needs: plan
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment: staging-infra
     defaults:
       run:
@@ -92,5 +103,23 @@ jobs:
         with:
           name: terraform-staging-${{ github.sha }}
           path: infra/terraform
+      - name: Decrypt the approved plan
+        shell: bash
+        env:
+          TFPLAN_ENCRYPTION_KEY: ${{ secrets.TFPLAN_ENCRYPTION_KEY }}
+        run: |
+          set -euo pipefail
+          test "${#TFPLAN_ENCRYPTION_KEY}" -ge 32
+          test -s staging.tfplan.gpg
+          key_file="$RUNNER_TEMP/tfplan.key"
+          printf '%s' "$TFPLAN_ENCRYPTION_KEY" > "$key_file"
+          chmod 600 "$key_file"
+          gpg --batch --yes --pinentry-mode loopback \
+            --passphrase-file "$key_file" --decrypt \
+            --output staging.tfplan staging.tfplan.gpg
+          test -s staging.tfplan
       - name: Apply the exact approved plan
         run: terraform apply -input=false -lock-timeout=5m -auto-approve staging.tfplan
+      - name: Remove decrypted Terraform material
+        if: always()
+        run: rm -f staging.tfplan staging.tfplan.gpg "$RUNNER_TEMP/tfplan.key"
