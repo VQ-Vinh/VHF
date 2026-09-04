@@ -14,6 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = ROOT / ".github"
 PIN = re.compile(r"uses:\s*([\w.-]+/[\w.-]+)@([0-9a-f]{40})\s*#\s*(v[\d.]+)")
+USE = re.compile(r"^\s*-?\s*uses:\s*([^\s#]+)(?:\s*#\s*(\S+))?", re.MULTILINE)
 
 
 def _pins() -> dict[str, set[tuple[str, str]]]:
@@ -25,6 +26,15 @@ def _pins() -> dict[str, set[tuple[str, str]]]:
 
 
 class WorkflowActionPinTests(unittest.TestCase):
+    def test_every_external_action_is_pinned_to_commit_sha(self) -> None:
+        for path in sorted(WORKFLOWS.rglob("*.yml")):
+            for reference, version in USE.findall(path.read_text(encoding="utf-8")):
+                if reference.startswith("./"):
+                    continue
+                with self.subTest(path=path, reference=reference):
+                    self.assertRegex(reference, r"^[\w.-]+/[\w.-]+@[0-9a-f]{40}$")
+                    self.assertRegex(version, r"^v[\d.]+$")
+
     def test_every_action_is_pinned_to_one_sha(self) -> None:
         # The same action on two SHAs means a bump missed a workflow, and the
         # one it missed is usually a deploy path CI never exercises.

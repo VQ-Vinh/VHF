@@ -25,53 +25,83 @@ runs:
         REQUIRE_HEALTH: ${{ inputs.require_health }}
       run: |
         set -Eeuo pipefail
-        previous="$(gcloud run services describe "$SERVICE" \
+
+        previous_json="$(gcloud run services describe "$SERVICE" \
           --project "$PROJECT_ID" --region "$REGION" \
-          --format='value(status.traffic[0].revisionName)' 2>/dev/null || true)"
+          --format=json 2>/dev/null || true)"
+        previous_latest="$(jq -r '.status.latestReadyRevisionName // empty' <<<"$previous_json")"
+        previous_traffic="$(jq -r --arg latest "$previous_latest" '
+          [.status.traffic[]?
+            | select((.percent // 0) > 0)
+            | ((.revisionName // $latest) + "=" + (.percent | tostring))]
+          | join(",")
+        ' <<<"$previous_json")"
+
         rollback() {
-          if [[ -n "$previous" ]]; then
-            echo "Deployment verification failed; rolling traffic back to $previous"
-            gcloud run services update-traffic "$SERVICE" \
+          trap - ERR
+          if [[ -n "$previous_traffic" ]]; then
+            echo "Deployment verification failed; restoring traffic: $previous_traffic"
+            if ! gcloud run services update-traffic "$SERVICE" \
               --project "$PROJECT_ID" --region "$REGION" \
-              --to-revisions "$previous=100" --quiet || true
+              --to-revisions "$previous_traffic" --quiet; then
+              echo "::error::Automatic Cloud Run rollback failed for $SERVICE"
+              {
+                echo '### Cloud Run rollback failed'
+                echo "- Service: \`$SERVICE\`"
+                echo "- Intended traffic: \`$previous_traffic\`"
+                echo '- Manual intervention is required.'
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
           fi
         }
         trap rollback ERR
 
-        gcloud run deploy "$SERVICE" --image "$IMAGE" \
+        gcloud run deploy "$SERVICE" --image "$IMAGE" --no-traffic \
           --project "$PROJECT_ID" --region "$REGION" --quiet
+
+        revision="$(gcloud run services describe "$SERVICE" \
+          --project "$PROJECT_ID" --region "$REGION" \
+          --format='value(status.latestCreatedRevisionName)')"
+        [[ -n "$revision" ]]
+
+        ready=false
+        for attempt in {1..12}; do
+          revision_json="$(gcloud run revisions describe "$revision" \
+            --project "$PROJECT_ID" --region "$REGION" \
+            --format=json 2>/dev/null || true)"
+          condition="$(jq -r '[.status.conditions[]? | select(.type == "Ready")][0].status // empty' \
+            <<<"$revision_json")"
+          if [[ "$condition" == "True" ]]; then
+            ready=true
+            break
+          fi
+          echo "Waiting for Cloud Run revision readiness ($attempt/12): revision=$revision ready=$condition"
+          sleep 5
+        done
+        [[ "$ready" == "true" ]]
+
         gcloud run services update-traffic "$SERVICE" \
           --project "$PROJECT_ID" --region "$REGION" \
-          --to-latest --quiet
+          --to-revisions "$revision=100" --quiet
 
-        revision=""
-        verified=false
+        serving=false
         for attempt in {1..12}; do
           service_json="$(gcloud run services describe "$SERVICE" \
             --project "$PROJECT_ID" --region "$REGION" \
             --format=json 2>/dev/null || true)"
-          revision="$(jq -r '.status.latestReadyRevisionName // empty' <<<"$service_json")"
-          ready=""
-          traffic=""
-          if [[ -n "$revision" ]]; then
-            revision_json="$(gcloud run revisions describe "$revision" \
-              --project "$PROJECT_ID" --region "$REGION" \
-              --format=json 2>/dev/null || true)"
-            ready="$(jq -r '[.status.conditions[]? | select(.type == "Ready")][0].status // empty' <<<"$revision_json")"
-            traffic="$(jq -r --arg revision "$revision" '[.status.traffic[]? | select(.revisionName == $revision)][0].percent // empty' <<<"$service_json")"
-          fi
-          if [[ "$ready" == "True" && "$traffic" == "100" ]]; then
-            verified=true
+          traffic="$(jq -r --arg revision "$revision" \
+            '[.status.traffic[]? | select(.revisionName == $revision)][0].percent // empty' \
+            <<<"$service_json")"
+          if [[ "$traffic" == "100" ]]; then
+            serving=true
             break
           fi
-          echo "Waiting for Cloud Run state propagation ($attempt/12): revision=$revision ready=$ready traffic=$traffic"
+          echo "Waiting for Cloud Run traffic propagation ($attempt/12): revision=$revision traffic=$traffic"
           sleep 5
         done
-        [[ "$verified" == "true" ]]
+        [[ "$serving" == "true" ]]
 
         if [[ "$REQUIRE_HEALTH" == "true" ]]; then
-          service_json="$(gcloud run services describe "$SERVICE" \
-            --project "$PROJECT_ID" --region "$REGION" --format=json)"
           url="$(jq -r '.status.url // .uri // .status.uri // empty' <<<"$service_json")"
           [[ -n "$url" ]]
           curl --fail --silent --show-error --retry 5 --retry-all-errors \
@@ -84,5 +114,13 @@ runs:
           --project "$PROJECT_ID" --freshness=30m --limit=1 \
           --format='value(timestamp)' || true)"
         [[ -z "$errors" ]]
+
         trap - ERR
+        {
+          echo '### Cloud Run deployment'
+          echo "- Service: \`$SERVICE\`"
+          echo "- Revision: \`$revision\`"
+          echo '- Traffic: 100%'
+          echo '- Verification: passed'
+        } >> "$GITHUB_STEP_SUMMARY"
         echo "Cloud Run revision $revision is Ready and serves 100% traffic."

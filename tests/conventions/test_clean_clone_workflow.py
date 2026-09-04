@@ -99,10 +99,15 @@ def test_cloud_run_deploy_waits_for_eventual_consistency() -> None:
     staging = _read(".github/workflows/deploy-staging.yml")
 
     assert "for attempt in {1..12}" in action
-    assert "Waiting for Cloud Run state propagation" in action
-    assert '[[ "$verified" == "true" ]]' in action
+    assert "Waiting for Cloud Run revision readiness" in action
+    assert "Waiting for Cloud Run traffic propagation" in action
+    assert '[[ "$ready" == "true" ]]' in action
+    assert '[[ "$serving" == "true" ]]' in action
     assert "trap rollback ERR" in action
-    assert "--to-latest --quiet" in action
+    assert "--no-traffic" in action
+    assert '--to-revisions "$revision=100"' in action
+    assert "previous_traffic" in action
+    assert "--to-latest" not in action
     assert "--format=json" in action
     assert "jq -r" in action
     assert "conditions[]?" in action
@@ -111,6 +116,7 @@ def test_cloud_run_deploy_waits_for_eventual_consistency() -> None:
     assert "traffic[?revisionName=" not in action
     assert ".status.url // .uri // .status.uri // empty" in action
     assert '[[ -n "$url" ]]' in action
-    assert "github/actions/deploy-cloud-run/" in staging
-    assert "api=true" in staging
-    assert "admin=true" in staging
+    assert ".github/actions/deploy-cloud-run" in staging
+    assert "deploy-selection" in staging
+    assert "workflow_run.head_sha" in staging
+    assert "HEAD^ HEAD" not in staging

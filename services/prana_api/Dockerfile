@@ -1,4 +1,15 @@
-FROM python:3.12-slim
+FROM python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
+
+ARG VCS_REF=unknown
+ARG BUILD_URL=unknown
+ARG BUILD_RUN_ID=unknown
+LABEL org.opencontainers.image.source="https://github.com/VQ-Vinh/VHF" \
+      org.opencontainers.image.revision="$VCS_REF" \
+      org.opencontainers.image.version="$VCS_REF" \
+      org.opencontainers.image.url="$BUILD_URL" \
+      org.opencontainers.image.title="prana-api" \
+      io.github.actions.run-id="$BUILD_RUN_ID" \
+      io.prana.service="prana-api"
 
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PORT=8080
 WORKDIR /app

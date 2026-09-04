@@ -4,6 +4,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    groups:
+      actions-minor-patch:
+        update-types: [minor, patch]
   - package-ecosystem: pip
     directory: /services/prana_api
     schedule:
@@ -14,5 +17,17 @@ updates:
       interval: weekly
   - package-ecosystem: pub
     directory: /apps/android
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: /services/prana_api
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: /services/prana_admin
+    schedule:
+      interval: weekly
+  - package-ecosystem: terraform
+    directory: /infra/terraform
     schedule:
       interval: weekly
