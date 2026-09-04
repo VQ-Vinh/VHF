@@ -287,66 +287,41 @@ jobs:
             docker build --file services/prana_admin/Dockerfile --tag prana-admin-ci .
             smoke prana-admin-ci prana-admin-ci 18081
           fi
+      - name: Install pinned Trivy scanner
+        uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514 # v0.2.6
+        with:
+          version: v0.70.0
+          cache: true
       - id: scan-api
         name: Scan API image for fixable critical vulnerabilities
         if: always() && needs.changes.outputs.deploy_api == 'true'
         continue-on-error: true
-        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
-        with:
-          image-ref: prana-api-ci
-          format: sarif
-          output: trivy-api-policy.sarif
-          severity: CRITICAL
-          ignore-unfixed: true
-          exit-code: '1'
+        run: >-
+          trivy image --scanners vuln --format sarif --output trivy-api-policy.sarif
+          --severity CRITICAL --ignore-unfixed --exit-code 1 prana-api-ci
       - name: Report all API critical vulnerabilities
         if: always() && needs.changes.outputs.deploy_api == 'true'
-        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
-        with:
-          image-ref: prana-api-ci
-          format: sarif
-          output: trivy-api.sarif
-          severity: CRITICAL
-          ignore-unfixed: false
-          exit-code: '0'
+        run: >-
+          trivy image --scanners vuln --format sarif --output trivy-api.sarif
+          --severity CRITICAL --exit-code 0 prana-api-ci
       - name: Create API SBOM
         if: always() && needs.changes.outputs.deploy_api == 'true'
-        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
-        with:
-          image-ref: prana-api-ci
-          format: cyclonedx
-          output: sbom-api.cdx.json
-          exit-code: '0'
+        run: trivy image --format cyclonedx --output sbom-api.cdx.json prana-api-ci
       - id: scan-admin
         name: Scan Admin image for fixable critical vulnerabilities
         if: always() && needs.changes.outputs.deploy_admin == 'true'
         continue-on-error: true
-        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
-        with:
-          image-ref: prana-admin-ci
-          format: sarif
-          output: trivy-admin-policy.sarif
-          severity: CRITICAL
-          ignore-unfixed: true
-          exit-code: '1'
+        run: >-
+          trivy image --scanners vuln --format sarif --output trivy-admin-policy.sarif
+          --severity CRITICAL --ignore-unfixed --exit-code 1 prana-admin-ci
       - name: Report all Admin critical vulnerabilities
         if: always() && needs.changes.outputs.deploy_admin == 'true'
-        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
-        with:
-          image-ref: prana-admin-ci
-          format: sarif
-          output: trivy-admin.sarif
-          severity: CRITICAL
-          ignore-unfixed: false
-          exit-code: '0'
+        run: >-
+          trivy image --scanners vuln --format sarif --output trivy-admin.sarif
+          --severity CRITICAL --exit-code 0 prana-admin-ci
       - name: Create Admin SBOM
         if: always() && needs.changes.outputs.deploy_admin == 'true'
-        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
-        with:
-          image-ref: prana-admin-ci
-          format: cyclonedx
-          output: sbom-admin.cdx.json
-          exit-code: '0'
+        run: trivy image --format cyclonedx --output sbom-admin.cdx.json prana-admin-ci
       - name: Upload vulnerability reports and SBOMs
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
