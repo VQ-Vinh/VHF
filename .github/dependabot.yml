@@ -19,6 +19,11 @@ updates:
     directory: /apps/android
     schedule:
       interval: weekly
+    ignore:
+      # flutter_localizations from the Flutter SDK pins intl exactly, so any
+      # bump past that pin fails version solving and can never be merged.
+      # Drop this entry once the pinned SDK ships a newer intl.
+      - dependency-name: intl
   - package-ecosystem: docker
     directory: /services/prana_api
     schedule:
