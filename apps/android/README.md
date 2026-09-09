@@ -166,3 +166,39 @@ flutter analyze
 flutter test
 flutter test --device-id <emulator-id>
 ```
+
+## Station Workspace
+
+Station list opens Dashboard. Dashboard / Control / Live VHF are the three primary tabs; History and Settings are secondary pages in the retained workspace. Only Live sends START/STOP. Phone TX and Auto Audio belong to the app session, so changing tabs does not restart remote RX or dispose TX. Dashboard and Control share one telemetry subscription. Control contains the simulated map, pinned coordinates and a manual steering wheel with no hardware effect. Settings groups VHF Device and three not-yet-integrated module slots. See [Control architecture and verification](../../docs/architecture/android-control-workspace.md).
+
+See [Android architecture, per-file migration and verification](../../docs/architecture/android-workspace-migration.md).
+
+## Ngôn ngữ giao diện
+
+Nội dung dịch nằm trong `lib/l10n/app_en.arb` (template) và `app_vi.arb`.
+Chạy `flutter gen-l10n` sau khi sửa ARB; không sửa trực tiếp các file Dart
+`app_localizations*.dart` được sinh. Commit ARB, cấu hình và mã được sinh cùng nhau.
+UI gọi getter/hàm có kiểu của `AppLocalizations`, không tra key chuỗi.
+Thông báo mã lỗi từ API/Station được chuyển sang getter tại `core/service_messages.dart`;
+không thêm nội dung dịch trực tiếp vào adapter này.
+
+Thêm ngôn ngữ bằng một ARB `app_<locale>.arb` có đủ message/placeholder của template,
+sinh lại mã, rồi bổ sung Country tương ứng trong `CountryLocalePolicy`.
+Mỗi ngôn ngữ vẫn cần bản dịch riêng; ARB tách công việc dịch khỏi code Dart,
+và code generation phát hiện lỗi tên message/placeholder.
+
+Account cung cấp EN trước, sau đó ngôn ngữ Country nếu đã hỗ trợ (hiện VN → VI).
+Country khác chỉ có EN; trước khi Country được tải và tại đăng nhập, mọi locale
+đóng gói đều có thể chọn. Đổi Country giữ locale hợp lệ, nếu không thì chọn ngôn ngữ
+Country hoặc EN. Chỉ lưu locale trên điện thoại; không đổi API hay ngôn ngữ RX/TX.
+Bộ chọn căn phải, reflow khi không đủ chỗ, giữ vùng bấm tối thiểu 48 logical pixels.
+
+Account & Plan có công tắc Chế độ tối/Dark mode. Lựa chọn được lưu cục bộ,
+áp dụng ngay trên toàn ứng dụng và không phụ thuộc theme hệ thống. Theme tối dùng
+`ColorScheme` cho surface, chữ, icon, input, map và các điều khiển mô phỏng; khi
+thêm UI mới, tránh dùng trực tiếp màu nền hoặc màu chữ chỉ phù hợp theme sáng.
+
+Kiểm tra: `flutter gen-l10n`, `dart format --output=none --set-exit-if-changed lib test`,
+`flutter analyze --no-pub`, `flutter test --no-pub`. Test localization kiểm tra ARB,
+Country thành công/thất bại, các Future hoàn thành muộn và layout EN/VI ở text scale
+1.0/1.5/2.0. Không cần build APK cho thay đổi nội dung dịch thông thường.
