@@ -50,11 +50,31 @@ if (Test-Path -LiteralPath $androidStudioJdk) {
 $env:ANDROID_SDK_ROOT = $androidSdk
 $prebuiltApk = Join-Path $appRoot "build\app\outputs\flutter-apk\app-$Flavor-debug.apk"
 
+function Invoke-AdbProbe {
+    param([string[]]$AdbArguments)
+    # Windows PowerShell turns native stderr into ErrorRecords, even with
+    # 2>$null. A transport closing during reboot is an expected failed probe.
+    $ErrorActionPreference = "Continue"
+    $output = & $adb @AdbArguments 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        return $null
+    }
+    return $output | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] }
+}
+
+function Test-AdbDevicePresent {
+    param([string]$DeviceId)
+    $lines = Invoke-AdbProbe -AdbArguments @("devices")
+    # An unavailable adb server does not prove that the AVD has stopped.
+    if ($null -eq $lines) { return $true }
+    return [bool]($lines | Where-Object { $_ -match ("^" + [regex]::Escape($DeviceId) + "\s+") })
+}
+
 function Get-EmulatorAvdName {
     param([string]$DeviceId)
-    $name = (& $adb -s $DeviceId shell getprop ro.boot.qemu.avd_name 2>$null).Trim()
+    $name = ([string]((Invoke-AdbProbe -AdbArguments @("-s", $DeviceId, "shell", "getprop", "ro.boot.qemu.avd_name")) -join "")).Trim()
     if (-not $name) {
-        $name = & $adb -s $DeviceId emu avd name 2>$null |
+        $name = Invoke-AdbProbe -AdbArguments @("-s", $DeviceId, "emu", "avd", "name") |
             Where-Object { $_ -and $_ -notmatch "^OK$" } |
             Select-Object -First 1
     }
@@ -65,7 +85,7 @@ function Get-EmulatorAvdName {
 }
 
 function Get-OnlineEmulatorId {
-    $lines = & $adb devices |
+    $lines = Invoke-AdbProbe -AdbArguments @("devices") |
         Where-Object { $_ -match "^(emulator-\d+)\s+device$" }
     foreach ($line in $lines) {
         if ($line -match "^(emulator-\d+)") {
@@ -80,7 +100,7 @@ function Get-OnlineEmulatorId {
 
 function Get-EmulatorResolution {
     param([string]$DeviceId)
-    $sizeLines = & $adb -s $DeviceId shell wm size 2>$null
+    $sizeLines = Invoke-AdbProbe -AdbArguments @("-s", $DeviceId, "shell", "wm", "size")
     $effectiveSize = $sizeLines |
         Where-Object { $_ -match "^Override size:\s*(\d+x\d+)$" } |
         Select-Object -Last 1
@@ -124,13 +144,17 @@ if ($deviceId) {
             "$currentResolution -> $EmulatorResolution..."
         ) -ForegroundColor Yellow
         & $adb -s $deviceId emu kill | Out-Null
-        $deadline = (Get-Date).AddSeconds(20)
+        # Saving the AVD snapshot can take longer than 20 seconds on shutdown.
+        $deadline = (Get-Date).AddSeconds($BootTimeoutSeconds)
         do {
             Start-Sleep -Milliseconds 500
         } while (
-            (Get-OnlineEmulatorId) -and
+            (Test-AdbDevicePresent -DeviceId $deviceId) -and
             (Get-Date) -lt $deadline
         )
+        if (Test-AdbDevicePresent -DeviceId $deviceId) {
+            throw "Emulator $deviceId did not disconnect within $BootTimeoutSeconds seconds; refusing to start a duplicate AVD."
+        }
         $deviceId = $null
     }
 }
@@ -160,7 +184,7 @@ if (-not $deviceId) {
         Start-Sleep -Seconds 2
         $deviceId = Get-OnlineEmulatorId
         if ($deviceId) {
-            $bootCompleted = (& $adb -s $deviceId shell getprop sys.boot_completed 2>$null).Trim()
+            $bootCompleted = ([string]((Invoke-AdbProbe -AdbArguments @("-s", $deviceId, "shell", "getprop", "sys.boot_completed")) -join "")).Trim()
             if ($bootCompleted -eq "1") {
                 break
             }
