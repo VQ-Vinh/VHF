@@ -1,16 +1,16 @@
+import 'package:prana_mobile/l10n/app_localizations.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:prana_mobile/core/localization.dart';
 import 'package:prana_mobile/core/theme.dart';
-import 'package:prana_mobile/features/live/live_screen.dart';
-import 'package:prana_mobile/features/tx/application/fake_tx_repository.dart';
-import 'package:prana_mobile/features/tx/application/tx_controller.dart';
-import 'package:prana_mobile/features/tx/domain/tx_phase.dart';
-import 'package:prana_mobile/features/tx/presentation/widgets/tx_live_dock.dart';
-import 'package:prana_mobile/features/tx/presentation/widgets/tx_ptt_button.dart';
+import 'package:prana_mobile/features/station/radio/presentation/live_screen.dart';
+import 'support/fake_tx_repository.dart';
+import 'package:prana_mobile/runtime/vhf/tx_controller.dart';
+import 'package:prana_mobile/domain/radio/tx/tx_phase.dart';
+import 'package:prana_mobile/features/station/radio/presentation/widgets/tx/tx_live_dock.dart';
+import 'package:prana_mobile/features/station/radio/presentation/widgets/tx/tx_ptt_button.dart';
 
 void _ignore(String _) {}
 
@@ -18,8 +18,9 @@ void main() {
   Widget wrap(Widget child) => MaterialApp(
     theme: PranaTheme.light(),
     locale: const Locale('en'),
-    supportedLocales: AppText.supportedLocales,
+    supportedLocales: AppLocalizations.supportedLocales,
     localizationsDelegates: const [
+      AppLocalizations.delegate,
       GlobalMaterialLocalizations.delegate,
       GlobalWidgetsLocalizations.delegate,
       GlobalCupertinoLocalizations.delegate,
@@ -50,6 +51,34 @@ void main() {
     matching: find.byType(AnimatedContainer),
   );
 
+  testWidgets('resizing a held PTT keeps the pointer and releases once', (
+    tester,
+  ) async {
+    var starts = 0;
+    var stops = 0;
+    Widget button(double diameter) => wrap(
+      Center(
+        child: TxPttButton(
+          diameter: diameter,
+          enabled: true,
+          recording: false,
+          onHoldStart: () => starts++,
+          onHoldEnd: () => stops++,
+        ),
+      ),
+    );
+    await tester.pumpWidget(button(160));
+    final gesture = await tester.startGesture(tester.getCenter(pttShell()));
+    expect(starts, 1);
+    await tester.pumpWidget(button(240));
+    await tester.pump(const Duration(milliseconds: 80));
+    expect(starts, 1);
+    expect(stops, 0);
+    expect(tester.takeException(), isNull);
+    await gesture.up();
+    expect(stops, 1);
+  });
+
   testWidgets('PTT is a circle carrying only the mic and its label', (
     tester,
   ) async {
@@ -72,7 +101,8 @@ void main() {
     expect(size.height, size.width);
 
     final decoration =
-        tester.widget<AnimatedContainer>(pttShell()).decoration as BoxDecoration;
+        tester.widget<AnimatedContainer>(pttShell()).decoration
+            as BoxDecoration;
     expect(decoration.shape, BoxShape.circle);
 
     expect(find.text('HOLD TO TALK'), findsOneWidget);
@@ -89,7 +119,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('talk pad shrinks the circle to fit a short 360dp screen', (
+  testWidgets('talk pad keeps a readable circle on a short 360dp screen', (
     tester,
   ) async {
     final subject = controller();
@@ -117,9 +147,8 @@ void main() {
       ),
     );
 
-    final padHeight = tester.getSize(
-      find.byKey(const ValueKey('tx-talk-pad')),
-    ).height;
+    final padHeight =
+        tester.getSize(find.byKey(const ValueKey('tx-talk-pad'))).height;
     final buttonSize = tester.getSize(pttShell());
     expect(buttonSize.width, buttonSize.height);
     expect(buttonSize.height, lessThanOrEqualTo(padHeight));
@@ -154,9 +183,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('TX language field matches the RX field frame', (
-    tester,
-  ) async {
+  testWidgets('TX language field matches the RX field frame', (tester) async {
     final subject = controller();
     addTearDown(subject.dispose);
 
@@ -182,8 +209,7 @@ void main() {
       ),
     );
 
-    // Both keys cover label + field, so equal heights mean equal typography
-    // and an equal 40px box underneath.
+    // Both fields grow with their labels and retain an accessible touch area.
     final stripRegion = tester.getSize(
       find.byKey(const ValueKey('input-language-field')),
     );
@@ -193,7 +219,7 @@ void main() {
     expect(txRegion.height, stripRegion.height);
     expect(
       tester.getSize(find.byKey(const ValueKey('tx-dock-language'))).height,
-      40,
+      greaterThanOrEqualTo(48),
     );
 
     final decoration =
@@ -206,17 +232,20 @@ void main() {
                 )
                 .decoration
             as BoxDecoration;
-    expect(decoration.color, PranaTheme.surface);
+    final colors =
+        Theme.of(
+          tester.element(find.byKey(const ValueKey('tx-dock-language'))),
+        ).colorScheme;
+    expect(decoration.color, colors.surface);
     expect(decoration.borderRadius, BorderRadius.circular(11));
-    expect(decoration.border, Border.all(color: const Color(0xFFB9CDD2)));
+    expect(decoration.border, Border.all(color: colors.outlineVariant));
     expect(tester.takeException(), isNull);
   });
 
   testWidgets('language labels read as directions in both locales', (
     tester,
   ) async {
-    // AppText.of falls back to the raw key when a lookup misses, so a key
-    // renamed in only one map would ship its own name to the user.
+    // Verify the generated translations preserve the radio direction labels.
     for (final (locale, heard, translateTo, transmitIn) in const [
       (Locale('en'), 'HEARD', 'TRANSLATE TO', 'TRANSMIT IN'),
       (Locale('vi'), 'NGHE ĐƯỢC', 'DỊCH SANG', 'PHÁT BẰNG'),
@@ -228,8 +257,9 @@ void main() {
         MaterialApp(
           theme: PranaTheme.light(),
           locale: locale,
-          supportedLocales: AppText.supportedLocales,
+          supportedLocales: AppLocalizations.supportedLocales,
           localizationsDelegates: const [
+            AppLocalizations.delegate,
             GlobalMaterialLocalizations.delegate,
             GlobalWidgetsLocalizations.delegate,
             GlobalCupertinoLocalizations.delegate,
@@ -330,7 +360,12 @@ void main() {
 
   test('live feed renders only the newest translation', () {
     final source =
-        File('lib/features/live/live_screen.dart').readAsStringSync();
+        File(
+          'lib/features/station/radio/presentation/live_screen.dart',
+        ).readAsStringSync() +
+        File(
+          'lib/features/station/radio/presentation/widgets/live_feed.dart',
+        ).readAsStringSync();
 
     // Newest last: results are sorted chronologically ascending upstream.
     expect(source, contains('final newest = items.last;'));

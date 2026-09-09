@@ -1,12 +1,13 @@
+import 'package:prana_mobile/l10n/app_localizations.dart';
+import 'support/fake_station_repository.dart';
+import 'package:prana_mobile/app/di/station_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:prana_mobile/core/localization.dart';
 import 'package:prana_mobile/core/theme.dart';
-import 'package:prana_mobile/features/settings/station_settings_screen.dart';
-import 'package:prana_mobile/models/station.dart';
-import 'package:prana_mobile/providers.dart';
+import 'package:prana_mobile/features/station/settings/station_settings_screen.dart';
+import 'package:prana_mobile/domain/station/station.dart';
 
 void main() {
   final now = DateTime(2026, 7, 27, 12);
@@ -82,14 +83,18 @@ void main() {
 
   Widget harness(StationModel value, {double textScale = 1}) => ProviderScope(
     overrides: [
+      stationRepositoryProvider.overrideWith(
+        (ref) => FakeStationRepository(value),
+      ),
       stationProvider.overrideWith((ref, stationId) => Stream.value(value)),
       stationClockProvider.overrideWith((ref) => Stream.value(now)),
     ],
     child: MaterialApp(
       theme: PranaTheme.light(),
       locale: const Locale('vi'),
-      supportedLocales: AppText.supportedLocales,
+      supportedLocales: AppLocalizations.supportedLocales,
       localizationsDelegates: const [
+        AppLocalizations.delegate,
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
@@ -143,7 +148,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Half-duplex on a single card: no second question to answer.
-    expect(find.text('Nguồn thu'), findsOneWidget);
+    expect(find.text('VHF Device'), findsOneWidget);
     expect(find.text('Đầu ra TX'), findsNothing);
     expect(find.byKey(const ValueKey('tx-output-device')), findsNothing);
     // ...but the route is stated rather than silently assumed.
@@ -167,7 +172,7 @@ void main() {
 
     // One card holds the title, both dropdowns, and the rescan.
     final audioCard = find.ancestor(
-      of: find.text('Nguồn thu'),
+      of: find.text('VHF Device'),
       matching: find.byType(Card),
     );
     expect(audioCard, findsOneWidget);
@@ -196,7 +201,12 @@ void main() {
     await tester.pumpWidget(harness(station(), textScale: 1.3));
     await tester.pumpAndSettle();
 
-    expect(find.text('Nguồn thu'), findsOneWidget);
+    expect(find.text('VHF Device'), findsOneWidget);
+    for (final name in ['Speed Device', 'Device 3', 'Device 4']) {
+      await tester.scrollUntilVisible(find.text(name), 150);
+      expect(find.text(name), findsOneWidget);
+    }
+    await tester.scrollUntilVisible(find.text('Thông tin Station'), 250);
     expect(find.text('Thông tin Station'), findsOneWidget);
     expect(find.text('Lưu thay đổi'), findsOneWidget);
     expect(tester.takeException(), isNull);

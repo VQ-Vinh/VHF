@@ -131,22 +131,22 @@ def test_mobile_declares_android_text_to_speech_support() -> None:
     manifest = Path(
         "apps/android/android/app/src/main/AndroidManifest.xml"
     ).read_text(encoding="utf-8")
-    live = Path("apps/android/lib/features/live/live_screen.dart").read_text(
+    live = Path("apps/android/lib/features/station/radio/presentation/live_screen.dart").read_text(
         encoding="utf-8"
     )
     result_card = Path(
-        "apps/android/lib/features/live/translation_result_card.dart"
+        "apps/android/lib/features/station/shared/widgets/translation_result_card.dart"
     ).read_text(encoding="utf-8")
 
     assert "flutter_tts: ^4.2.5" in pubspec
     assert "android.intent.action.TTS_SERVICE" in manifest
-    assert "TranslationResultCard" in live
-    assert "speak_translation" in result_card
+    assert "TranslationResultCard" in Path("apps/android/lib/features/station/radio/presentation/widgets/live_feed.dart").read_text(encoding="utf-8")
+    assert "speakTranslation" in result_card
     assert "Icons.volume_up_outlined" in result_card
 
 
 def test_live_screen_does_not_render_station_diagnostics() -> None:
-    live = Path("apps/android/lib/features/live/live_screen.dart").read_text(
+    live = Path("apps/android/lib/features/station/radio/presentation/live_screen.dart").read_text(
         encoding="utf-8"
     )
     localization = Path(
@@ -169,17 +169,18 @@ def test_account_screen_keeps_plan_choices_collapsed_by_default() -> None:
     assert "if (showPlans)" in account
     assert "class _StatusChip" in account
     assert "VisualDensity(vertical: -2)" in account
-    assert "reset_password_short" in account
+    assert "resetPasswordShort" in account
 
 
 def test_station_list_does_not_expose_internal_session_ids() -> None:
     stations = Path(
-        "apps/android/lib/features/stations/station_list_screen.dart"
+        "apps/android/lib/features/station/list/station_list_screen.dart"
     ).read_text(encoding="utf-8")
 
     assert "station.sessionId" not in stations
     assert "not_started" not in stations
-    assert "childAspectRatio: columns == 1 ? 2.7 : 2" in stations
+    # Cards must grow with localized names and accessibility text scaling.
+    assert "childAspectRatio" not in stations
 
 
 def test_installer_layout_is_separate_from_build_cache() -> None:

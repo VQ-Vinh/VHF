@@ -1,6 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:prana_mobile/services/prana_api.dart';
+import 'package:prana_mobile/data/network/prana_api.dart';
 
 void main() {
   test('maps Station API error codes to localized message keys', () {
@@ -29,10 +29,7 @@ void main() {
         type: DioExceptionType.badResponse,
       );
 
-      expect(
-        PranaApiFailure.fromDio(error).messageKey,
-        entry.value,
-      );
+      expect(PranaApiFailure.fromDio(error).messageKey, entry.value);
     }
   });
 }

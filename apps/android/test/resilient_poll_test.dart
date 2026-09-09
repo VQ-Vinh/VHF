@@ -1,6 +1,6 @@
+import 'package:prana_mobile/app/di/station_providers.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:prana_mobile/providers.dart';
-import 'package:prana_mobile/services/prana_api.dart';
+import 'package:prana_mobile/data/network/prana_api.dart';
 
 void main() {
   test('polling recovers after an initial connection failure', () async {

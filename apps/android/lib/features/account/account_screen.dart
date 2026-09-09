@@ -1,16 +1,20 @@
+import 'package:prana_mobile/features/account/language_setting.dart';
+import 'package:prana_mobile/features/account/theme_setting.dart';
+import 'package:prana_mobile/core/service_messages.dart';
+import 'package:prana_mobile/l10n/app_localizations.dart';
+import 'package:prana_mobile/core/responsive.dart';
+import 'package:prana_mobile/app/di/account_providers.dart';
+import 'package:prana_mobile/app/di/auth_providers.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
-import '../../core/localization.dart';
-import '../../core/theme.dart';
-import '../../core/user_region.dart';
-import '../../core/widgets.dart';
-import '../../providers.dart';
-import '../../services/prana_api.dart';
-import '../../services/authentication_service.dart';
+import 'package:prana_mobile/core/user_region.dart';
+import 'package:prana_mobile/core/widgets.dart';
+import 'package:prana_mobile/data/network/prana_api.dart';
+import 'package:prana_mobile/data/auth/authentication_service.dart';
 
 class AccountScreen extends ConsumerStatefulWidget {
   const AccountScreen({super.key});
@@ -90,7 +94,9 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
 
   Future<void> _refresh() async {
     final next = _load();
-    setState(() => _accountData = next);
+    setState(() {
+      _accountData = next;
+    });
     await next;
   }
 
@@ -106,7 +112,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
       await action();
       if (mounted) {
         setState(() {
-          message = AppText.of(context, 'done');
+          message = AppLocalizations.of(context).done;
           if (refreshData) _accountData = _load();
         });
       }
@@ -116,7 +122,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
           () =>
               message =
                   error is PranaApiFailure
-                      ? AppText.of(context, error.messageKey)
+                      ? localizedServiceMessage(context, error.messageKey)
                       : '$error',
         );
       }
@@ -144,16 +150,17 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
           context: context,
           builder:
               (context) => AlertDialog(
-                title: Text(AppText.of(context, 'confirm_sign_out')),
-                content: Text(AppText.of(context, 'confirm_sign_out_body')),
+                scrollable: true,
+                title: Text(AppLocalizations.of(context).confirmSignOut),
+                content: Text(AppLocalizations.of(context).confirmSignOutBody),
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.pop(context, false),
-                    child: Text(AppText.of(context, 'close')),
+                    child: Text(AppLocalizations.of(context).close),
                   ),
                   FilledButton(
                     onPressed: () => Navigator.pop(context, true),
-                    child: Text(AppText.of(context, 'sign_out')),
+                    child: Text(AppLocalizations.of(context).signOut),
                   ),
                 ],
               ),
@@ -169,7 +176,10 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     } catch (error) {
       if (mounted) {
         setState(() {
-          message = AppText.of(context, authenticationErrorKey(error));
+          message = localizedServiceMessage(
+            context,
+            authenticationErrorKey(error),
+          );
         });
       }
     } finally {
@@ -181,7 +191,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     await Clipboard.setData(ClipboardData(text: code));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(AppText.of(context, 'station_code_copied'))),
+      SnackBar(content: Text(AppLocalizations.of(context).stationCodeCopied)),
     );
   }
 
@@ -190,31 +200,28 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
         context: context,
         builder:
             (context) => AlertDialog(
+              scrollable: true,
               title: Text(
-                AppText.of(
-                  context,
-                  removingStation ? 'confirm_remove_station' : 'confirm_revoke',
-                ),
+                (removingStation
+                    ? AppLocalizations.of(context).confirmRemoveStation
+                    : AppLocalizations.of(context).confirmRevoke),
               ),
               content: Text(
                 removingStation
-                    ? AppText.format(context, 'remove_station_body', {
-                      'name': name,
-                    })
+                    ? AppLocalizations.of(context).removeStationBody(name)
                     : name,
               ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context, false),
-                  child: Text(AppText.of(context, 'close')),
+                  child: Text(AppLocalizations.of(context).close),
                 ),
                 FilledButton(
                   onPressed: () => Navigator.pop(context, true),
                   child: Text(
-                    AppText.of(
-                      context,
-                      removingStation ? 'remove_station' : 'revoke',
-                    ),
+                    (removingStation
+                        ? AppLocalizations.of(context).removeStation
+                        : AppLocalizations.of(context).revoke),
                   ),
                 ),
               ],
@@ -226,10 +233,12 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
   Widget build(BuildContext context) {
     final user = ref.watch(authStateProvider).value;
     final locale = ref.watch(appLocaleProvider);
+    final themeMode = ref.watch(appThemeModeProvider);
     final region = ref.watch(userRegionProvider);
-    return Scaffold(
+    return ResponsiveScaffold(
+      maxWidth: ContentWidth.form,
       appBar: PranaPageHeader(
-        title: AppText.of(context, 'account_plan'),
+        title: AppLocalizations.of(context).accountPlan,
         subtitle: 'ACCOUNT CENTER',
       ),
       body: FutureBuilder<Map<String, dynamic>>(
@@ -272,7 +281,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
               padding: const EdgeInsets.all(16),
               children: [
                 _Section(
-                  title: AppText.of(context, 'account'),
+                  title: AppLocalizations.of(context).account,
                   children: [
                     Padding(
                       padding: const EdgeInsets.fromLTRB(14, 2, 14, 12),
@@ -289,8 +298,6 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                               children: [
                                 Text(
                                   user?.email ?? '',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
                                   style:
                                       Theme.of(context).textTheme.titleMedium,
                                 ),
@@ -311,24 +318,23 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                                               : Icons.warning_amber_outlined,
                                       label:
                                           user?.emailVerified == true
-                                              ? AppText.of(
+                                              ? AppLocalizations.of(
                                                 context,
-                                                'email_verified',
-                                              )
-                                              : AppText.of(
+                                              ).emailVerified
+                                              : AppLocalizations.of(
                                                 context,
-                                                'email_unverified',
-                                              ),
+                                              ).emailUnverified,
                                     ),
                                     _StatusChip(
                                       icon: Icons.g_mobiledata,
                                       label:
                                           providers.contains('google.com')
-                                              ? AppText.of(context, 'linked')
-                                              : AppText.of(
+                                              ? AppLocalizations.of(
                                                 context,
-                                                'not_linked',
-                                              ),
+                                              ).linked
+                                              : AppLocalizations.of(
+                                                context,
+                                              ).notLinked,
                                     ),
                                   ],
                                 ),
@@ -358,14 +364,16 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                                       ),
                               icon: const Icon(Icons.mark_email_read_outlined),
                               label: Text(
-                                AppText.of(context, 'resend_verification'),
+                                AppLocalizations.of(context).resendVerification,
                               ),
                             ),
                           if (!providers.contains('google.com'))
                             TextButton.icon(
                               onPressed: busy ? null : _linkGoogle,
                               icon: const Icon(Icons.link),
-                              label: Text(AppText.of(context, 'link_google')),
+                              label: Text(
+                                AppLocalizations.of(context).linkGoogle,
+                              ),
                             ),
                           TextButton.icon(
                             onPressed:
@@ -380,7 +388,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                                     ),
                             icon: const Icon(Icons.mail_outline),
                             label: Text(
-                              AppText.of(context, 'reset_password_short'),
+                              AppLocalizations.of(context).resetPasswordShort,
                             ),
                           ),
                         ],
@@ -389,16 +397,16 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                   ],
                 ),
                 _Section(
-                  title: AppText.of(context, 'plans'),
+                  title: AppLocalizations.of(context).plans,
                   children: [
                     Padding(
                       padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(
+                          AdaptiveFields(
                             children: [
-                              Expanded(
+                              SizedBox(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
@@ -411,7 +419,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                                     ),
                                     Text(
                                       '${_number(used)} / ${_number(limit)} '
-                                      '${AppText.of(context, 'seconds')}',
+                                      '${AppLocalizations.of(context).seconds}',
                                       style: const TextStyle(
                                         color: Color(0xFF65767D),
                                       ),
@@ -432,10 +440,11 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                                       : Icons.swap_horiz,
                                 ),
                                 label: Text(
-                                  AppText.of(
-                                    context,
-                                    showPlans ? 'collapse' : 'change_plan',
-                                  ),
+                                  (showPlans
+                                      ? AppLocalizations.of(context).collapse
+                                      : AppLocalizations.of(
+                                        context,
+                                      ).changePlan),
                                 ),
                               ),
                             ],
@@ -483,7 +492,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                                       title: Text(plan['name'].toString()),
                                       subtitle: Text(
                                         '${_number((plan['audio_seconds_limit'] ?? 0) as num)} '
-                                        '${AppText.of(context, 'seconds')}',
+                                        '${AppLocalizations.of(context).seconds}',
                                       ),
                                     ),
                                   )
@@ -494,7 +503,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                   ],
                 ),
                 _Section(
-                  title: AppText.of(context, 'devices'),
+                  title: AppLocalizations.of(context).devices,
                   children: [
                     ...devices.map(
                       (device) => ListTile(
@@ -529,8 +538,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                     ),
                     ...stations.map((station) {
                       final name = station['name']?.toString() ?? 'Station';
-                      final code =
-                          station['storage_folder']?.toString() ?? '';
+                      final code = station['storage_folder']?.toString() ?? '';
                       return StationAccountTile(
                         stationId: station['station_id'].toString(),
                         name: name,
@@ -563,32 +571,38 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                       Padding(
                         padding: const EdgeInsets.fromLTRB(14, 2, 14, 12),
                         child: Text(
-                          AppText.of(context, 'station_code_hint'),
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: const Color(0xFF65767D),
+                          AppLocalizations.of(context).stationCodeHint,
+                          style: Theme.of(
+                            context,
+                          ).textTheme.bodySmall?.copyWith(
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ),
                   ],
                 ),
                 _Section(
-                  title: AppText.of(context, 'settings'),
+                  title: AppLocalizations.of(context).settings,
                   children: [
-                    ListTile(
-                      dense: true,
-                      visualDensity: const VisualDensity(vertical: -2),
-                      title: Text(AppText.of(context, 'ui_language')),
-                      trailing: _LanguageToggle(
+                    Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: LanguageSetting(
+                        country: region.countryCode,
                         value:
                             locale.locale?.languageCode ??
                             Localizations.localeOf(context).languageCode,
                         onChanged: locale.setLocale,
                       ),
                     ),
+                    ThemeSetting(
+                      darkMode: themeMode.darkMode,
+                      onChanged: themeMode.setDarkMode,
+                    ),
                     ListTile(
                       dense: true,
                       visualDensity: const VisualDensity(vertical: -2),
-                      title: Text(AppText.of(context, 'country')),
+                      title: Text(AppLocalizations.of(context).country),
                       subtitle:
                           region.timezoneName == null
                               ? null
@@ -606,7 +620,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                 OutlinedButton.icon(
                   onPressed: busy ? null : _signOut,
                   icon: const Icon(Icons.logout),
-                  label: Text(AppText.of(context, 'sign_out')),
+                  label: Text(AppLocalizations.of(context).signOut),
                 ),
               ],
             ),
@@ -660,10 +674,8 @@ class StationAccountTile extends StatelessWidget {
           if (stationCode.isNotEmpty)
             Text(
               stationCode,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
               style: theme.textTheme.bodySmall?.copyWith(
-                color: PranaTheme.navy,
+                color: Theme.of(context).colorScheme.onSurface,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -676,7 +688,7 @@ class StationAccountTile extends StatelessWidget {
           if (stationCode.isNotEmpty)
             IconButton(
               key: ValueKey('station-code-copy-$stationId'),
-              tooltip: AppText.of(context, 'copy'),
+              tooltip: AppLocalizations.of(context).copy,
               icon: const Icon(Icons.copy_outlined),
               onPressed: onCopyCode,
             ),
@@ -735,12 +747,12 @@ class _CountryPickerState extends State<_CountryPicker> {
     final matches =
         widget.countries.where((item) => item.matches(query)).toList();
     return _PickerSheet(
-      title: AppText.of(context, 'select_country'),
+      title: AppLocalizations.of(context).selectCountry,
       header: TextField(
         autofocus: true,
         decoration: InputDecoration(
           prefixIcon: const Icon(Icons.search, size: 20),
-          hintText: AppText.of(context, 'country_search_hint'),
+          hintText: AppLocalizations.of(context).countrySearchHint,
           isDense: true,
           border: const OutlineInputBorder(),
         ),
@@ -770,7 +782,7 @@ class _TimezonePicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _PickerSheet(
-      title: AppText.of(context, 'select_timezone'),
+      title: AppLocalizations.of(context).selectTimezone,
       itemCount: country.timezones.length,
       itemBuilder:
           (context, index) => ListTile(
@@ -803,115 +815,38 @@ class _PickerSheet extends StatelessWidget {
         padding: EdgeInsets.only(
           bottom: MediaQuery.of(context).viewInsets.bottom,
         ),
-        child: SizedBox(
-          height: MediaQuery.of(context).size.height * 0.7,
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(title, style: theme.textTheme.titleMedium),
-                    const SizedBox(height: 4),
-                    Text(
-                      AppText.of(context, 'country_change_notice'),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+        child: FractionallySizedBox(
+          heightFactor: .85,
+          child: CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(title, style: theme.textTheme.titleMedium),
+                      const SizedBox(height: 4),
+                      Text(
+                        AppLocalizations.of(context).countryChangeNotice,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
                       ),
-                    ),
-                    if (header != null) ...[
-                      const SizedBox(height: 12),
-                      header!,
+                      if (header != null) ...[
+                        const SizedBox(height: 12),
+                        header!,
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
-              const Divider(height: 1),
-              Expanded(
-                child: ListView.builder(
-                  itemCount: itemCount,
-                  itemBuilder: itemBuilder,
-                ),
+              const SliverToBoxAdapter(child: Divider(height: 1)),
+              SliverList.builder(
+                itemCount: itemCount,
+                itemBuilder: itemBuilder,
               ),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _LanguageToggle extends StatelessWidget {
-  const _LanguageToggle({required this.value, required this.onChanged});
-
-  final String value;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      height: 32,
-      padding: const EdgeInsets.all(2),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(99),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _LanguageOption(
-            label: 'VI',
-            selected: value == 'vi',
-            onTap: () => onChanged('vi'),
-          ),
-          _LanguageOption(
-            label: 'EN',
-            selected: value == 'en',
-            onTap: () => onChanged('en'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _LanguageOption extends StatelessWidget {
-  const _LanguageOption({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(99),
-      child: Material(
-        color:
-            selected ? theme.colorScheme.secondaryContainer : Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          child: Container(
-            alignment: Alignment.center,
-            width: 44,
-            height: 28,
-            child: Text(
-              label,
-              style: theme.textTheme.labelLarge?.copyWith(
-                color:
-                    selected
-                        ? theme.colorScheme.onSecondaryContainer
-                        : theme.colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
           ),
         ),
       ),
@@ -937,12 +872,14 @@ class _StatusChip extends StatelessWidget {
       children: [
         Icon(icon, size: 14, color: const Color(0xFF315F72)),
         const SizedBox(width: 4),
-        Text(
-          label,
-          style: const TextStyle(
-            color: Color(0xFF315F72),
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
+        Flexible(
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF315F72),
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ),
       ],

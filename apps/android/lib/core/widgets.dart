@@ -1,6 +1,5 @@
+import 'responsive.dart';
 import 'package:flutter/material.dart';
-
-import 'theme.dart';
 
 class PranaLogo extends StatelessWidget {
   const PranaLogo.mark({super.key, this.size = 52, this.color})
@@ -42,7 +41,7 @@ class PranaPageHeader extends StatelessWidget implements PreferredSizeWidget {
   Size get preferredSize => const Size.fromHeight(70);
 
   @override
-  Widget build(BuildContext context) => AppBar(
+  Widget build(BuildContext context) => ResponsiveHeader(
     titleSpacing: 16,
     title: Row(
       children: [
@@ -53,7 +52,7 @@ class PranaPageHeader extends StatelessWidget implements PreferredSizeWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text(title, overflow: TextOverflow.ellipsis),
+              Text(title),
               if (subtitle != null)
                 Text(
                   subtitle!,
@@ -77,32 +76,35 @@ class StatusPill extends StatelessWidget {
   final bool online;
 
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-    decoration: BoxDecoration(
-      color: online ? const Color(0xFFDDF3E8) : const Color(0xFFE7EEF0),
-      borderRadius: BorderRadius.circular(8),
-    ),
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(
-          Icons.circle,
-          size: 8,
-          color: online ? const Color(0xFF16704A) : PranaTheme.muted,
-        ),
-        const SizedBox(width: 6),
-        Text(
-          label.toUpperCase(),
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w800,
-            color: online ? const Color(0xFF166440) : PranaTheme.muted,
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final background =
+        online ? colors.tertiaryContainer : colors.surfaceContainerHighest;
+    final foreground =
+        online ? colors.onTertiaryContainer : colors.onSurfaceVariant;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.circle, size: 8, color: foreground),
+          const SizedBox(width: 6),
+          Text(
+            label.toUpperCase(),
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              color: foreground,
+            ),
           ),
-        ),
-      ],
-    ),
-  );
+        ],
+      ),
+    );
+  }
 }
 
 class EmptyState extends StatelessWidget {
@@ -118,12 +120,12 @@ class EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Center(
-    child: Padding(
+    child: SingleChildScrollView(
       padding: const EdgeInsets.all(32),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 52, color: PranaTheme.brandBlue),
+          Icon(icon, size: 52, color: Theme.of(context).colorScheme.primary),
           const SizedBox(height: 16),
           Text(
             title,
@@ -137,7 +139,9 @@ class EmptyState extends StatelessWidget {
             Text(
               subtitle!,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: PranaTheme.muted),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
           ],
         ],

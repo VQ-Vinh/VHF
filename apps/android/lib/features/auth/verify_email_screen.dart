@@ -1,14 +1,15 @@
+import 'package:prana_mobile/core/service_messages.dart';
+import 'package:prana_mobile/l10n/app_localizations.dart';
+import 'package:prana_mobile/app/di/auth_providers.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/localization.dart';
-import '../../core/theme.dart';
-import '../../core/widgets.dart';
-import '../../providers.dart';
-import '../../services/authentication_service.dart';
+import 'package:prana_mobile/core/theme.dart';
+import 'package:prana_mobile/core/widgets.dart';
+import 'package:prana_mobile/data/auth/authentication_service.dart';
 
 class VerifyEmailScreen extends ConsumerStatefulWidget {
   const VerifyEmailScreen({super.key});
@@ -120,24 +121,29 @@ class _VerifyEmailScreenState extends ConsumerState<VerifyEmailScreen> {
                           ),
                           const SizedBox(height: 14),
                           Text(
-                            AppText.of(context, 'verify_email_title'),
+                            AppLocalizations.of(context).verifyEmailTitle,
                             textAlign: TextAlign.center,
                             style: Theme.of(context).textTheme.titleLarge
                                 ?.copyWith(fontWeight: FontWeight.w800),
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            AppText.format(context, 'verify_email_body', {
-                              'email': user?.email ?? '',
-                            }),
+                            AppLocalizations.of(
+                              context,
+                            ).verifyEmailBody(user?.email ?? ''),
                             textAlign: TextAlign.center,
-                            style: const TextStyle(color: PranaTheme.muted),
+                            style: TextStyle(
+                              color:
+                                  Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                            ),
                           ),
                           if (messageKey != null)
                             Padding(
                               padding: const EdgeInsets.only(top: 14),
                               child: Text(
-                                AppText.of(context, messageKey!),
+                                localizedServiceMessage(context, messageKey!),
                                 textAlign: TextAlign.center,
                                 style: const TextStyle(
                                   color: Color(0xFF267153),
@@ -153,7 +159,7 @@ class _VerifyEmailScreenState extends ConsumerState<VerifyEmailScreen> {
                                 borderRadius: BorderRadius.circular(9),
                               ),
                               child: Text(
-                                AppText.of(context, errorKey!),
+                                localizedServiceMessage(context, errorKey!),
                                 style: const TextStyle(
                                   color: Color(0xFFA42A3A),
                                 ),
@@ -163,29 +169,30 @@ class _VerifyEmailScreenState extends ConsumerState<VerifyEmailScreen> {
                           FilledButton(
                             onPressed: loading ? null : _checkVerification,
                             child: Text(
-                              AppText.of(
-                                context,
-                                loading ? 'signing_in' : 'verification_check',
-                              ),
+                              (loading
+                                  ? AppLocalizations.of(context).signingIn
+                                  : AppLocalizations.of(
+                                    context,
+                                  ).verificationCheck),
                             ),
                           ),
                           TextButton(
                             onPressed: loading || cooldown > 0 ? null : _resend,
                             child: Text(
                               cooldown > 0
-                                  ? AppText.format(
+                                  ? AppLocalizations.of(
                                     context,
-                                    'verification_resend_wait',
-                                    {'seconds': '$cooldown'},
-                                  )
-                                  : AppText.of(context, 'resend_verification'),
+                                  ).verificationResendWait('$cooldown')
+                                  : AppLocalizations.of(
+                                    context,
+                                  ).resendVerification,
                             ),
                           ),
                           const SizedBox(height: 8),
                           OutlinedButton.icon(
                             onPressed: loading ? null : _signOut,
                             icon: const Icon(Icons.logout),
-                            label: Text(AppText.of(context, 'sign_out')),
+                            label: Text(AppLocalizations.of(context).signOut),
                           ),
                         ],
                       ),

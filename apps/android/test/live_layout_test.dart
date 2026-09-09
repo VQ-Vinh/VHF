@@ -1,15 +1,17 @@
+import 'package:prana_mobile/l10n/app_localizations.dart';
+import 'package:prana_mobile/core/responsive.dart';
+import 'package:prana_mobile/app/di/radio_providers.dart';
+import 'package:prana_mobile/domain/radio/source_audio_engine.dart';
+import 'package:prana_mobile/domain/radio/speech_engine.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:prana_mobile/core/localization.dart';
 import 'package:prana_mobile/core/theme.dart';
-import 'package:prana_mobile/features/live/live_controller.dart';
-import 'package:prana_mobile/features/live/live_screen.dart';
-import 'package:prana_mobile/models/station.dart';
-import 'package:prana_mobile/providers.dart';
-import 'package:prana_mobile/services/source_audio.dart';
-import 'package:prana_mobile/services/translation_speech.dart';
+import 'package:prana_mobile/runtime/vhf/live_controller.dart';
+import 'package:prana_mobile/features/station/radio/presentation/live_screen.dart';
+import 'package:prana_mobile/domain/station/station.dart';
+import 'package:prana_mobile/runtime/vhf/translation_speech.dart';
 
 class _NoopSpeechEngine implements SpeechEngine {
   int stopCalls = 0;
@@ -82,8 +84,9 @@ void main() {
   }) => MaterialApp(
     theme: PranaTheme.light(),
     locale: locale,
-    supportedLocales: AppText.supportedLocales,
+    supportedLocales: AppLocalizations.supportedLocales,
     localizationsDelegates: const [
+      AppLocalizations.delegate,
       GlobalMaterialLocalizations.delegate,
       GlobalWidgetsLocalizations.delegate,
       GlobalCupertinoLocalizations.delegate,
@@ -113,9 +116,7 @@ void main() {
         ],
         child: harness(
           size: const Size(360, 800),
-          child: Scaffold(
-            body: LiveFeedHeader(onHistory: () {}),
-          ),
+          child: ResponsiveScaffold(body: LiveFeedHeader(onHistory: () {})),
         ),
       ),
     );
@@ -144,7 +145,7 @@ void main() {
       harness(
         size: const Size(360, 800),
         textScale: 1.3,
-        child: Scaffold(
+        child: ResponsiveScaffold(
           appBar: LiveHeader(
             station: station(
               name: 'VINH STATION WITH A VERY LONG TECHNICAL NAME',
@@ -152,7 +153,6 @@ void main() {
             online: true,
             ux: const LiveUxState(),
             onToggle: () {},
-            onSettings: () {},
           ),
         ),
       ),
@@ -161,10 +161,10 @@ void main() {
     expect(find.byKey(const ValueKey('live-header')), findsOneWidget);
     expect(find.text('LIVE TRANSLATION'), findsNothing);
     expect(find.textContaining('RX LISTENING'), findsOneWidget);
-    expect(find.byIcon(Icons.settings_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.settings_outlined), findsNothing);
     expect(
       tester.getSize(find.byKey(const ValueKey('live-header'))).height,
-      64,
+      greaterThanOrEqualTo(64),
     );
     expect(tester.takeException(), isNull);
   });
@@ -181,7 +181,7 @@ void main() {
       harness(
         size: const Size(360, 800),
         locale: const Locale('vi'),
-        child: Scaffold(
+        child: ResponsiveScaffold(
           appBar: LiveHeader(
             station: station(running: false),
             online: true,
@@ -190,7 +190,6 @@ void main() {
               pendingRunning: true,
             ),
             onToggle: null,
-            onSettings: () {},
           ),
         ),
       ),
@@ -201,7 +200,11 @@ void main() {
     expect(find.text('RX STARTING'), findsOneWidget);
     expect(
       tester.getSize(find.byKey(const ValueKey('live-toggle-button'))),
-      const Size(118, 40),
+      isA<Size>().having(
+        (size) => size.height,
+        'height',
+        greaterThanOrEqualTo(48),
+      ),
     );
     expect(
       tester.getRect(find.byKey(const ValueKey('live-toggle-label'))).right,
@@ -222,7 +225,7 @@ void main() {
     await tester.pumpWidget(
       harness(
         size: const Size(412, 915),
-        child: Scaffold(
+        child: ResponsiveScaffold(
           appBar: LiveHeader(
             station: station(),
             online: true,
@@ -231,7 +234,6 @@ void main() {
               pendingRunning: false,
             ),
             onToggle: null,
-            onSettings: () {},
           ),
         ),
       ),
@@ -251,7 +253,7 @@ void main() {
     await tester.pumpWidget(
       harness(
         size: const Size(412, 915),
-        child: Scaffold(
+        child: ResponsiveScaffold(
           appBar: LiveHeader(
             station: station(
               running: false,
@@ -261,7 +263,6 @@ void main() {
             online: false,
             ux: const LiveUxState(phase: LiveCommandPhase.offline),
             onToggle: null,
-            onSettings: () {},
           ),
         ),
       ),
@@ -346,7 +347,7 @@ void main() {
       harness(
         size: const Size(412, 915),
         textScale: 1.3,
-        child: Scaffold(
+        child: ResponsiveScaffold(
           body: LanguageStrip(
             detectedLanguage: 'a-very-long-detected-language',
             targetLanguage: 'vi',
@@ -365,13 +366,8 @@ void main() {
     );
 
     expect(input.width, output.width);
-    expect(input.height, output.height);
-    expect(input.height, lessThanOrEqualTo(60));
-    final stripCenter =
-        tester.getCenter(find.byKey(const ValueKey('rx-language-strip'))).dx;
-    final arrowCenter =
-        tester.getCenter(find.byKey(const ValueKey('rx-language-arrow'))).dx;
-    expect(arrowCenter, closeTo(stripCenter, .1));
+    expect(input.height, greaterThanOrEqualTo(48));
+    expect(output.height, greaterThanOrEqualTo(48));
     expect(tester.takeException(), isNull);
   });
 }

@@ -1,7 +1,8 @@
+import 'package:prana_mobile/l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:prana_mobile/features/tx/domain/tx_draft.dart';
-import 'package:prana_mobile/features/tx/presentation/widgets/tx_review_card.dart';
+import 'package:prana_mobile/domain/radio/tx/tx_draft.dart';
+import 'package:prana_mobile/features/station/radio/presentation/widgets/tx/tx_review_card.dart';
 
 void main() {
   const draft = TxDraft(
@@ -15,6 +16,8 @@ void main() {
 
   Widget harness(ValueChanged<String> onTransmit) => MaterialApp(
     locale: const Locale('en'),
+    localizationsDelegates: AppLocalizations.localizationsDelegates,
+    supportedLocales: AppLocalizations.supportedLocales,
     home: Scaffold(
       body: TxReviewCard(
         draft: draft,

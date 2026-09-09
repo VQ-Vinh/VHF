@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:prana_mobile/features/live/live_controller.dart';
-import 'package:prana_mobile/models/station.dart';
+import 'package:prana_mobile/runtime/vhf/live_controller.dart';
+import 'package:prana_mobile/domain/station/station.dart';
 
 void main() {
   StationModel station({
