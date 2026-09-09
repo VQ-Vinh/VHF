@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
-import 'app.dart';
-import 'core/app_config.dart';
+import 'package:prana_mobile/app/app.dart';
+import 'package:prana_mobile/core/app_config.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();

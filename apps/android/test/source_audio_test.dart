@@ -1,8 +1,9 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:prana_mobile/services/source_audio.dart';
+import 'package:prana_mobile/data/radio/source_audio.dart';
 
 class FakeFilePlayer implements SourceFilePlayer {
   final List<String> paths = [];
@@ -90,4 +91,22 @@ void main() {
     expect(player.stopCalls, 1);
     expect(directory.listSync(), isEmpty);
   });
+  test(
+    'logout or station switch prevents late download playback and cache writes',
+    () async {
+      final pending = Completer<Uint8List>();
+      final player = FakeFilePlayer();
+      final engine = CachedSourceAudioEngine.forTesting(
+        loader: (_, _, _) => pending.future,
+        player: player,
+        temporaryDirectory: () async => directory,
+      );
+      final playing = engine.play('old-station', 'old-session', 'request');
+      await engine.clearCache();
+      pending.complete(Uint8List.fromList([1, 2, 3]));
+      await playing;
+      expect(player.paths, isEmpty);
+      expect(directory.listSync(), isEmpty);
+    },
+  );
 }

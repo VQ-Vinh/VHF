@@ -1,15 +1,16 @@
+import 'package:prana_mobile/l10n/app_localizations.dart';
+import 'package:prana_mobile/core/responsive.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:prana_mobile/core/localization.dart';
 import 'package:prana_mobile/core/theme.dart';
-import 'package:prana_mobile/features/live/live_controller.dart';
-import 'package:prana_mobile/features/live/live_screen.dart';
-import 'package:prana_mobile/features/tx/application/fake_tx_repository.dart';
-import 'package:prana_mobile/features/tx/application/tx_controller.dart';
-import 'package:prana_mobile/features/tx/domain/tx_phase.dart';
-import 'package:prana_mobile/features/tx/presentation/widgets/tx_live_dock.dart';
-import 'package:prana_mobile/models/station.dart';
+import 'package:prana_mobile/runtime/vhf/live_controller.dart';
+import 'package:prana_mobile/features/station/radio/presentation/live_screen.dart';
+import 'support/fake_tx_repository.dart';
+import 'package:prana_mobile/runtime/vhf/tx_controller.dart';
+import 'package:prana_mobile/domain/radio/tx/tx_phase.dart';
+import 'package:prana_mobile/features/station/radio/presentation/widgets/tx/tx_live_dock.dart';
+import 'package:prana_mobile/domain/station/station.dart';
 
 void main() {
   StationModel station() => StationModel(
@@ -59,20 +60,20 @@ void main() {
   }) => MaterialApp(
     theme: PranaTheme.light(),
     locale: const Locale('en'),
-    supportedLocales: AppText.supportedLocales,
+    supportedLocales: AppLocalizations.supportedLocales,
     localizationsDelegates: const [
+      AppLocalizations.delegate,
       GlobalMaterialLocalizations.delegate,
       GlobalWidgetsLocalizations.delegate,
       GlobalCupertinoLocalizations.delegate,
     ],
-    home: Scaffold(
+    home: ResponsiveScaffold(
       appBar: LiveHeader(
         station: station(),
         online: true,
         ux: const LiveUxState(),
         txController: subject,
         onToggle: () {},
-        onSettings: () {},
       ),
       body: Column(
         children: [
@@ -157,7 +158,9 @@ void main() {
         tester.getTopRight(find.byKey(const ValueKey('tx-dock-language'))).dx;
     expect(chevronLeft, greaterThanOrEqualTo(valueRight));
     expect(
-      tester.getBottomRight(find.byKey(const ValueKey('tx-language-chevron'))).dx,
+      tester
+          .getBottomRight(find.byKey(const ValueKey('tx-language-chevron')))
+          .dx,
       lessThanOrEqualTo(fieldRight),
     );
 
@@ -212,19 +215,22 @@ void main() {
     );
   });
 
-  test('an offline Station never leaves the toggle stuck on a pending command', () {
-    // The generation is only acknowledged by a reachable Station, so a command
-    // pending while offline must not disable the toggle for good.
-    expect(
-      canToggleLiveStation(
-        online: false,
-        running: true,
-        busy: false,
-        commandPending: true,
-      ),
-      isTrue,
-    );
-  });
+  test(
+    'an offline Station never leaves the toggle stuck on a pending command',
+    () {
+      // The generation is only acknowledged by a reachable Station, so a command
+      // pending while offline must not disable the toggle for good.
+      expect(
+        canToggleLiveStation(
+          online: false,
+          running: true,
+          busy: false,
+          commandPending: true,
+        ),
+        isTrue,
+      );
+    },
+  );
 
   test('a draft is auto-reviewed once, however the phase moves', () {
     // The draft the user just recorded opens its review on its own.

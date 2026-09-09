@@ -1,7 +1,7 @@
+import 'package:prana_mobile/domain/radio/results.dart';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:prana_mobile/models/station.dart';
 
 void main() {
   test('history day decodes API date', () {
@@ -21,13 +21,15 @@ void main() {
 
   test('history UI groups by day and never displays session ids', () {
     final source =
-        File('lib/features/history/history_screen.dart').readAsStringSync();
+        File(
+          'lib/features/station/history/history_screen.dart',
+        ).readAsStringSync();
 
-    expect(source, contains("'history_day_title'"));
+    expect(source, contains("historyDayTitle"));
     expect(source, contains('day.locked'));
     expect(source, contains('TranslationResultCard'));
-    expect(source, contains('enum _HistoryMode { rx, tx }'));
-    expect(source, contains('_HistoryMode mode = _HistoryMode.rx'));
+    expect(source, contains('enum HistoryMode { rx, tx }'));
+    expect(source, contains('HistoryMode mode = HistoryMode.rx'));
     expect(source, contains('txHistoryDays'));
     expect(source, contains('txHistoryDayJobs'));
     expect(source, contains('job.outputAvailable ? onPlay : null'));
@@ -38,9 +40,12 @@ void main() {
     expect(source, isNot(contains('hidden')));
     expect(source, isNot(contains('title: Text(doc.id)')));
     expect(source, isNot(contains('onSessionSelected')));
-    final live = File('lib/features/live/live_screen.dart').readAsStringSync();
+    final live =
+        File(
+          'lib/features/station/radio/presentation/live_screen.dart',
+        ).readAsStringSync();
     expect(live, isNot(contains('?session=')));
-    expect(live, isNot(contains('_HistoryModeBanner')));
+    expect(live, isNot(contains('HistoryModeBanner')));
   });
 
   test('live translations only include the current local day', () {

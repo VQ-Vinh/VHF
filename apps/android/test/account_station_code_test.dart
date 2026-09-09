@@ -1,8 +1,8 @@
+import 'package:prana_mobile/l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:prana_mobile/core/localization.dart';
 import 'package:prana_mobile/core/theme.dart';
 import 'package:prana_mobile/features/account/account_screen.dart';
 
@@ -14,8 +14,9 @@ void main() {
   }) => MaterialApp(
     theme: PranaTheme.light(),
     locale: const Locale('vi'),
-    supportedLocales: AppText.supportedLocales,
+    supportedLocales: AppLocalizations.supportedLocales,
     localizationsDelegates: const [
+      AppLocalizations.delegate,
       GlobalMaterialLocalizations.delegate,
       GlobalWidgetsLocalizations.delegate,
       GlobalCupertinoLocalizations.delegate,
@@ -51,9 +52,7 @@ void main() {
     await tester.pumpWidget(
       harness(
         onCopyCode:
-            () => Clipboard.setData(
-              const ClipboardData(text: 'VINH_0f90cd8e'),
-            ),
+            () => Clipboard.setData(const ClipboardData(text: 'VINH_0f90cd8e')),
       ),
     );
 
@@ -61,9 +60,7 @@ void main() {
     expect(find.text('linux'), findsOneWidget);
     expect(find.text('VINH_0f90cd8e'), findsOneWidget);
 
-    await tester.tap(
-      find.byKey(const ValueKey('station-code-copy-station-1')),
-    );
+    await tester.tap(find.byKey(const ValueKey('station-code-copy-station-1')));
     await tester.pumpAndSettle();
 
     expect(copied, hasLength(1));

@@ -1,12 +1,12 @@
+import 'package:prana_mobile/core/service_messages.dart';
+import 'package:prana_mobile/l10n/app_localizations.dart';
+import 'package:prana_mobile/app/di/auth_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/localization.dart';
-import '../../core/theme.dart';
-import '../../core/widgets.dart';
-import '../../providers.dart';
-import '../../services/authentication_service.dart';
-import 'auth_validation.dart';
+import 'package:prana_mobile/core/widgets.dart';
+import 'package:prana_mobile/data/auth/authentication_service.dart';
+import 'package:prana_mobile/features/auth/auth_validation.dart';
 
 enum _AuthMode { signIn, signUp }
 
@@ -91,7 +91,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen>
     });
     if (sent && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppText.of(context, 'reset_sent'))),
+        SnackBar(content: Text(AppLocalizations.of(context).resetSent)),
       );
     }
   }
@@ -115,27 +115,27 @@ class _SignInScreenState extends ConsumerState<SignInScreen>
 
   String? _validateEmail(String? value) {
     final text = value?.trim() ?? '';
-    if (text.isEmpty) return AppText.of(context, 'auth_email_required');
+    if (text.isEmpty) return AppLocalizations.of(context).authEmailRequired;
     if (!isValidEmail(text)) {
-      return AppText.of(context, 'auth_invalid_email');
+      return AppLocalizations.of(context).authInvalidEmail;
     }
     return null;
   }
 
   String? _validatePassword(String? value) {
     final text = value ?? '';
-    if (text.isEmpty) return AppText.of(context, 'auth_password_required');
+    if (text.isEmpty) return AppLocalizations.of(context).authPasswordRequired;
     if (mode == _AuthMode.signUp && !isValidPassword(text)) {
-      return AppText.of(context, 'auth_password_requirements');
+      return AppLocalizations.of(context).authPasswordRequirements;
     }
     return null;
   }
 
   String? _validateConfirmation(String? value) {
     final text = value ?? '';
-    if (text.isEmpty) return AppText.of(context, 'auth_confirm_required');
+    if (text.isEmpty) return AppLocalizations.of(context).authConfirmRequired;
     if (!passwordsMatch(password.text, text)) {
-      return AppText.of(context, 'auth_password_mismatch');
+      return AppLocalizations.of(context).authPasswordMismatch;
     }
     return null;
   }
@@ -157,7 +157,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen>
     final signUp = mode == _AuthMode.signUp;
     return Scaffold(
       body: SafeArea(
-        child: Stack(
+        child: Column(
           children: [
             Align(
               alignment: Alignment.topRight,
@@ -165,9 +165,12 @@ class _SignInScreenState extends ConsumerState<SignInScreen>
                 padding: const EdgeInsets.all(12),
                 child: SegmentedButton<String>(
                   showSelectedIcon: false,
-                  segments: const [
-                    ButtonSegment(value: 'vi', label: Text('VI')),
-                    ButtonSegment(value: 'en', label: Text('EN')),
+                  segments: [
+                    for (final locale in AppLocalizations.supportedLocales)
+                      ButtonSegment(
+                        value: locale.languageCode,
+                        label: Text(locale.languageCode.toUpperCase()),
+                      ),
                   ],
                   selected: {Localizations.localeOf(context).languageCode},
                   onSelectionChanged:
@@ -177,212 +180,252 @@ class _SignInScreenState extends ConsumerState<SignInScreen>
                 ),
               ),
             ),
-            Center(
+            Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(24, 72, 24, 24),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 440),
-                  child: Column(
-                    children: [
-                      const PranaLogo.lockup(size: 156),
-                      const SizedBox(height: 12),
-                      Text(
-                        AppText.of(context, 'tagline'),
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(color: PranaTheme.muted),
-                      ),
-                      const SizedBox(height: 28),
-                      Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(20),
-                          child: AutofillGroup(
-                            child: Form(
-                              key: _formKey,
-                              autovalidateMode:
-                                  submitted
-                                      ? AutovalidateMode.onUserInteraction
-                                      : AutovalidateMode.disabled,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  AbsorbPointer(
-                                    absorbing: loading,
-                                    child: TabBar(
-                                      controller: _tabs,
-                                      tabs: [
-                                        Tab(
-                                          text: AppText.of(context, 'sign_in'),
-                                        ),
-                                        Tab(
-                                          text: AppText.of(context, 'sign_up'),
-                                        ),
+                padding: const EdgeInsets.all(24),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 440),
+                    child: Column(
+                      children: [
+                        const PranaLogo.lockup(size: 156),
+                        const SizedBox(height: 12),
+                        Text(
+                          AppLocalizations.of(context).tagline,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 28),
+                        Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(20),
+                            child: AutofillGroup(
+                              child: Form(
+                                key: _formKey,
+                                autovalidateMode:
+                                    submitted
+                                        ? AutovalidateMode.onUserInteraction
+                                        : AutovalidateMode.disabled,
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    AbsorbPointer(
+                                      absorbing: loading,
+                                      child: TabBar(
+                                        controller: _tabs,
+                                        tabs: [
+                                          Padding(
+                                            padding: const EdgeInsets.symmetric(
+                                              vertical: 12,
+                                            ),
+                                            child: Text(
+                                              AppLocalizations.of(
+                                                context,
+                                              ).signIn,
+                                            ),
+                                          ),
+                                          Padding(
+                                            padding: const EdgeInsets.symmetric(
+                                              vertical: 12,
+                                            ),
+                                            child: Text(
+                                              AppLocalizations.of(
+                                                context,
+                                              ).signUp,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 18),
+                                    TextFormField(
+                                      key: _emailFieldKey,
+                                      controller: email,
+                                      enabled: !loading,
+                                      autofillHints: const [
+                                        AutofillHints.email,
                                       ],
-                                    ),
-                                  ),
-                                  const SizedBox(height: 18),
-                                  TextFormField(
-                                    key: _emailFieldKey,
-                                    controller: email,
-                                    enabled: !loading,
-                                    autofillHints: const [AutofillHints.email],
-                                    keyboardType: TextInputType.emailAddress,
-                                    textInputAction: TextInputAction.next,
-                                    validator: _validateEmail,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Email',
-                                      prefixIcon: Icon(Icons.mail_outline),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  TextFormField(
-                                    controller: password,
-                                    enabled: !loading,
-                                    obscureText: obscurePassword,
-                                    autofillHints: [
-                                      signUp
-                                          ? AutofillHints.newPassword
-                                          : AutofillHints.password,
-                                    ],
-                                    textInputAction:
-                                        signUp
-                                            ? TextInputAction.next
-                                            : TextInputAction.done,
-                                    onFieldSubmitted:
-                                        signUp || loading
-                                            ? null
-                                            : (_) => _submit(),
-                                    validator: _validatePassword,
-                                    decoration: InputDecoration(
-                                      labelText: AppText.of(
-                                        context,
-                                        'password',
-                                      ),
-                                      prefixIcon: const Icon(
-                                        Icons.lock_outline,
-                                      ),
-                                      suffixIcon: IconButton(
-                                        tooltip: AppText.of(
-                                          context,
-                                          obscurePassword
-                                              ? 'show_password'
-                                              : 'hide_password',
-                                        ),
-                                        onPressed:
-                                            loading
-                                                ? null
-                                                : () => setState(
-                                                  () =>
-                                                      obscurePassword =
-                                                          !obscurePassword,
-                                                ),
-                                        icon: Icon(
-                                          obscurePassword
-                                              ? Icons.visibility_outlined
-                                              : Icons.visibility_off_outlined,
-                                        ),
+                                      keyboardType: TextInputType.emailAddress,
+                                      textInputAction: TextInputAction.next,
+                                      validator: _validateEmail,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Email',
+                                        prefixIcon: Icon(Icons.mail_outline),
                                       ),
                                     ),
-                                  ),
-                                  if (signUp) ...[
                                     const SizedBox(height: 12),
                                     TextFormField(
-                                      controller: confirmation,
+                                      controller: password,
                                       enabled: !loading,
-                                      obscureText: obscureConfirmation,
-                                      autofillHints: const [
-                                        AutofillHints.newPassword,
+                                      obscureText: obscurePassword,
+                                      autofillHints: [
+                                        signUp
+                                            ? AutofillHints.newPassword
+                                            : AutofillHints.password,
                                       ],
-                                      textInputAction: TextInputAction.done,
+                                      textInputAction:
+                                          signUp
+                                              ? TextInputAction.next
+                                              : TextInputAction.done,
                                       onFieldSubmitted:
-                                          loading ? null : (_) => _submit(),
-                                      validator: _validateConfirmation,
+                                          signUp || loading
+                                              ? null
+                                              : (_) => _submit(),
+                                      validator: _validatePassword,
                                       decoration: InputDecoration(
-                                        labelText: AppText.of(
-                                          context,
-                                          'confirm_password',
-                                        ),
+                                        labelText:
+                                            AppLocalizations.of(
+                                              context,
+                                            ).password,
                                         prefixIcon: const Icon(
-                                          Icons.lock_reset_outlined,
+                                          Icons.lock_outline,
                                         ),
                                         suffixIcon: IconButton(
-                                          tooltip: AppText.of(
-                                            context,
-                                            obscureConfirmation
-                                                ? 'show_password'
-                                                : 'hide_password',
-                                          ),
+                                          tooltip:
+                                              (obscurePassword
+                                                  ? AppLocalizations.of(
+                                                    context,
+                                                  ).showPassword
+                                                  : AppLocalizations.of(
+                                                    context,
+                                                  ).hidePassword),
                                           onPressed:
                                               loading
                                                   ? null
                                                   : () => setState(
                                                     () =>
-                                                        obscureConfirmation =
-                                                            !obscureConfirmation,
+                                                        obscurePassword =
+                                                            !obscurePassword,
                                                   ),
                                           icon: Icon(
-                                            obscureConfirmation
+                                            obscurePassword
                                                 ? Icons.visibility_outlined
                                                 : Icons.visibility_off_outlined,
                                           ),
                                         ),
                                       ),
                                     ),
-                                  ],
-                                  if (errorKey != null)
-                                    Container(
-                                      margin: const EdgeInsets.only(top: 14),
-                                      padding: const EdgeInsets.all(11),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFF9E1E5),
-                                        borderRadius: BorderRadius.circular(9),
-                                      ),
-                                      child: Text(
-                                        AppText.of(context, errorKey!),
-                                        style: const TextStyle(
-                                          color: Color(0xFFA42A3A),
+                                    if (signUp) ...[
+                                      const SizedBox(height: 12),
+                                      TextFormField(
+                                        controller: confirmation,
+                                        enabled: !loading,
+                                        obscureText: obscureConfirmation,
+                                        autofillHints: const [
+                                          AutofillHints.newPassword,
+                                        ],
+                                        textInputAction: TextInputAction.done,
+                                        onFieldSubmitted:
+                                            loading ? null : (_) => _submit(),
+                                        validator: _validateConfirmation,
+                                        decoration: InputDecoration(
+                                          labelText:
+                                              AppLocalizations.of(
+                                                context,
+                                              ).confirmPassword,
+                                          prefixIcon: const Icon(
+                                            Icons.lock_reset_outlined,
+                                          ),
+                                          suffixIcon: IconButton(
+                                            tooltip:
+                                                (obscureConfirmation
+                                                    ? AppLocalizations.of(
+                                                      context,
+                                                    ).showPassword
+                                                    : AppLocalizations.of(
+                                                      context,
+                                                    ).hidePassword),
+                                            onPressed:
+                                                loading
+                                                    ? null
+                                                    : () => setState(
+                                                      () =>
+                                                          obscureConfirmation =
+                                                              !obscureConfirmation,
+                                                    ),
+                                            icon: Icon(
+                                              obscureConfirmation
+                                                  ? Icons.visibility_outlined
+                                                  : Icons
+                                                      .visibility_off_outlined,
+                                            ),
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                  const SizedBox(height: 18),
-                                  FilledButton(
-                                    onPressed: loading ? null : _submit,
-                                    child: Text(
-                                      AppText.of(
-                                        context,
-                                        loading
-                                            ? 'signing_in'
-                                            : signUp
-                                            ? 'create_account'
-                                            : 'sign_in',
+                                    ],
+                                    if (errorKey != null)
+                                      Container(
+                                        margin: const EdgeInsets.only(top: 14),
+                                        padding: const EdgeInsets.all(11),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFF9E1E5),
+                                          borderRadius: BorderRadius.circular(
+                                            9,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          localizedServiceMessage(
+                                            context,
+                                            errorKey!,
+                                          ),
+                                          style: const TextStyle(
+                                            color: Color(0xFFA42A3A),
+                                          ),
+                                        ),
                                       ),
-                                    ),
-                                  ),
-                                  if (!signUp)
-                                    TextButton(
-                                      onPressed:
-                                          loading ? null : _resetPassword,
+                                    const SizedBox(height: 18),
+                                    FilledButton(
+                                      onPressed: loading ? null : _submit,
                                       child: Text(
-                                        AppText.of(context, 'forgot_password'),
+                                        (loading
+                                            ? AppLocalizations.of(
+                                              context,
+                                            ).signingIn
+                                            : signUp
+                                            ? AppLocalizations.of(
+                                              context,
+                                            ).createAccount
+                                            : AppLocalizations.of(
+                                              context,
+                                            ).signIn),
                                       ),
                                     ),
-                                  const SizedBox(height: 10),
-                                  OutlinedButton.icon(
-                                    onPressed: loading ? null : _google,
-                                    icon: const Icon(Icons.login),
-                                    label: Text(
-                                      AppText.of(
-                                        context,
-                                        signUp ? 'google_sign_up' : 'google',
+                                    if (!signUp)
+                                      TextButton(
+                                        onPressed:
+                                            loading ? null : _resetPassword,
+                                        child: Text(
+                                          AppLocalizations.of(
+                                            context,
+                                          ).forgotPassword,
+                                        ),
+                                      ),
+                                    const SizedBox(height: 10),
+                                    OutlinedButton.icon(
+                                      onPressed: loading ? null : _google,
+                                      icon: const Icon(Icons.login),
+                                      label: Text(
+                                        (signUp
+                                            ? AppLocalizations.of(
+                                              context,
+                                            ).googleSignUp
+                                            : AppLocalizations.of(
+                                              context,
+                                            ).google),
                                       ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),

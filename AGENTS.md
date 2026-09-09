@@ -53,6 +53,55 @@ Do not automatically build an APK after routine Android source or UI changes. Du
 
 Follow standard Python style (4-space indentation, clear type hints, and `snake_case` for modules, functions, and variables; `PascalCase` for classes). Use focused modules and preserve the client/API/admin separation. Keep TOML keys lowercase with underscores. Match surrounding code and run the project's available formatter/linter before submitting; avoid drive-by reformatting.
 
+## Responsive UI Design
+
+Apply these rules to the Flutter Android app and Web Admin. They do not require
+changing the Windows or Linux desktop UI unless that platform is explicitly in
+scope.
+
+- Inspect the existing UI architecture, shared components, styles, state owners,
+  and layout tests before editing. Reuse the established components and patterns;
+  do not rebuild screens or duplicate layout logic without a concrete need.
+- Build mobile-first layouts that adapt from small phones through large phones,
+  tablets, and wide browser viewports. Do not target one phone model, resolution,
+  or screenshot.
+- Prefer constraint-driven layout: Flutter `Flex`, `Expanded`, `Flexible`,
+  `Wrap`, `LayoutBuilder`, `MediaQuery`, bounded content widths, and scrollable
+  content; Web Flexbox/Grid, `width: 100%`, `max-width`, `min-width`, wrapping,
+  gaps, and container/media queries.
+- Avoid fixed content width/height, absolute positioning, fixed card aspect
+  ratios, whole-component scaling, and pixel offsets used to force alignment.
+  Fixed values remain appropriate for borders, radii, icons, touch targets,
+  padding, gaps, compact controls, and intentional bounded graphics such as a
+  map or steering wheel.
+- Let localized text and accessibility text scaling determine height. Prefer
+  wrapping or vertical reflow over ellipsis, clipping, shrinking an entire
+  component, or horizontal scrolling. Inputs and actions must remain inside the
+  viewport, and touch targets must be at least 48 logical pixels where practical.
+- Use breakpoints only when the layout structure genuinely changes. Derive
+  Flutter breakpoints from the component's local constraints and account for
+  text scale; do not branch on device names. Preserve one scroll owner per
+  region and handle short landscape screens, software keyboards, and reduced
+  motion.
+- Responsive changes must preserve controller/provider identity, subscriptions,
+  drafts, form state, navigation state, and pointer lifecycle. Resizing or
+  switching tabs must not recreate runtime resources, duplicate API calls, or
+  trigger Station START/STOP commands.
+- For dense Web tables on narrow containers, present the same semantic table
+  rows as labeled records or use another accessible reflow. Do not duplicate
+  form/data nodes or hide overflow as a layout repair.
+- Check affected UI at minimum at widths `320`, `375`, `390`, `400`, `430`,
+  `768`, and `1024`, plus a wide desktop browser viewport. Test Vietnamese and
+  English, text scales `1.0`, `1.5`, and `2.0`, portrait and short landscape,
+  and keyboard-visible states where inputs or sheets are involved. Verification
+  must fail on horizontal overflow, overlapping components, clipped text, or
+  controls outside the viewport.
+- After UI changes, run the relevant formatter, static analysis, and targeted
+  layout/widget tests, then the subsystem's full tests when practical. Inspect
+  representative portrait and landscape renders. Keep mock/contract evidence
+  separate from real Station, RF, PTT, sensor, camera, or physical-device
+  verification claims.
+
 ## Testing Guidelines
 
 Tests use `pytest`; files are named `test_*.py` and test functions `test_*`. Add regression coverage beside the affected subsystem, using `tests/fixtures/` for reusable audio or data inputs. Run a targeted test while iterating (for example, `python -m pytest tests/packaging/test_windows_installer.py`) and the full suite before review.

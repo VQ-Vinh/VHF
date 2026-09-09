@@ -1,12 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:prana_mobile/features/tx/application/fake_tx_repository.dart';
-import 'package:prana_mobile/features/tx/application/tx_controller.dart';
-import 'package:prana_mobile/features/tx/application/tx_repository.dart';
-import 'package:prana_mobile/features/tx/domain/tx_draft.dart';
-import 'package:prana_mobile/features/tx/domain/tx_failure.dart';
-import 'package:prana_mobile/features/tx/domain/tx_phase.dart';
+import 'support/fake_tx_repository.dart';
+import 'package:prana_mobile/runtime/vhf/tx_controller.dart';
+import 'package:prana_mobile/domain/radio/tx/tx_repository.dart';
+import 'package:prana_mobile/domain/radio/tx/tx_draft.dart';
+import 'package:prana_mobile/domain/radio/tx/tx_failure.dart';
+import 'package:prana_mobile/domain/radio/tx/tx_phase.dart';
 
 class _OfflineTxRepository implements TxRepository {
   String status = 'transmitting';

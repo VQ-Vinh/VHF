@@ -1,5 +1,6 @@
+import 'package:prana_mobile/domain/radio/results.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:prana_mobile/models/station.dart';
+import 'package:prana_mobile/domain/station/station.dart';
 
 void main() {
   test('desired state decodes command generations', () {

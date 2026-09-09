@@ -14,6 +14,8 @@ class UserRegionController extends ChangeNotifier {
   static const _timezoneKey = 'user_timezone';
 
   final FlutterSecureStorage _storage;
+  int _revision = 0;
+  bool _disposed = false;
 
   String? countryCode;
   String? timezoneName;
@@ -21,8 +23,10 @@ class UserRegionController extends ChangeNotifier {
   bool get isSet => (timezoneName ?? '').isNotEmpty;
 
   Future<void> _load() async {
+    final revision = _revision;
     final country = await _storage.read(key: _countryKey);
     final timezone = await _storage.read(key: _timezoneKey);
+    if (_disposed || revision != _revision) return;
     if ((country ?? '').isEmpty && (timezone ?? '').isEmpty) return;
     countryCode = country;
     timezoneName = timezone;
@@ -31,6 +35,8 @@ class UserRegionController extends ChangeNotifier {
 
   /// Adopts what the server reports, so a change made on another device wins.
   Future<void> hydrate({String? country, String? timezone}) async {
+    if (_disposed) return;
+    _revision++;
     final nextCountry = (country ?? '').isEmpty ? null : country;
     final nextTimezone = (timezone ?? '').isEmpty ? null : timezone;
     if (nextCountry == countryCode && nextTimezone == timezoneName) return;
@@ -41,11 +47,19 @@ class UserRegionController extends ChangeNotifier {
       _apply(country, timezone);
 
   Future<void> _apply(String? country, String? timezone) async {
+    if (_disposed) return;
+    _revision++;
     countryCode = country;
     timezoneName = timezone;
     notifyListeners();
     await _storage.write(key: _countryKey, value: country);
     await _storage.write(key: _timezoneKey, value: timezone);
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 }
 

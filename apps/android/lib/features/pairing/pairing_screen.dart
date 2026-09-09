@@ -1,14 +1,15 @@
+import 'package:prana_mobile/core/service_messages.dart';
+import 'package:prana_mobile/l10n/app_localizations.dart';
+import 'package:prana_mobile/core/responsive.dart';
+import 'package:prana_mobile/app/di/auth_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
-import '../../core/localization.dart';
-import '../../core/theme.dart';
-import '../../core/widgets.dart';
-import '../../providers.dart';
-import '../../services/prana_api.dart';
+import 'package:prana_mobile/core/widgets.dart';
+import 'package:prana_mobile/data/network/prana_api.dart';
 
 enum PairingMode { label, temporary }
 
@@ -99,7 +100,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
   Future<void> _handleBarcode(String raw) async {
     final uri = Uri.tryParse(raw);
     if (uri == null || !_readUri(uri)) {
-      setState(() => error = AppText.of(context, 'invalid_pairing_qr'));
+      setState(() => error = AppLocalizations.of(context).invalidPairingQr);
       return;
     }
     setState(() => scanning = false);
@@ -111,13 +112,15 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
     final normalizedActivation = _normalized(activationCode.text);
     if (mode == PairingMode.label &&
         (normalizedSetupId.length != 10 || normalizedActivation.length != 16)) {
-      setState(() => error = AppText.of(context, 'invalid_activation'));
+      setState(() => error = AppLocalizations.of(context).invalidActivation);
       return;
     }
     if (mode == PairingMode.temporary &&
         (pairingId.text.trim().isEmpty ||
             _normalized(pairingCode.text).length != 8)) {
-      setState(() => error = AppText.of(context, 'invalid_temporary_pairing'));
+      setState(
+        () => error = AppLocalizations.of(context).invalidTemporaryPairing,
+      );
       return;
     }
     setState(() {
@@ -141,8 +144,8 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
           () =>
               error =
                   exception is PranaApiFailure
-                      ? AppText.of(context, exception.messageKey)
-                      : AppText.of(context, 'error_request_failed'),
+                      ? localizedServiceMessage(context, exception.messageKey)
+                      : AppLocalizations.of(context).errorRequestFailed,
         );
       }
     } finally {
@@ -160,9 +163,10 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
+  Widget build(BuildContext context) => ResponsiveScaffold(
+    maxWidth: ContentWidth.form,
     appBar: PranaPageHeader(
-      title: AppText.of(context, 'pair_station'),
+      title: AppLocalizations.of(context).pairStation,
       subtitle: 'STATION PAIRING',
     ),
     body: SafeArea(
@@ -172,31 +176,38 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
           const PranaLogo.mark(size: 72),
           const SizedBox(height: 16),
           Text(
-            AppText.of(context, 'connect_station'),
+            AppLocalizations.of(context).connectStation,
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.w700,
-              color: PranaTheme.navy,
+              color: Theme.of(context).colorScheme.onSurface,
             ),
           ),
           const SizedBox(height: 6),
           Text(
             mode == PairingMode.label
-                ? AppText.of(context, 'label_help')
-                : AppText.of(context, 'temporary_help'),
-            style: const TextStyle(color: PranaTheme.muted),
+                ? AppLocalizations.of(context).labelHelp
+                : AppLocalizations.of(context).temporaryHelp,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
           const SizedBox(height: 18),
           SegmentedButton<PairingMode>(
+            direction:
+                MediaQuery.textScalerOf(context).scale(360) >
+                        MediaQuery.sizeOf(context).width
+                    ? Axis.vertical
+                    : Axis.horizontal,
             segments: [
               ButtonSegment(
                 value: PairingMode.label,
                 icon: const Icon(Icons.qr_code_2),
-                label: Text(AppText.of(context, 'device_label')),
+                label: Text(AppLocalizations.of(context).deviceLabel),
               ),
               ButtonSegment(
                 value: PairingMode.temporary,
                 icon: const Icon(Icons.timer_outlined),
-                label: Text(AppText.of(context, 'temporary_code')),
+                label: Text(AppLocalizations.of(context).temporaryCode),
               ),
             ],
             selected: {mode},
@@ -212,8 +223,8 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
           if (scanning)
             ClipRRect(
               borderRadius: BorderRadius.circular(16),
-              child: SizedBox(
-                height: 280,
+              child: AspectRatio(
+                aspectRatio: 4 / 3,
                 child: MobileScanner(
                   onDetect: (capture) {
                     final raw = capture.barcodes.firstOrNull?.rawValue;
@@ -226,7 +237,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
             FilledButton.icon(
               onPressed: loading ? null : () => setState(() => scanning = true),
               icon: const Icon(Icons.qr_code_scanner),
-              label: Text(AppText.of(context, 'scan_qr')),
+              label: Text(AppLocalizations.of(context).scanQr),
             ),
           const SizedBox(height: 18),
           Card(
@@ -252,10 +263,8 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
                             inputFormatters: [ActivationCodeInputFormatter()],
                             decoration: InputDecoration(
                               labelText: 'Activation Code',
-                              helperText: AppText.of(
-                                context,
-                                'activation_help',
-                              ),
+                              helperText:
+                                  AppLocalizations.of(context).activationHelp,
                               prefixIcon: const Icon(Icons.key_outlined),
                             ),
                           ),
@@ -274,7 +283,8 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
                             textCapitalization: TextCapitalization.characters,
                             maxLength: 8,
                             decoration: InputDecoration(
-                              labelText: AppText.of(context, 'temporary_code'),
+                              labelText:
+                                  AppLocalizations.of(context).temporaryCode,
                               prefixIcon: const Icon(Icons.timer_outlined),
                             ),
                           ),
@@ -293,7 +303,9 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
           const SizedBox(height: 12),
           FilledButton(
             onPressed: loading ? null : claim,
-            child: Text(loading ? '...' : AppText.of(context, 'pair_station')),
+            child: Text(
+              loading ? '...' : AppLocalizations.of(context).pairStation,
+            ),
           ),
         ],
       ),

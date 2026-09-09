@@ -62,3 +62,9 @@ Entrypoint build đang dùng ở root là `build_android_apk.bat` và `buildlinu
 Logic Windows vẫn nằm trong `apps/windows/` nhưng không có root wrapper trong
 giai đoạn tập trung phát triển Android. Generated output,
 credential, activation label và runtime storage không được commit.
+
+## Android Station Workspace
+
+Android composition lives in `apps/android/lib/app/di/`. SDK-free contracts/models live in `domain/`, API/Firestore/audio adapters in `data/`, and phone-side RX command/TX/speech lifecycle in `runtime/`. Runtime never imports feature UI. Station tabs observe one selected uid/Station session; remote capture and VAD remain in Python. Dashboard depends on `TelemetryRepository`, injected with a mock implementation; it has no desired-state/hardware control.
+
+The [per-file migration and validation record](android-workspace-migration.md) documents ownership and current evidence.

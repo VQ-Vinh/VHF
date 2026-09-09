@@ -15,7 +15,7 @@
   </section>
   <section class="panel table-panel activity-panel" aria-labelledby="activity-title">
     <div class="panel-heading"><div><h2 id="activity-title">{{ t('dashboard.activity') }}</h2><p>{{ t('dashboard.activity_hint') }}</p></div></div>
-    {% if activity %}<div class="table-wrap"><table class="activity-table"><thead><tr><th>{{ t('dashboard.action') }}</th><th>{{ t('dashboard.operator') }}</th><th>{{ t('dashboard.time') }}</th></tr></thead><tbody>{% for item in activity %}<tr><td><strong>{{ t('audit.' ~ item.action) }}</strong></td><td>{{ item.operator }}</td><td><time>{{ item.when }}</time></td></tr>{% endfor %}</tbody></table></div>
+    {% if activity %}<div class="table-wrap"><table role="table" class="activity-table"><thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">{{ t('dashboard.action') }}</th><th scope="col" role="columnheader">{{ t('dashboard.operator') }}</th><th scope="col" role="columnheader">{{ t('dashboard.time') }}</th></tr></thead><tbody role="rowgroup">{% for item in activity %}<tr role="row"><td role="cell"><span class="cell-label" aria-hidden="true">{{ t('dashboard.action') }}</span><strong>{{ t('audit.' ~ item.action) }}</strong></td><td role="cell"><span class="cell-label" aria-hidden="true">{{ t('dashboard.operator') }}</span>{{ item.operator }}</td><td role="cell"><span class="cell-label" aria-hidden="true">{{ t('dashboard.time') }}</span><time>{{ item.when }}</time></td></tr>{% endfor %}</tbody></table></div>
     {% else %}<p class="empty">{{ t('common.none') }}</p>{% endif %}
   </section>
 </div>

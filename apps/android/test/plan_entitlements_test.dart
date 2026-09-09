@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:prana_mobile/models/plan_entitlements.dart';
+import 'package:prana_mobile/domain/account/plan_entitlements.dart';
 
 void main() {
   test('Free defaults expose today and lock every earlier day', () {
@@ -8,10 +8,7 @@ void main() {
     expect(policy.maxConcurrency, 2);
 
     final now = DateTime(2026, 7, 23, 12);
-    expect(
-      policy.historyIsUnlocked(DateTime(2026, 7, 23, 0, 1), now),
-      isTrue,
-    );
+    expect(policy.historyIsUnlocked(DateTime(2026, 7, 23, 0, 1), now), isTrue);
     expect(
       policy.historyIsUnlocked(DateTime(2026, 7, 22, 23, 59), now),
       isFalse,

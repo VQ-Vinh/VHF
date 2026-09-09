@@ -1,7 +1,9 @@
+import 'dart:async';
+import 'package:prana_mobile/domain/radio/source_audio_engine.dart';
+import 'package:prana_mobile/domain/radio/speech_engine.dart';
+import 'package:prana_mobile/domain/radio/results.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:prana_mobile/models/station.dart';
-import 'package:prana_mobile/services/source_audio.dart';
-import 'package:prana_mobile/services/translation_speech.dart';
+import 'package:prana_mobile/runtime/vhf/translation_speech.dart';
 
 class FakeSpeechEngine implements SpeechEngine {
   final List<(String, String)> spoken = [];
@@ -91,6 +93,12 @@ TranslationResult sameLanguageResult(String id, {String language = 'vi-VN'}) =>
       confidence: 1,
       timestamp: DateTime.utc(2026, 7, 28, 12),
     );
+
+class DelayedSpeechEngine extends FakeSpeechEngine {
+  final ready = Completer<String?>();
+  @override
+  Future<String?> resolveLocale(String locale) => ready.future;
+}
 
 void main() {
   test(
@@ -354,4 +362,29 @@ void main() {
     expect(engine.spoken, isEmpty);
     expect(controller.warningKey, 'tts_playback_error');
   });
+  test(
+    'late locale resolution after background cannot speak; foreground accepts only new audio',
+    () async {
+      final engine = DelayedSpeechEngine();
+      final controller = TranslationSpeechController(
+        engine,
+        FakeSourceAudioEngine(),
+      );
+      addTearDown(controller.dispose);
+      controller.trackStation('s', 'day');
+      controller.ingest([], fallbackLanguage: 'vi');
+      controller.ingest([result('old', 1)], fallbackLanguage: 'vi');
+      await controller.setForeground(false);
+      engine.ready.complete('vi-VN');
+      await settleSpeech();
+      expect(engine.spoken, isEmpty);
+      await controller.setForeground(true);
+      controller.ingest([result('old', 1)], fallbackLanguage: 'vi');
+      controller.ingest([
+        result('new', 2, translation: 'Fresh'),
+      ], fallbackLanguage: 'vi');
+      await settleSpeech();
+      expect(engine.spoken, [('Fresh', 'vi-VN')]);
+    },
+  );
 }

@@ -4,7 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:prana_mobile/features/auth/auth_validation.dart';
-import 'package:prana_mobile/services/authentication_service.dart';
+import 'package:prana_mobile/data/auth/authentication_service.dart';
 
 void main() {
   test('email validation rejects empty and malformed values', () {
@@ -73,18 +73,18 @@ void main() {
   test('auth UI has tabs, local validation, and verification route', () {
     final signIn =
         File('lib/features/auth/sign_in_screen.dart').readAsStringSync();
-    final router = File('lib/router.dart').readAsStringSync();
+    final router = File('lib/app/navigation/router.dart').readAsStringSync();
     final account =
         File('lib/features/account/account_screen.dart').readAsStringSync();
 
     expect(signIn, contains('TabBar('));
     expect(signIn, contains('TextFormField('));
-    expect(signIn, contains('confirm_password'));
-    expect(signIn, contains('google_sign_up'));
+    expect(signIn, contains('confirmPassword'));
+    expect(signIn, contains('googleSignUp'));
     expect(signIn, isNot(contains('exception.message')));
     expect(router, contains("'/verify-email'"));
     expect(router, contains('emailVerified'));
-    expect(account, contains('confirm_sign_out'));
+    expect(account, contains('confirmSignOut'));
     expect(account, contains('authenticationServiceProvider'));
   });
 }
