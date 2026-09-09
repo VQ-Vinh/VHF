@@ -19,6 +19,13 @@ updates:
     directory: /apps/android
     schedule:
       interval: weekly
+    groups:
+      # One PR per week resolves pubspec.lock once. Separate PRs each rewrote
+      # pubspec.yaml without a lock that satisfies it, so every one of them
+      # failed `flutter pub get --enforce-lockfile`. Majors stay ungrouped:
+      # they can need code or Gradle changes and must be reviewed on their own.
+      flutter-minor-patch:
+        update-types: [minor, patch]
     ignore:
       # flutter_localizations from the Flutter SDK pins intl exactly, so any
       # bump past that pin fails version solving and can never be merged.
