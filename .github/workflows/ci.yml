@@ -251,9 +251,23 @@ jobs:
       - name: Resolve locked Flutter dependencies
         run: flutter pub get --enforce-lockfile
       - name: Stage a build configuration
-        # Placeholder Firebase values. The simulator job proves the app builds
-        # and launches; it signs nobody in, so no real project is needed.
-        run: cp config/staging.example.json config/staging.json
+        # Fake but well-formed Firebase values. main() awaits
+        # Firebase.initializeApp before runApp, and the SDK rejects a malformed
+        # appId, so config/staging.example.json's "replace-me" kills the app on
+        # launch. Nothing here signs in, so the values need shape, not truth.
+        run: |
+          cat > config/staging.json <<'JSON'
+          {
+            "FLAVOR": "staging",
+            "API_URL": "https://prana-api-owuilj5d4a-uc.a.run.app",
+            "FIREBASE_API_KEY": "AIzaSyA0000000000000000000000000000000",
+            "FIREBASE_APP_ID": "1:000000000000:ios:0000000000000000000000",
+            "FIREBASE_MESSAGING_SENDER_ID": "000000000000",
+            "FIREBASE_PROJECT_ID": "prana-elex-ci",
+            "FIREBASE_STORAGE_BUCKET": "prana-elex-ci.appspot.com",
+            "FIREBASE_GOOGLE_WEB_CLIENT_ID": "000000000000-ci.apps.googleusercontent.com"
+          }
+          JSON
       - name: Build for the iOS simulator
         # --simulator needs no signing, so this runs without an Apple account.
         run: >-
@@ -270,7 +284,11 @@ jobs:
           xcrun simctl boot "$device"
           xcrun simctl bootstatus "$device" -b
           xcrun simctl install "$device" build/ios/iphonesimulator/Runner.app
-          xcrun simctl launch "$device" com.dlv.pranaMobile
+          mkdir -p "$RUNNER_TEMP/ios"
+          # --console-pty keeps the app's stdout, which carries the Dart error
+          # when startup throws. simctl launch returns the moment the process
+          # spawns, so its exit status says nothing about whether the app lived.
+          nohup xcrun simctl launch --console-pty "$device" com.dlv.pranaMobile > "$RUNNER_TEMP/ios/app-console.log" 2>&1 &
       - name: Capture what the app renders
         run: |
           set -Eeuo pipefail
@@ -281,6 +299,17 @@ jobs:
             sleep "$seconds"
             xcrun simctl io "${{ steps.sim.outputs.device }}" screenshot "$RUNNER_TEMP/ios/launch-at-${seconds}s.png"
           done
+      - name: Fail if the app did not stay running
+        run: |
+          set -Eeuo pipefail
+          if xcrun simctl spawn "${{ steps.sim.outputs.device }}" launchctl list 2>/dev/null | grep -q com.dlv.pranaMobile; then
+            echo "The app is still running."
+          else
+            echo "::error::The app exited during launch; the screenshots show the simulator home screen."
+            echo "--- app console ---"
+            cat "$RUNNER_TEMP/ios/app-console.log" || true
+            exit 1
+          fi
       - name: Package the simulator build
         if: always()
         run: |
