@@ -1,6 +1,7 @@
 import 'package:prana_mobile/l10n/app_localizations.dart';
 import '../control/presentation/control_tab.dart';
 import 'package:prana_mobile/core/responsive.dart';
+import 'package:prana_mobile/core/widgets.dart';
 import 'dart:async';
 import 'package:prana_mobile/app/di/telemetry_providers.dart';
 import 'package:flutter/material.dart';
@@ -183,11 +184,13 @@ class _StationWorkspaceState extends ConsumerState<StationWorkspaceScreen> {
                   AppLocalizations.of(context).stationSettings,
                 _ => runtime.station?.name ?? 'PRANA ELEX',
               }),
-              Text(
-                (runtime.online
-                    ? AppLocalizations.of(context).stationOnline
-                    : AppLocalizations.of(context).stationOffline),
-                style: const TextStyle(fontSize: 12),
+              const SizedBox(height: 4),
+              StatusPill.onDark(
+                label:
+                    runtime.online
+                        ? AppLocalizations.of(context).stationOnline
+                        : AppLocalizations.of(context).stationOffline,
+                online: runtime.online,
               ),
             ],
           ),
