@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import 'package:prana_mobile/core/brand.dart';
 import 'package:prana_mobile/core/widgets.dart';
 import 'package:prana_mobile/data/network/prana_api.dart';
 

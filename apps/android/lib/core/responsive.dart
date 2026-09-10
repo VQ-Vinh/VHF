@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'brand.dart';
+
 abstract final class ContentWidth {
   static const auth = 440.0;
   static const form = 720.0;
@@ -103,6 +105,10 @@ class ResponsiveHeader extends StatelessWidget {
                       if (back != null)
                         SizedBox(width: leadingWidth, child: back),
                       SizedBox(width: titleSpacing),
+                      // Branding lives here so no screen can ship a header
+                      // without it; PranaPageHeader relies on this too.
+                      const PranaLogo.mark(size: 24, color: Colors.white),
+                      const SizedBox(width: 8),
                       Expanded(child: title ?? const SizedBox.shrink()),
                       if (!stackActions) ...?actions,
                     ],
