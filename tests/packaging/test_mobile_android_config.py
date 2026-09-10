@@ -30,7 +30,7 @@ def test_mobile_icons_use_density_resources_and_compact_ui_asset() -> None:
     assert Path("apps/android/assets/logo_mobileapp.png").stat().st_size < 500_000
 
 
-def test_mobile_launcher_and_splash_use_complete_brand_lockup() -> None:
+def test_mobile_launcher_and_splash_render_the_mark_from_the_vector() -> None:
     gradle = Path("apps/android/android/app/build.gradle").read_text(
         encoding="utf-8"
     )
@@ -46,9 +46,9 @@ def test_mobile_launcher_and_splash_use_complete_brand_lockup() -> None:
     android_12_styles = Path(
         "apps/android/android/app/src/main/res/values-v31/styles.xml"
     ).read_text(encoding="utf-8")
-    generator = Path(
-        "tools/packaging/generate_android_brand_assets.ps1"
-    ).read_text(encoding="utf-8")
+    generator = Path("tools/packaging/generate_brand_assets.py").read_text(
+        encoding="utf-8"
+    )
 
     assert 'android:roundIcon="@mipmap/ic_launcher"' in manifest
     assert 'resValue "string", "app_name", "PRANA STG"' in gradle
@@ -57,8 +57,15 @@ def test_mobile_launcher_and_splash_use_complete_brand_lockup() -> None:
     assert '@drawable/ic_launcher_foreground' in adaptive_icon
     assert '@drawable/launch_background' in styles
     assert '@drawable/splash_logo' in android_12_styles
-    assert 'logo_lockup.png' in generator
-    assert "-ContentWidth 252" in generator
+    # Every asset is rendered from the vector master, never resized from a
+    # smaller raster.
+    assert "prana-elex-logo.svg" in generator
+    assert Path("tools/packaging/brand/prana-elex-logo.svg").is_file()
+    # Launcher and splash take the mark alone. The wordmark is illegible below
+    # roughly 128 px, so a lockup shrunk into a 48 px icon reads as a smudge.
+    assert 'render(mark, 432, 432, content_width=252)' in generator
+    assert 'f"{res}/mipmap-{bucket}/ic_launcher.png"' in generator
+    assert "render(lockup" not in generator[generator.index("Android launcher") :]
 
 
 def test_mobile_apk_build_wrapper_uses_flavor_config() -> None:
