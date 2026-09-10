@@ -30,9 +30,30 @@ def test_core_change_runs_linux_and_windows() -> None:
 
 
 def test_platform_and_terraform_changes_are_targeted() -> None:
+    # main.dart is shared Dart, so it selects both mobile platforms.
     assert classify_paths(
         ["apps/android/lib/main.dart", "infra/terraform/main.tf"]
-    ) == enabled("android", "terraform")
+    ) == enabled("android", "ios", "terraform")
+
+
+def test_mobile_platform_folders_select_only_their_own_component() -> None:
+    assert classify_paths(["apps/android/ios/Runner/Info.plist"]) == enabled("ios")
+    assert classify_paths(["apps/android/android/app/build.gradle"]) == enabled(
+        "android"
+    )
+
+
+def test_shared_flutter_paths_select_both_mobile_platforms() -> None:
+    for path in ("apps/android/lib/app/app.dart", "apps/android/pubspec.yaml"):
+        assert classify_paths([path]) == enabled("android", "ios"), path
+
+
+def test_one_platform_folder_does_not_clear_the_other() -> None:
+    # Regression: classification must only ever set True, never assign False,
+    # or a later path in the loop wipes a flag an earlier path raised.
+    assert classify_paths(
+        ["apps/android/ios/Runner/Info.plist", "apps/android/android/app/build.gradle"]
+    ) == enabled("android", "ios")
 
 
 def test_container_context_change_rebuilds_both_services() -> None:

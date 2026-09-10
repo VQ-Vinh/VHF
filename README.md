@@ -12,7 +12,7 @@
 <p align="center">
   <a href="https://github.com/VQ-Vinh/VHF/actions/workflows/ci.yml"><img src="https://github.com/VQ-Vinh/VHF/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/VQ-Vinh/VHF/releases/latest"><img src="https://img.shields.io/github/v/release/VQ-Vinh/VHF?display_name=tag&amp;sort=semver" alt="Latest release"></a>
-  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Raspberry%20Pi%20%7C%20Android-0A66C2" alt="Platforms: Windows, Raspberry Pi and Android">
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Raspberry%20Pi%20%7C%20Android%20%7C%20iOS-0A66C2" alt="Platforms: Windows, Raspberry Pi, Android and iOS">
   <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&amp;logoColor=white" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/Flutter-3.44%2B-02569B?logo=flutter&amp;logoColor=white" alt="Flutter 3.44+">
   <img src="https://img.shields.io/badge/FastAPI-Cloud-009688?logo=fastapi&amp;logoColor=white" alt="FastAPI">
@@ -141,7 +141,7 @@ treo. Hệ thống hiện chưa có channel-busy sensing.
 
 | Thư mục | Trách nhiệm |
 | --- | --- |
-| `apps/android/` | Flutter Android App |
+| `apps/android/` | Flutter App (Android; iOS ở mức Simulator) |
 | `apps/windows/` | Laptop Station, WASAPI và build assets Windows |
 | `apps/linux/` | Raspberry Pi Station, ALSA/`arecord` và GPIO PTT |
 | `packages/prana_core/` | Pipeline, VAD, storage và Station protocol dùng chung |

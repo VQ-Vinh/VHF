@@ -12,6 +12,7 @@ COMPONENTS = (
     "core_linux",
     "windows",
     "android",
+    "ios",
     "terraform",
     "deploy_api",
     "deploy_admin",
@@ -68,7 +69,13 @@ def classify_paths(paths: Iterable[str]) -> dict[str, bool]:
             result["windows"] = True
             matched = True
         if path.startswith("apps/android/"):
-            result["android"] = True
+            # One Flutter project, two platform folders. Shared Dart, config and
+            # pubspec paths belong to both; only assign True, because a later
+            # path in this loop must not clear a flag an earlier one set.
+            if not path.startswith("apps/android/ios/"):
+                result["android"] = True
+            if not path.startswith("apps/android/android/"):
+                result["ios"] = True
             matched = True
         if path.startswith("infra/terraform/"):
             result["terraform"] = True
