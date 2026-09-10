@@ -49,13 +49,19 @@ Build an Android APK for a physical phone with `build_android_apk.bat`, or a Lin
 
 Do not automatically build an APK after routine Android source or UI changes. During normal iteration, run formatting, static analysis, and targeted tests only. Build an APK only when the user explicitly requests it, when APK/release packaging is the task itself, or when a Gradle/package/device-only issue cannot be validated by lighter checks. Do not rebuild merely to provide a fresh artifact after every edit.
 
+The same restraint applies to iOS. Xcode cannot run on the development Windows
+host, so the only iOS build is the `ios` CI job; do not push a branch merely to
+watch it compile. iOS ships no installable artifact: simulator builds are
+unsigned by design and there is no Apple Developer Program membership, so no
+`.ipa`, TestFlight or ad-hoc distribution exists to produce.
+
 ## Coding Style & Naming Conventions
 
 Follow standard Python style (4-space indentation, clear type hints, and `snake_case` for modules, functions, and variables; `PascalCase` for classes). Use focused modules and preserve the client/API/admin separation. Keep TOML keys lowercase with underscores. Match surrounding code and run the project's available formatter/linter before submitting; avoid drive-by reformatting.
 
 ## Responsive UI Design
 
-Apply these rules to the Flutter Android app and Web Admin. They do not require
+Apply these rules to the Flutter app on both Android and iOS, and to Web Admin. They do not require
 changing the Windows or Linux desktop UI unless that platform is explicitly in
 scope.
 

@@ -214,6 +214,45 @@ dừng App. Kiểm tra điện thoại thật kết nối ADB:
 & "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" devices -l
 ```
 
+## iOS
+
+Ứng dụng Flutter có thư mục nền tảng `apps/android/ios/`, nhưng phạm vi iOS hiện
+tại **chỉ tới Simulator**, và chỉ chạy trên CI.
+
+### Vì sao không build được tại chỗ
+
+Apple yêu cầu macOS và Xcode để compile iOS, chạy Simulator và ký gói. Máy phát
+triển của dự án chạy Windows, nên không có cách nào build iOS tại chỗ — đây là
+giới hạn của Apple chứ không phải của dự án.
+
+Thay vào đó, job `iOS simulator build` trong `.github/workflows/ci.yml` chạy trên
+`macos-latest`. Nó kích hoạt khi PR đụng `apps/android/` (trừ riêng thư mục
+`android/`), build cho Simulator, khởi động Simulator, mở app và chụp màn hình.
+
+### Xem kết quả
+
+Mở lần chạy CI của PR, tải artifact `ios-simulator`:
+
+- `Runner-simulator.app.zip` — kéo thả vào Simulator trên một máy Mac là chạy
+  được. **Không cài được lên iPhone thật.**
+- `launch-at-*s.png` — ảnh chụp ở ba mốc trong quá trình khởi động.
+- `Podfile.lock` — sinh trên runner; commit vào repo để ghim phiên bản pod.
+
+### Những gì iOS chưa có
+
+- **Không có file cài lên máy thật.** `.ipa`, TestFlight và ad-hoc đều bắt buộc
+  Apple Developer Program ($99/năm), hiện dự án không có.
+- **Không có flavor.** Flavor trên iOS cần Xcode scheme; bản build dùng
+  `--dart-define-from-file` để nạp cấu hình.
+- **Không kiểm được trên Simulator:** camera (Simulator không có camera nên quét
+  QR không chạy), micro (runner không có input audio nên TX không kiểm được),
+  Google Sign-In (chưa cấu hình iOS OAuth client).
+- **Icon vẫn là icon mặc định của Flutter**, chưa có bộ icon PRANA như Android.
+
+Ảnh chụp Simulator dùng để xác nhận app **compile và khởi động được** trên iOS.
+Việc kiểm tra bố cục giao diện vẫn dựa vào widget test, vốn phủ rộng hơn nhiều —
+xem `apps/android/test/responsive_screens_test.dart`.
+
 ## Backend local
 
 Backend local chỉ dành cho developer. Đăng nhập ADC:

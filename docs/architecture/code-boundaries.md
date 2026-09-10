@@ -1,7 +1,8 @@
 # Kiến trúc PRANA ELEX
 
 PRANA ELEX là monorepo gồm ba ứng dụng nền tảng, một core Python dùng chung và
-hai dịch vụ Cloud Run.
+hai dịch vụ Cloud Run. Ứng dụng Flutter nhắm hai nền tảng di động: Android được
+phát hành đầy đủ, iOS mới ở mức build và chạy Simulator trên CI.
 
 ## Ranh giới mã nguồn
 
@@ -9,6 +10,7 @@ hai dịch vụ Cloud Run.
 apps/windows      Qt Desktop + Windows Station + WASAPI + Credential Manager
 apps/linux        Raspberry Pi Station headless + ALSA/arecord + GPIO17 PTT
 apps/android      Flutter UI, Firebase Auth và Firestore realtime
+                  (android/ và ios/ là hai thư mục nền tảng của cùng app)
        │
        └──────────── packages/prana_core
                      pipeline, VAD, API client, station protocol, storage
