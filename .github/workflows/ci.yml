@@ -25,6 +25,7 @@ jobs:
       core_linux: ${{ steps.select.outputs.core_linux }}
       windows: ${{ steps.select.outputs.windows }}
       android: ${{ steps.select.outputs.android }}
+      ios: ${{ steps.select.outputs.ios }}
       terraform: ${{ steps.select.outputs.terraform }}
       deploy_api: ${{ steps.select.outputs.deploy_api }}
       deploy_admin: ${{ steps.select.outputs.deploy_admin }}
@@ -223,6 +224,82 @@ jobs:
       - name: Run Flutter tests
         run: flutter test --no-pub
 
+  ios:
+    name: iOS simulator build
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: apps/android
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.44.8'
+          channel: stable
+          cache: true
+      - name: Cache CocoaPods
+        uses: actions/cache@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
+        with:
+          path: |
+            ~/Library/Caches/CocoaPods
+            apps/android/ios/Pods
+          key: pods-${{ runner.os }}-${{ hashFiles('apps/android/pubspec.lock') }}
+          restore-keys: pods-${{ runner.os }}-
+      - name: Resolve locked Flutter dependencies
+        run: flutter pub get --enforce-lockfile
+      - name: Stage a build configuration
+        # Placeholder Firebase values. The simulator job proves the app builds
+        # and launches; it signs nobody in, so no real project is needed.
+        run: cp config/staging.example.json config/staging.json
+      - name: Build for the iOS simulator
+        # --simulator needs no signing, so this runs without an Apple account.
+        run: >-
+          flutter build ios --simulator --debug
+          --dart-define-from-file=config/staging.json
+      - name: Boot a simulator and launch the app
+        id: sim
+        run: |
+          set -Eeuo pipefail
+          runtimes="$(xcrun simctl list devices available --json)"
+          device="$(python3 -c "import json,sys;d=json.load(sys.stdin)['devices'];print(next(x['udid'] for k,v in d.items() if 'iOS' in k for x in v))" <<<"$runtimes")"
+          test -n "$device"
+          echo "device=$device" >> "$GITHUB_OUTPUT"
+          xcrun simctl boot "$device"
+          xcrun simctl bootstatus "$device" -b
+          xcrun simctl install "$device" build/ios/iphonesimulator/Runner.app
+          xcrun simctl launch "$device" com.dlv.pranaMobile
+      - name: Capture what the app renders
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "$RUNNER_TEMP/ios"
+          # Three points in the launch sequence: the first often catches the
+          # splash screen, the last should show whatever the app settles on.
+          for seconds in 5 15 30; do
+            sleep "$seconds"
+            xcrun simctl io "${{ steps.sim.outputs.device }}" screenshot "$RUNNER_TEMP/ios/launch-at-${seconds}s.png"
+          done
+      - name: Package the simulator build
+        if: always()
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "$RUNNER_TEMP/ios"
+          if [[ -d build/ios/iphonesimulator/Runner.app ]]; then
+            ditto -c -k --keepParent build/ios/iphonesimulator/Runner.app "$RUNNER_TEMP/ios/Runner-simulator.app.zip"
+          fi
+          # Generated on macOS during the build; commit it to pin the pods.
+          cp ios/Podfile ios/Podfile.lock "$RUNNER_TEMP/ios/" 2>/dev/null || true
+      - name: Upload the simulator build and screenshots
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ios-simulator
+          path: ${{ runner.temp }}/ios
+          retention-days: 14
+          if-no-files-found: error
+
   terraform:
     name: Terraform validation
     needs: changes
@@ -345,7 +422,7 @@ jobs:
   gate:
     name: gate
     if: always()
-    needs: [changes, quality, backend, core-linux, windows, android, terraform, containers]
+    needs: [changes, quality, backend, core-linux, windows, android, ios, terraform, containers]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -357,11 +434,12 @@ jobs:
           CORE_LINUX: ${{ needs.core-linux.result }}
           WINDOWS: ${{ needs.windows.result }}
           ANDROID: ${{ needs.android.result }}
+          IOS: ${{ needs.ios.result }}
           TERRAFORM: ${{ needs.terraform.result }}
           CONTAINERS: ${{ needs.containers.result }}
         run: |
           test "$CHANGES" = success
           test "$QUALITY" = success
-          for result in "$BACKEND" "$CORE_LINUX" "$WINDOWS" "$ANDROID" "$TERRAFORM" "$CONTAINERS"; do
+          for result in "$BACKEND" "$CORE_LINUX" "$WINDOWS" "$ANDROID" "$IOS" "$TERRAFORM" "$CONTAINERS"; do
             [[ "$result" == success || "$result" == skipped ]]
           done
