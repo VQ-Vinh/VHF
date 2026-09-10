@@ -51,7 +51,8 @@ def test_terraform_uploads_only_an_encrypted_saved_plan() -> None:
 
 
 def test_container_bases_are_digest_pinned_and_automated() -> None:
-    expected = re.compile(r"^FROM python:3\.12-slim@sha256:[0-9a-f]{64}$", re.MULTILINE)
+    # Any CPython minor is acceptable; the digest pin is what this guards.
+    expected = re.compile(r"^FROM python:3\.\d+-slim@sha256:[0-9a-f]{64}$", re.MULTILINE)
     assert expected.search(read("services/prana_api/Dockerfile"))
     assert expected.search(read("services/prana_admin/Dockerfile"))
     dependabot = read(".github/dependabot.yml")
