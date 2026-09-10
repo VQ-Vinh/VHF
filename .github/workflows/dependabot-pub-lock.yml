@@ -1,0 +1,79 @@
+name: Dependabot pub lock
+
+# Dependabot rewrites apps/android/pubspec.yaml but commits a pubspec.lock that
+# a fresh resolution does not reproduce, so every Flutter bump fails CI at
+# `flutter pub get --enforce-lockfile`. Re-resolve the lock on the pull request
+# instead of asking a maintainer to do it by hand each week.
+
+on:
+  pull_request:
+    paths:
+      - apps/android/pubspec.yaml
+      - apps/android/pubspec.lock
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependabot-pub-lock-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  resolve:
+    name: Resolve pubspec.lock
+    # Only Dependabot's own branches in this repository. A fork cannot reach
+    # this job, so the checked-out code is never untrusted.
+    if: >-
+      github.actor == 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: apps/android
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          # A push authenticated with GITHUB_TOKEN does not start new workflow
+          # runs, so the required gate would never report on the repaired
+          # commit. Store a token as the Dependabot secret PUB_LOCK_TOKEN to
+          # have CI re-run by itself; without it the fix still lands and the
+          # pull request needs one manual nudge.
+          token: ${{ secrets.PUB_LOCK_TOKEN || secrets.GITHUB_TOKEN }}
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.44.8'
+          channel: stable
+          cache: true
+      - name: Check whether the committed lock resolves
+        id: check
+        run: |
+          if flutter pub get --enforce-lockfile; then
+            echo 'needs_resolve=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'needs_resolve=true' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Re-resolve the lock
+        if: steps.check.outputs.needs_resolve == 'true'
+        run: flutter pub get
+      - name: Refuse to commit anything but the lock
+        if: steps.check.outputs.needs_resolve == 'true'
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -Eeuo pipefail
+          changed="$(git status --porcelain)"
+          echo "$changed"
+          test "$changed" = " M apps/android/pubspec.lock"
+      - name: Commit the resolved lock
+        if: steps.check.outputs.needs_resolve == 'true'
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -Eeuo pipefail
+          git config user.name 'dependabot[bot]'
+          git config user.email '49699333+dependabot[bot]@users.noreply.github.com'
+          git add apps/android/pubspec.lock
+          git commit -m 'build(deps): resolve pub lock for this bump'
+          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
