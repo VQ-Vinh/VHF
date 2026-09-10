@@ -25,6 +25,22 @@ from services.prana_api.security import canonical_request, canonical_station_req
 from services.prana_api.tx_repository import MemoryTxRepository
 
 
+# 2026-09-10T00:00Z puts Pacific/Auckland on the 10th and Pacific/Honolulu on
+# the 9th, so a filename built from the owner's zone cannot be mistaken for one
+# built from the server's clock.
+TX_FILENAME_INSTANT = datetime(2026, 9, 10, tzinfo=timezone.utc)
+
+
+class FrozenClock(datetime):
+    """datetime whose now() is fixed; strptime and the rest still work."""
+
+    @classmethod
+    def now(cls, tz=None):
+        if tz is None:
+            return TX_FILENAME_INSTANT.replace(tzinfo=None)
+        return TX_FILENAME_INSTANT.astimezone(tz)
+
+
 def wav_bytes(seconds: float = 1) -> bytes:
     output = io.BytesIO()
     with wave.open(output, "wb") as wav:
@@ -1115,9 +1131,12 @@ class StationApiTests(unittest.TestCase):
             self.identity.uid, self.station_id, {"running": True}
         )
         self.heartbeat()
-        # Auckland (UTC+12/+13) and Honolulu (UTC-10) are ~23 hours apart, so
-        # their local dates never coincide -- one of them always differs from
-        # UTC, which is what makes this assertion meaningful at any wall clock.
+        # The country catalog spans 22 hours, from Pacific/Honolulu at UTC-10 to
+        # Pacific/Auckland at UTC+12, so every zone in it shares one calendar
+        # date while UTC sits between 10:00 and 12:00. No pair of zones can tell
+        # an owner timezone from the server's during those two hours, which used
+        # to fail this test once a day. Drive the endpoint from a fixed instant
+        # instead, chosen so the two zones fall on different dates.
         seen = {}
         for country, zone in (("NZ", "Pacific/Auckland"), ("US", "Pacific/Honolulu")):
             patched = self.client.patch(
@@ -1127,7 +1146,9 @@ class StationApiTests(unittest.TestCase):
             request_id = str(uuid.uuid4())
             with patch(
                 "services.prana_api.main.get_processor", return_value=Processor()
-            ), patch("services.prana_api.main.get_archive", return_value=Archive()):
+            ), patch(
+                "services.prana_api.main.get_archive", return_value=Archive()
+            ), patch("services.prana_api.main.datetime", FrozenClock):
                 draft = self.client.post(
                     f"/v1/stations/{self.station_id}/tx/drafts",
                     data={"target_language": "vi"},
@@ -1138,7 +1159,7 @@ class StationApiTests(unittest.TestCase):
             seen[zone] = draft.json()["audio_filename"][:8]
             self.assertEqual(
                 seen[zone],
-                datetime.now(ZoneInfo(zone)).strftime("%Y%m%d"),
+                TX_FILENAME_INSTANT.astimezone(ZoneInfo(zone)).strftime("%Y%m%d"),
             )
         self.assertNotEqual(seen["Pacific/Auckland"], seen["Pacific/Honolulu"])
 
