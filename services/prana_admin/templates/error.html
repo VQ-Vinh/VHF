@@ -4,10 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ status }} | PRANA ELEX Admin</title>
-  <link rel="stylesheet" href="/static/admin.css?v=responsive-1">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+  <link rel="stylesheet" href="/static/admin.css?v=brand-1">
 </head>
 <body class="error-page">
   <main class="error-card">
+    <img class="error-mark" src="/static/logo_mark.png" alt="PRANA ELEX" width="56" height="56">
     <span class="error-code">{{ status }}</span>
     <h1>{{ t('error.' ~ status ~ '.title') }}</h1>
     <p>{{ t('error.' ~ status ~ '.body') }}</p>

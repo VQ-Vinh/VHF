@@ -30,7 +30,7 @@ def test_mobile_icons_use_density_resources_and_compact_ui_asset() -> None:
     assert Path("apps/android/assets/logo_mobileapp.png").stat().st_size < 500_000
 
 
-def test_mobile_launcher_and_splash_use_complete_brand_lockup() -> None:
+def test_mobile_launcher_and_splash_render_the_mark_from_the_vector() -> None:
     gradle = Path("apps/android/android/app/build.gradle").read_text(
         encoding="utf-8"
     )
@@ -46,9 +46,9 @@ def test_mobile_launcher_and_splash_use_complete_brand_lockup() -> None:
     android_12_styles = Path(
         "apps/android/android/app/src/main/res/values-v31/styles.xml"
     ).read_text(encoding="utf-8")
-    generator = Path(
-        "tools/packaging/generate_android_brand_assets.ps1"
-    ).read_text(encoding="utf-8")
+    generator = Path("tools/packaging/generate_brand_assets.py").read_text(
+        encoding="utf-8"
+    )
 
     assert 'android:roundIcon="@mipmap/ic_launcher"' in manifest
     assert 'resValue "string", "app_name", "PRANA STG"' in gradle
@@ -57,8 +57,15 @@ def test_mobile_launcher_and_splash_use_complete_brand_lockup() -> None:
     assert '@drawable/ic_launcher_foreground' in adaptive_icon
     assert '@drawable/launch_background' in styles
     assert '@drawable/splash_logo' in android_12_styles
-    assert 'logo_lockup.png' in generator
-    assert "-ContentWidth 252" in generator
+    # Every asset is rendered from the brand master, never resized from a
+    # smaller raster or from another asset.
+    assert "prana-elex-logo.png" in generator
+    assert Path("tools/packaging/brand/prana-elex-logo.png").is_file()
+    # Launcher, splash and app icons carry the wordmark, not the mark alone.
+    launcher = generator[generator.index("Android launcher") :]
+    assert "render(lockup, 432, 432, content_width=208)" in launcher
+    assert 'f"{res}/mipmap-{bucket}/ic_launcher.png"' in launcher
+    assert "render(mark," not in launcher[: launcher.index("Web Admin")]
 
 
 def test_mobile_apk_build_wrapper_uses_flavor_config() -> None:
@@ -225,3 +232,38 @@ def test_python_packages_share_one_version_source() -> None:
     assert f'"prana-elex-core=={version}"' in Path("apps/windows/pyproject.toml").read_text(encoding="utf-8")
     assert f'"prana-elex-core=={version}"' in Path("apps/linux/pyproject.toml").read_text(encoding="utf-8")
     assert f"version: {version}+1" in Path("apps/android/pubspec.yaml").read_text(encoding="utf-8")
+
+
+def test_masked_android_art_survives_the_launcher_and_splash_circle() -> None:
+    """Adaptive icons and the Android 12 splash keep only the inner circle.
+
+    The wordmark sits at the bottom of the lockup, where that circle is
+    narrowest, so artwork sized for the full canvas loses its first and last
+    letter -- a 252px lockup on a 432px canvas rendered as "RANA ELE".
+    """
+    from PIL import Image, ImageDraw
+
+    for name in ("splash_logo", "ic_launcher_foreground"):
+        art = Image.open(
+            Path(f"apps/android/android/app/src/main/res/drawable/{name}.png")
+        ).convert("RGBA")
+        width, height = art.size
+        radius = width / 3  # Android guarantees the inner two thirds
+
+        safe = Image.new("L", art.size, 0)
+        ImageDraw.Draw(safe).ellipse(
+            [
+                width / 2 - radius,
+                height / 2 - radius,
+                width / 2 + radius,
+                height / 2 + radius,
+            ],
+            fill=255,
+        )
+        drawn = art.getchannel("A").point(lambda value: 255 if value > 8 else 0)
+        outside = sum(
+            1
+            for pixel, mask in zip(drawn.getdata(), safe.getdata())
+            if pixel and not mask
+        )
+        assert outside == 0, f"{name}: {outside} pixels fall outside the mask"

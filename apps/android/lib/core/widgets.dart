@@ -2,31 +2,6 @@ import 'responsive.dart';
 import 'theme.dart';
 import 'package:flutter/material.dart';
 
-class PranaLogo extends StatelessWidget {
-  const PranaLogo.mark({super.key, this.size = 52, this.color})
-    : lockup = false;
-
-  const PranaLogo.lockup({super.key, this.size = 156})
-    : lockup = true,
-      color = null;
-
-  final double size;
-  final bool lockup;
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) => Image.asset(
-    lockup ? 'assets/logo_lockup.png' : 'assets/logo_mark.png',
-    key: ValueKey(lockup ? 'prana-logo-lockup' : 'prana-logo-mark'),
-    width: size,
-    height: lockup ? size * .72 : size,
-    fit: BoxFit.contain,
-    filterQuality: FilterQuality.high,
-    color: color,
-    colorBlendMode: color == null ? null : BlendMode.srcIn,
-  );
-}
-
 class PranaPageHeader extends StatelessWidget implements PreferredSizeWidget {
   const PranaPageHeader({
     super.key,
@@ -46,8 +21,6 @@ class PranaPageHeader extends StatelessWidget implements PreferredSizeWidget {
     titleSpacing: 16,
     title: Row(
       children: [
-        const PranaLogo.mark(size: 38, color: Colors.white),
-        const SizedBox(width: 12),
         Flexible(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
