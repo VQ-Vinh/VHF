@@ -252,16 +252,17 @@ jobs:
         run: flutter pub get --enforce-lockfile
       - name: Stage a build configuration
         # Fake but well-formed Firebase values. main() awaits
-        # Firebase.initializeApp before runApp, and the SDK rejects a malformed
-        # appId, so config/staging.example.json's "replace-me" kills the app on
-        # launch. Nothing here signs in, so the values need shape, not truth.
+        # Firebase.initializeApp before runApp and FirebaseInstallations
+        # validates the options, so config/staging.example.json's "replace-me"
+        # kills the app on launch. The API key must be exactly 39 characters;
+        # nothing here signs in, so the values need shape, not truth.
         run: |
           cat > config/staging.json <<'JSON'
           {
             "FLAVOR": "staging",
             "API_URL": "https://prana-api-owuilj5d4a-uc.a.run.app",
-            "FIREBASE_API_KEY": "AIzaSyA0000000000000000000000000000000",
-            "FIREBASE_APP_ID": "1:000000000000:ios:0000000000000000000000",
+            "FIREBASE_API_KEY": "AIzaSyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "FIREBASE_APP_ID": "1:000000000000:ios:0000000000000000",
             "FIREBASE_MESSAGING_SENDER_ID": "000000000000",
             "FIREBASE_PROJECT_ID": "prana-elex-ci",
             "FIREBASE_STORAGE_BUCKET": "prana-elex-ci.appspot.com",
