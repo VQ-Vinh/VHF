@@ -286,10 +286,11 @@ jobs:
           xcrun simctl bootstatus "$device" -b
           xcrun simctl install "$device" build/ios/iphonesimulator/Runner.app
           mkdir -p "$RUNNER_TEMP/ios"
-          # --console-pty keeps the app's stdout, which carries the Dart error
-          # when startup throws. simctl launch returns the moment the process
-          # spawns, so its exit status says nothing about whether the app lived.
-          nohup xcrun simctl launch --console-pty "$device" com.dlv.pranaMobile > "$RUNNER_TEMP/ios/app-console.log" 2>&1 &
+          # Plain launch, detached from this step. --console-pty ties the app's
+          # lifetime to a background process the runner reaps when the step
+          # ends, which killed the app on its own. Diagnostics come from the
+          # simulator's own log instead.
+          xcrun simctl launch "$device" com.dlv.pranaMobile
       - name: Capture what the app renders
         run: |
           set -Eeuo pipefail
@@ -307,8 +308,8 @@ jobs:
             echo "The app is still running."
           else
             echo "::error::The app exited during launch; the screenshots show the simulator home screen."
-            echo "--- app console ---"
-            cat "$RUNNER_TEMP/ios/app-console.log" || true
+            echo "--- simulator log for Runner ---"
+            xcrun simctl spawn "${{ steps.sim.outputs.device }}" log show               --last 5m --style compact               --predicate 'process == "Runner"' 2>&1               | tail -80 | tee "$RUNNER_TEMP/ios/app-log.txt"
             exit 1
           fi
       - name: Package the simulator build

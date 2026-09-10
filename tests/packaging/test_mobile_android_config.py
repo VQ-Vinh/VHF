@@ -57,15 +57,15 @@ def test_mobile_launcher_and_splash_render_the_mark_from_the_vector() -> None:
     assert '@drawable/ic_launcher_foreground' in adaptive_icon
     assert '@drawable/launch_background' in styles
     assert '@drawable/splash_logo' in android_12_styles
-    # Every asset is rendered from the vector master, never resized from a
-    # smaller raster.
-    assert "prana-elex-logo.svg" in generator
-    assert Path("tools/packaging/brand/prana-elex-logo.svg").is_file()
-    # Launcher and splash take the mark alone. The wordmark is illegible below
-    # roughly 128 px, so a lockup shrunk into a 48 px icon reads as a smudge.
-    assert 'render(mark, 432, 432, content_width=252)' in generator
-    assert 'f"{res}/mipmap-{bucket}/ic_launcher.png"' in generator
-    assert "render(lockup" not in generator[generator.index("Android launcher") :]
+    # Every asset is rendered from the brand master, never resized from a
+    # smaller raster or from another asset.
+    assert "prana-elex-logo.png" in generator
+    assert Path("tools/packaging/brand/prana-elex-logo.png").is_file()
+    # Launcher, splash and app icons carry the wordmark, not the mark alone.
+    launcher = generator[generator.index("Android launcher") :]
+    assert "render(lockup, 432, 432, content_width=252)" in launcher
+    assert 'f"{res}/mipmap-{bucket}/ic_launcher.png"' in launcher
+    assert "render(mark," not in launcher[: launcher.index("Web Admin")]
 
 
 def test_mobile_apk_build_wrapper_uses_flavor_config() -> None:
