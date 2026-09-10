@@ -101,9 +101,13 @@ def main() -> None:
 
     print("Android launcher and splash")
     res = "apps/android/android/app/src/main/res"
-    # 252 of 432 keeps the artwork inside the adaptive icon's safe zone.
-    write(render(lockup, 432, 432, content_width=252), f"{res}/drawable/ic_launcher_foreground.png")
-    write(render(lockup, 432, 432, content_width=252), f"{res}/drawable/splash_logo.png")
+    # Adaptive icons and the Android 12 splash both guarantee only the inner
+    # circle, two thirds of the canvas across. The wordmark sits at the bottom
+    # of the lockup, where that circle is at its narrowest, so a lockup wider
+    # than the inscribed rectangle loses its first and last letter -- 252 cost
+    # "P" and "X". 208 keeps the whole lockup inside the mask.
+    write(render(lockup, 432, 432, content_width=208), f"{res}/drawable/ic_launcher_foreground.png")
+    write(render(lockup, 432, 432, content_width=208), f"{res}/drawable/splash_logo.png")
     for bucket, size in (
         ("mdpi", 48), ("hdpi", 72), ("xhdpi", 96), ("xxhdpi", 144), ("xxxhdpi", 192),
     ):
