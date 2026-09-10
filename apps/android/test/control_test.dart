@@ -8,7 +8,11 @@ import 'package:prana_mobile/app/di/telemetry_providers.dart';
 import 'package:prana_mobile/core/theme.dart';
 import 'package:prana_mobile/features/station/control/application/steering_state.dart';
 import 'package:prana_mobile/features/station/control/presentation/control_tab.dart';
+import 'package:prana_mobile/features/station/control/presentation/widgets/control_widget.dart';
+import 'package:prana_mobile/features/station/control/presentation/widgets/position_widget.dart';
+import 'package:prana_mobile/features/station/control/presentation/widgets/rudder_scale.dart';
 import 'package:prana_mobile/features/station/control/presentation/widgets/steering_wheel.dart';
+import 'package:prana_mobile/telemetry/domain/telemetry_repository.dart';
 import 'dashboard_test.dart' show TestTelemetry;
 
 void main() {
@@ -37,6 +41,71 @@ void main() {
       expect(state.angle, 0);
     },
   );
+
+  test('the rudder scale clamps to the range the state can reach', () {
+    expect(RudderScale.fraction(0), 0);
+    expect(RudderScale.fraction(90), closeTo(0.5, 1e-9));
+    expect(RudderScale.fraction(-180), -1);
+    // SteeringState clamps at 180, but the bar must stay on the bar even if a
+    // caller ever hands it more.
+    expect(RudderScale.fraction(400), 1);
+    expect(RudderScale.fraction(-400), -1);
+  });
+
+  testWidgets('position reads hemispheres off the sign, not a minus sign', (
+    tester,
+  ) async {
+    Future<void> show(TelemetryPosition? position) => tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: PranaTheme.light(),
+        home: Scaffold(
+          body: PositionWidget(
+            position: position,
+            timestamp: DateTime.utc(2026, 9, 10, 22, 52, 34),
+            showSource: false,
+          ),
+        ),
+      ),
+    );
+
+    await show(TelemetryPosition(10.76972, 106.66188));
+    expect(find.text('10.76972°  N'), findsOneWidget);
+    expect(find.text('106.66188°  E'), findsOneWidget);
+
+    await show(TelemetryPosition(-33.86880, -151.20930));
+    expect(find.text('33.86880°  S'), findsOneWidget);
+    expect(find.text('151.20930°  W'), findsOneWidget);
+    expect(find.textContaining('-'), findsNothing);
+
+    await show(null);
+    expect(find.text('—'), findsNWidgets(2));
+  });
+
+  testWidgets('the mode selector reports the mode that was tapped', (
+    tester,
+  ) async {
+    final tapped = <MockControlMode>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: PranaTheme.light(),
+        locale: const Locale('en'),
+        home: Scaffold(
+          body: ControlWidget(
+            mode: MockControlMode.manual,
+            onChanged: tapped.add,
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Auto'));
+    await tester.tap(find.text('Manual'));
+    expect(tapped, [MockControlMode.auto, MockControlMode.manual]);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('wheel drag and buttons retain angle, deactivate on tab leave', (
     tester,

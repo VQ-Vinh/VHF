@@ -42,7 +42,7 @@ class _ControlTabState extends ConsumerState<ControlTab> {
           mode: steering.mode,
           onChanged: (mode) => setState(() => steering.selectMode(mode)),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 24),
         SteeringWheel(
           state: steering,
           active: widget.active,
@@ -50,26 +50,24 @@ class _ControlTabState extends ConsumerState<ControlTab> {
         ),
       ],
     );
-    final map = Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(telemetryLabel(AppLocalizations.of(context), state.freshness)),
-        if (sample != null)
-          Text(DateFormat.Hms().format(sample.timestamp.toLocal())),
-        if (state.freshness == TelemetryFreshness.error)
-          TextButton(
-            onPressed: controller.retry,
-            child: Text(AppLocalizations.of(context).retry),
-          ),
-        MapWidget(position: sample?.position, heading: sample?.headingDegrees),
-      ],
+    final map = MapWidget(
+      position: sample?.position,
+      heading: sample?.headingDegrees,
+      track: [for (final entry in state.history) entry.position],
     );
     return Column(
+      // Stretch, or the position strip shrinks to its own text and floats in
+      // the middle of the screen while the cards below run edge to edge.
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
           key: const ValueKey('control-position'),
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: PositionWidget(position: sample?.position, showSource: false),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: PositionWidget(
+            position: sample?.position,
+            timestamp: sample?.timestamp,
+            showSource: false,
+          ),
         ),
         Expanded(
           child: LayoutBuilder(
@@ -79,25 +77,92 @@ class _ControlTabState extends ConsumerState<ControlTab> {
                   MediaQuery.textScalerOf(context).scale(840);
               return SingleChildScrollView(
                 key: const PageStorageKey('control-scroll'),
-                padding: const EdgeInsets.all(16),
-                child:
-                    wide
-                        ? Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(flex: 2, child: map),
-                            const SizedBox(width: 24),
-                            Expanded(child: controls),
-                          ],
-                        )
-                        : Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [map, const SizedBox(height: 24), controls],
-                        ),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (wide)
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(flex: 2, child: map),
+                          const SizedBox(width: 24),
+                          Expanded(child: controls),
+                        ],
+                      )
+                    else ...[
+                      map,
+                      const SizedBox(height: 24),
+                      controls,
+                    ],
+                    const SizedBox(height: 20),
+                    _TelemetryFooter(
+                      freshness: state.freshness,
+                      timestamp: sample?.timestamp,
+                      onRetry: controller.retry,
+                    ),
+                  ],
+                ),
               );
             },
           ),
         ),
+      ],
+    );
+  }
+}
+
+/// Where the readings come from and when they last arrived.
+///
+/// One line at the foot of the tab rather than three stray Texts above the
+/// chart, which is where they used to sit and where they competed with the
+/// position for the top of the screen.
+class _TelemetryFooter extends StatelessWidget {
+  const _TelemetryFooter({
+    required this.freshness,
+    required this.timestamp,
+    required this.onRetry,
+  });
+  final TelemetryFreshness freshness;
+  final DateTime? timestamp;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final style = theme.textTheme.labelSmall?.copyWith(
+      letterSpacing: 0.5,
+      color: colors.onSurfaceVariant,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Divider(height: 1, thickness: 1, color: colors.outlineVariant),
+        const SizedBox(height: 10),
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 12,
+          runSpacing: 4,
+          children: [
+            Text(telemetryLabel(l10n, freshness), style: style),
+            if (timestamp != null)
+              Text(
+                DateFormat.Hms().format(timestamp!.toLocal()),
+                style: style?.copyWith(
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+          ],
+        ),
+        if (freshness == TelemetryFreshness.error)
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: TextButton(onPressed: onRetry, child: Text(l10n.retry)),
+          ),
       ],
     );
   }
