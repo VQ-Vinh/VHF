@@ -109,6 +109,29 @@ Trước khi bật production validation mới, apply Terraform staging để pr
 `prana-release-reader` nhận quyền tối thiểu `roles/run.viewer`; quyền này chỉ dùng
 để đối chiếu digest của revision Cloud Run staging.
 
+## Vá pub lock cho PR Dependabot
+
+Dependabot sửa `apps/android/pubspec.yaml` nhưng commit kèm `pubspec.lock` mà
+một lần resolve mới không tái tạo được, nên mọi bump Flutter đều đỏ ở
+`flutter pub get --enforce-lockfile` với `Would change N dependencies`. Gộp
+nhóm hằng tuần chỉ giảm số PR phải sửa tay, không sửa được lock.
+
+Workflow `Dependabot pub lock` chạy trên PR đụng tới hai file đó. Nó chỉ nhận
+nhánh của `dependabot[bot]` **trong chính repository này**, nên không bao giờ
+checkout mã từ fork. Nếu lock đã hợp lệ thì workflow không làm gì. Nếu không,
+nó chạy `flutter pub get`, **từ chối commit nếu có bất kỳ file nào khác
+`apps/android/pubspec.lock` thay đổi**, rồi push commit vá lên nhánh PR.
+
+Push bằng `GITHUB_TOKEN` không kích hoạt workflow run mới, nên required gate sẽ
+không báo cáo trên commit vừa vá. Tạo **Dependabot secret** `PUB_LOCK_TOKEN`
+chứa token có quyền `contents: write` để CI tự chạy lại; thiếu nó thì lock vẫn
+được vá nhưng PR cần một lần đẩy hoặc mở lại thủ công. Đây phải là Dependabot
+secret, không phải Actions secret — workflow do Dependabot kích hoạt chỉ đọc
+được nhóm secret đó.
+
+Vòng lặp tự dừng: sau khi vá, lần chạy kế tiếp thấy `--enforce-lockfile` pass
+và không commit gì nữa.
+
 ## Branch protection
 
 Sau khi workflow CI xuất hiện trên GitHub, bảo vệ `main`:
