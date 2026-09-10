@@ -520,6 +520,7 @@ tbody tr:last-child td { border-bottom: 0; }
 .audit-entry pre { max-height: 420px; margin: 0; padding: 16px 18px; overflow: auto; background: var(--surface-muted); border-top: 1px solid var(--divider); white-space: pre-wrap; overflow-wrap: anywhere; }
 .error-page { display: grid; min-height: 100vh; place-items: center; padding: 24px; }
 .error-card { width: min(38rem, 100%); padding: clamp(16px, 4vw, 40px); text-align: center; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); }
+.error-mark { width: 56px; height: 56px; margin-bottom: 8px; object-fit: contain; }
 .error-code { color: var(--accent); font-size: 52px; font-weight: 800; }
 .error-card h1 { margin: 10px 0; }
 .error-card p { color: var(--text-secondary); }

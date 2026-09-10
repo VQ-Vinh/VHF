@@ -138,7 +138,7 @@ class AdminUiTests(unittest.TestCase):
         english_html = english.body.decode()
         self.assertIn("Operations overview", english_html)
         self.assertIn(
-            'href="/static/admin.css?v=responsive-1"',
+            'href="/static/admin.css?v=brand-1"',
             english_html,
         )
         self.assertIn('src="/static/logo_mark.png"', english_html)
