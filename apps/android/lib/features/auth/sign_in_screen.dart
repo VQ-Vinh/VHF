@@ -4,7 +4,7 @@ import 'package:prana_mobile/app/di/auth_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:prana_mobile/core/widgets.dart';
+import 'package:prana_mobile/core/brand.dart';
 import 'package:prana_mobile/data/auth/authentication_service.dart';
 import 'package:prana_mobile/features/auth/auth_validation.dart';
 

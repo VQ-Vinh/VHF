@@ -8,7 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:prana_mobile/core/theme.dart';
-import 'package:prana_mobile/core/widgets.dart';
+import 'package:prana_mobile/core/brand.dart';
 import 'package:prana_mobile/data/auth/authentication_service.dart';
 
 class VerifyEmailScreen extends ConsumerStatefulWidget {
