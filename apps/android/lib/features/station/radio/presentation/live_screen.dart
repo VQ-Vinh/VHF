@@ -6,13 +6,14 @@ import 'package:prana_mobile/app/di/radio_providers.dart';
 import 'package:prana_mobile/app/di/station_providers.dart';
 import 'package:prana_mobile/app/di/auth_providers.dart';
 import 'package:prana_mobile/domain/radio/results.dart';
+import 'package:prana_mobile/domain/radio/vhf_channel.dart';
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:prana_mobile/core/languages.dart';
-import 'package:prana_mobile/core/theme.dart';
 import 'package:prana_mobile/core/widgets.dart';
 import 'package:prana_mobile/domain/station/station.dart';
 import 'package:prana_mobile/data/network/prana_api.dart';
@@ -22,6 +23,10 @@ import 'package:prana_mobile/domain/radio/tx/tx_phase.dart';
 import 'package:prana_mobile/features/station/radio/presentation/widgets/tx/tx_live_dock.dart';
 import 'package:prana_mobile/features/station/radio/presentation/widgets/tx/tx_review_card.dart';
 import 'package:prana_mobile/runtime/vhf/live_controller.dart';
+import 'package:prana_mobile/features/station/radio/presentation/widgets/console_language_menu.dart';
+import 'package:prana_mobile/features/station/radio/presentation/widgets/console_palette.dart';
+import 'package:prana_mobile/features/station/radio/presentation/widgets/live_waveform.dart';
+import 'package:prana_mobile/features/station/radio/presentation/widgets/tx/ptt_instrument.dart';
 
 part 'widgets/live_feed.dart';
 part 'widgets/language_strip.dart';
@@ -217,11 +222,6 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
           liveUxControllerProvider(widget.stationId),
         );
         final ux = controller.state;
-        final stationDisplayState = liveStationDisplayState(
-          station: station,
-          online: online,
-          ux: ux,
-        );
         final commandFailed =
             station.commandError != null &&
             station.commandFailedGeneration >= station.desired.generation;
@@ -253,93 +253,154 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
           ref.invalidate(liveResultsProvider(resultsKey));
         }
 
-        final body = SingleChildScrollView(
-          key: const PageStorageKey('live-scroll'),
-          child: Column(
-            children: [
-              LanguageStrip(
-                detectedLanguage: detectedLanguage,
-                targetLanguage: targetLanguage,
-                enabled: online && !ux.busy,
-                onChanged: (value) => controller.setLanguage(station, value),
-              ),
-              _QuotaBanner(account: ref.watch(accountProvider)),
-              if (station.retrying)
-                _RetryingBanner(attempt: station.retryAttempt),
-              if (ux.error != null)
-                _CommandErrorBanner(
-                  error: localizedServiceMessage(context, ux.error!),
-                  onDismiss: controller.dismissError,
-                  showDismiss: !commandFailed,
-                  actionLabel:
-                      commandFailed ? AppLocalizations.of(context).retry : null,
-                  onAction:
-                      commandFailed && online && !controller.state.busy
-                          ? () => controller.retry(station)
-                          : null,
-                  secondaryActionLabel:
-                      commandFailed ? AppLocalizations.of(context).stop : null,
-                  onSecondaryAction:
-                      commandFailed && online && !controller.state.busy
-                          ? () => controller.setRunning(station, false)
-                          : null,
+        // What the receive side is doing, for the instrument and the idle
+        // waveform. Only a reachable, running Station is listening.
+        final channelState =
+            !online || !station.desired.running
+                ? PttChannelState.idle
+                : station.captureState == 'recording'
+                ? PttChannelState.receiving
+                : station.captureState == 'listening'
+                ? PttChannelState.listening
+                : PttChannelState.idle;
+        final header = LiveHeader(
+          embedded: widget.embedded,
+          toolbarHeight: MediaQuery.textScalerOf(
+            context,
+          ).scale(44).clamp(64, 120),
+          station: station,
+          online: online,
+          ux: ux,
+          txController: _txController,
+          channel: ref.watch(vhfChannelProvider),
+          onToggle:
+              canToggleLiveStation(
+                    online: online,
+                    running: station.desired.running,
+                    busy: ux.busy,
+                    commandPending: station.commandPending,
+                    commandFailed: commandFailed,
+                  )
+                  ? () =>
+                      controller.setRunning(station, !station.desired.running)
+                  : null,
+        );
+        final palette = ConsolePalette.of(context);
+        final body = ColoredBox(
+          color: palette.background,
+          child: LayoutBuilder(
+            builder:
+                (context, viewport) => SingleChildScrollView(
+                  key: const PageStorageKey('live-scroll'),
+                  // At least as tall as the viewport, so on a tall screen the
+                  // dock rests on the bottom edge and the talk key floats in
+                  // the space between; on a short one it all just scrolls.
+                  // One scroll owner, no pinned dock: pinned, the header and
+                  // dock alone overflow a landscape phone.
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(minHeight: viewport.maxHeight),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // In the scroll, not the app bar slot. Inside the
+                            // workspace at 320dp and text scale 2.0 the tab has
+                            // about 300dp, and a pinned header that tall left
+                            // no room for anything, overflowing by 49dp.
+                            header,
+                            LanguageStrip(
+                              detectedLanguage: detectedLanguage,
+                              targetLanguage: targetLanguage,
+                              enabled: online && !ux.busy,
+                              onChanged:
+                                  (value) =>
+                                      controller.setLanguage(station, value),
+                            ),
+                            _QuotaBanner(account: ref.watch(accountProvider)),
+                            if (station.retrying)
+                              _RetryingBanner(attempt: station.retryAttempt),
+                            if (ux.error != null)
+                              _CommandErrorBanner(
+                                error: localizedServiceMessage(
+                                  context,
+                                  ux.error!,
+                                ),
+                                onDismiss: controller.dismissError,
+                                showDismiss: !commandFailed,
+                                actionLabel:
+                                    commandFailed
+                                        ? AppLocalizations.of(context).retry
+                                        : null,
+                                onAction:
+                                    commandFailed &&
+                                            online &&
+                                            !controller.state.busy
+                                        ? () => controller.retry(station)
+                                        : null,
+                                secondaryActionLabel:
+                                    commandFailed
+                                        ? AppLocalizations.of(context).stop
+                                        : null,
+                                onSecondaryAction:
+                                    commandFailed &&
+                                            online &&
+                                            !controller.state.busy
+                                        ? () => controller.setRunning(
+                                          station,
+                                          false,
+                                        )
+                                        : null,
+                              ),
+                            if (showProcessingError)
+                              _CommandErrorBanner(
+                                error: localizedServiceMessage(
+                                  context,
+                                  station.lastError!,
+                                ),
+                                onDismiss:
+                                    () => setState(
+                                      () =>
+                                          _dismissedProcessingError =
+                                              processingErrorKey,
+                                    ),
+                                actionLabel: AppLocalizations.of(context).retry,
+                                onAction:
+                                    online && !ux.busy && !station.retrying
+                                        ? () => controller.retry(station)
+                                        : null,
+                              ),
+                            LiveFeedHeader(onHistory: _showHistory),
+                            _TranslationFeed(
+                              value: results,
+                              onRetry: retryConnection,
+                              listening: channelState != PttChannelState.idle,
+                            ),
+                          ],
+                        ),
+                        TxTalkPad(
+                          controller: _txController,
+                          onReview: _showTxReview,
+                          onConnectionRetry: retryConnection,
+                          channelState: channelState,
+                        ),
+                        TxLiveDock(
+                          controller: _txController,
+                          stationOnline: online,
+                          apiOnline: apiOnline,
+                          now: now,
+                          onReview: _showTxReview,
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              if (showProcessingError)
-                _CommandErrorBanner(
-                  error: localizedServiceMessage(context, station.lastError!),
-                  onDismiss:
-                      () => setState(
-                        () => _dismissedProcessingError = processingErrorKey,
-                      ),
-                  actionLabel: AppLocalizations.of(context).retry,
-                  onAction:
-                      online && !ux.busy && !station.retrying
-                          ? () => controller.retry(station)
-                          : null,
-                ),
-              LiveFeedHeader(onHistory: _showHistory),
-              _TranslationFeed(value: results, onRetry: retryConnection),
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                child: TxTalkPad(
-                  controller: _txController,
-                  onReview: _showTxReview,
-                  onConnectionRetry: retryConnection,
-                ),
-              ),
-              TxLiveDock(
-                controller: _txController,
-                stationState: stationDisplayState,
-                stationOnline: online,
-                apiOnline: apiOnline,
-              ),
-            ],
           ),
         );
-        return ResponsiveScaffold(
-          appBar: LiveHeader(
-            embedded: widget.embedded,
-            toolbarHeight: MediaQuery.textScalerOf(
-              context,
-            ).scale(44).clamp(64, 120),
-            station: station,
-            online: online,
-            ux: ux,
-            txController: _txController,
-            onToggle:
-                canToggleLiveStation(
-                      online: online,
-                      running: station.desired.running,
-                      busy: ux.busy,
-                      commandPending: station.commandPending,
-                      commandFailed: commandFailed,
-                    )
-                    ? () =>
-                        controller.setRunning(station, !station.desired.running)
-                    : null,
-          ),
-          body: body,
-        );
+        return ResponsiveScaffold(body: body);
       },
     );
   }

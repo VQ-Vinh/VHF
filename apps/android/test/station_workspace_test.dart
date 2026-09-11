@@ -501,6 +501,48 @@ void main() {
                     isNull,
                     reason: '$tab / $size / $scale / $locale',
                   );
+                  if (tab == 'dashboard' || tab == 'control' || tab == 'live') {
+                    final where = 'tabs on $tab / $size / $scale / $locale';
+                    final tabs = [
+                      for (final key in const ['dashboard', 'control', 'live'])
+                        tester.getRect(
+                          find.byKey(ValueKey('station-tab-$key')),
+                        ),
+                    ];
+                    final frame = tester.getRect(
+                      find.byType(IndexedStack).first,
+                    );
+                    final span = tabs.last.right - tabs.first.left;
+                    // Equal tabs that never stop short of the frame's right
+                    // edge; when they fit, they run edge to edge exactly.
+                    expect(
+                      tabs[1].width,
+                      closeTo(tabs[0].width, .5),
+                      reason: where,
+                    );
+                    expect(
+                      tabs[2].width,
+                      closeTo(tabs[0].width, .5),
+                      reason: where,
+                    );
+                    expect(
+                      span,
+                      greaterThanOrEqualTo(frame.width - .5),
+                      reason: where,
+                    );
+                    if (span <= frame.width + .5) {
+                      expect(
+                        tabs.first.left,
+                        closeTo(frame.left, .5),
+                        reason: where,
+                      );
+                      expect(
+                        tabs.last.right,
+                        closeTo(frame.right, .5),
+                        reason: where,
+                      );
+                    }
+                  }
                 }
               }
             }

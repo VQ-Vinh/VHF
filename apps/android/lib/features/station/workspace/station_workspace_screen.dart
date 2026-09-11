@@ -198,51 +198,74 @@ class _StationWorkspaceState extends ConsumerState<StationWorkspaceScreen> {
         body: Column(
           children: [
             if (primary != null)
-              Material(
-                color: Theme.of(context).colorScheme.surface,
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      for (final tab in StationTab.values)
-                        Semantics(
-                          selected: primary == tab,
-                          button: true,
-                          child: InkWell(
-                            key: ValueKey('station-tab-${tab.name}'),
-                            onTap: () => _select(tab.page),
-                            child: Container(
-                              constraints: const BoxConstraints(minHeight: 48),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 20,
-                                vertical: 14,
-                              ),
-                              decoration: BoxDecoration(
-                                border: Border(
-                                  bottom: BorderSide(
-                                    width: 3,
-                                    color:
-                                        primary == tab
-                                            ? Theme.of(
-                                              context,
-                                            ).colorScheme.primary
-                                            : Colors.transparent,
-                                  ),
-                                ),
-                              ),
-                              child: Text(
-                                labels[tab.index],
-                                style: TextStyle(
-                                  fontWeight:
+              SizedBox(
+                width: double.infinity,
+                child: Material(
+                  color: Theme.of(context).colorScheme.surface,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      Widget tabFor(StationTab tab) => Semantics(
+                        selected: primary == tab,
+                        button: true,
+                        child: InkWell(
+                          key: ValueKey('station-tab-${tab.name}'),
+                          onTap: () => _select(tab.page),
+                          child: Container(
+                            constraints: const BoxConstraints(minHeight: 48),
+                            alignment: Alignment.center,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 14,
+                            ),
+                            decoration: BoxDecoration(
+                              border: Border(
+                                bottom: BorderSide(
+                                  width: 3,
+                                  color:
                                       primary == tab
-                                          ? FontWeight.w800
-                                          : FontWeight.w500,
+                                          ? Theme.of(
+                                            context,
+                                          ).colorScheme.primary
+                                          : Colors.transparent,
                                 ),
+                              ),
+                            ),
+                            child: Text(
+                              labels[tab.index],
+                              style: TextStyle(
+                                fontWeight:
+                                    primary == tab
+                                        ? FontWeight.w800
+                                        : FontWeight.w500,
                               ),
                             ),
                           ),
                         ),
-                    ],
+                      );
+
+                      // Equal tabs that reach both edges. A flex row's
+                      // intrinsic width is its widest child times the count,
+                      // so this is the frame's width while the labels fit and
+                      // wider only when they cannot, under a large text scale
+                      // on a narrow phone, where the strip scrolls rather than
+                      // clip. Either way it never stops short of the edge.
+                      return SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            minWidth: constraints.maxWidth,
+                          ),
+                          child: IntrinsicWidth(
+                            child: Row(
+                              children: [
+                                for (final tab in StationTab.values)
+                                  Expanded(child: tabFor(tab)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
               ),

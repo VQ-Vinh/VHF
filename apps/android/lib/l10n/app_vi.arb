@@ -238,5 +238,10 @@
   "txDiscard": "Hủy và rời đi",
   "countryLanguageUnavailable": "Hiện chỉ có giao diện tiếng Anh cho quốc gia này.",
   "darkMode": "Chế độ tối",
-  "darkModeHint": "Dùng giao diện tối trong toàn bộ ứng dụng"
+  "darkModeHint": "Dùng giao diện tối trong toàn bộ ứng dụng",
+  "liveStartCapture": "BẮT ĐẦU THU",
+  "liveStopCapture": "DỪNG THU",
+  "liveChannel": "Kênh",
+  "liveTransmission": "Truyền trực tiếp",
+  "simulatedShort": "MÔ PHỎNG"
 }

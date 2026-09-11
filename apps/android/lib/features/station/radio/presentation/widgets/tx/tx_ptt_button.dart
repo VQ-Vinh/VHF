@@ -1,8 +1,13 @@
 import 'package:prana_mobile/l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 
-import 'package:prana_mobile/core/theme.dart';
+import 'package:prana_mobile/features/station/radio/presentation/widgets/console_palette.dart';
 
+/// The hold-to-talk key at the centre of the PTT instrument.
+///
+/// Holding records the voice to be translated; nothing goes on air until the
+/// draft has been reviewed and confirmed. So the held label says to release,
+/// not that the operator is on air, which on a radio would be a false claim.
 class TxPttButton extends StatefulWidget {
   const TxPttButton({
     super.key,
@@ -29,139 +34,152 @@ class TxPttButton extends StatefulWidget {
 
 class _TxPttButtonState extends State<TxPttButton>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _pulseController;
-  late final Animation<double> _pulse;
-
-  @override
-  void initState() {
-    super.initState();
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 850),
-    );
-    _pulse = Tween<double>(begin: 1, end: 1.08).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
-    );
-  }
+  late final AnimationController _glow = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 850),
+  );
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _syncPulse();
+    _syncGlow();
   }
 
   @override
   void didUpdateWidget(covariant TxPttButton oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.recording != widget.recording) _syncPulse();
+    if (oldWidget.recording != widget.recording) _syncGlow();
   }
 
-  void _syncPulse() {
+  void _syncGlow() {
     final reduceMotion =
         MediaQuery.maybeOf(context)?.disableAnimations ?? false;
     if (widget.recording && !reduceMotion) {
-      if (!_pulseController.isAnimating) {
-        _pulseController.repeat(reverse: true);
-      }
+      if (!_glow.isAnimating) _glow.repeat(reverse: true);
     } else {
-      _pulseController.stop();
-      _pulseController.value = 0;
+      _glow.stop();
+      _glow.value = 0;
     }
   }
 
   @override
   void dispose() {
-    _pulseController.dispose();
+    _glow.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final color =
-        widget.recording ? const Color(0xFFC33F4F) : PranaTheme.brandBlue;
+    final l10n = AppLocalizations.of(context);
+    final palette = ConsolePalette.of(context);
+    final held = widget.recording;
+    final enabled = widget.enabled;
+    final fill =
+        held
+            ? palette.transmit
+            : enabled
+            ? palette.panel
+            : palette.hairline;
+    final ring =
+        held
+            ? palette.transmit.withValues(alpha: .35)
+            : enabled
+            ? palette.accent
+            : palette.muted.withValues(alpha: .5);
+    final ink =
+        held
+            ? palette.onTransmit
+            : enabled
+            ? palette.ink
+            : palette.muted;
+    final labelSize = (widget.diameter * .075).clamp(10.0, 14.0);
     return Semantics(
       button: true,
-      enabled: widget.enabled,
-      liveRegion: widget.recording,
-      label:
-          (widget.recording
-              ? AppLocalizations.of(context).txRecording
-              : AppLocalizations.of(context).txHoldToTalk),
-      hint: AppLocalizations.of(
-        context,
-      ).txMaxDuration(widget.maximumSeconds.toString()),
+      enabled: enabled,
+      liveRegion: held,
+      label: held ? l10n.txRecording : l10n.txHoldToTalk,
+      hint: l10n.txMaxDuration(widget.maximumSeconds.toString()),
       child: Listener(
         key: const ValueKey('tx-ptt-button'),
-        onPointerDown: widget.enabled ? (_) => widget.onHoldStart() : null,
-        onPointerUp:
-            widget.enabled || widget.recording
-                ? (_) => widget.onHoldEnd()
-                : null,
-        onPointerCancel:
-            widget.enabled || widget.recording
-                ? (_) => widget.onHoldEnd()
-                : null,
-        child: ScaleTransition(
-          scale: _pulse,
-          // Resize the constraints immediately; only decoration animates. An
-          // interpolated diameter can briefly clip newly scaled text on resize.
-          child: SizedBox(
-            width: widget.diameter,
-            height: widget.diameter,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 160),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: widget.enabled ? color : const Color(0xFFB8C7CB),
-                border: Border.all(
-                  color:
-                      widget.enabled
-                          ? color.withValues(alpha: .22)
-                          : Colors.white,
-                  width: 10,
-                ),
-                boxShadow:
-                    widget.enabled
-                        ? [
-                          BoxShadow(
-                            color: color.withValues(alpha: .2),
-                            blurRadius: widget.recording ? 14 : 24,
-                            spreadRadius: widget.recording ? 4 : 5,
-                          ),
-                        ]
-                        : null,
-              ),
-              // Mic centred in the circle with the label directly under it; the
-              // padding keeps a long label off the curved edge.
-              child: Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: widget.diameter * .12,
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      widget.recording ? Icons.mic : Icons.mic_none,
-                      color: Colors.white,
-                      size: widget.diameter * .26,
+        onPointerDown: enabled ? (_) => widget.onHoldStart() : null,
+        onPointerUp: enabled || held ? (_) => widget.onHoldEnd() : null,
+        onPointerCancel: enabled || held ? (_) => widget.onHoldEnd() : null,
+        // Pressed in, like a key under a thumb. A transform, so the layout
+        // size never changes under a held pointer.
+        child: AnimatedScale(
+          scale: held ? .96 : 1,
+          duration: const Duration(milliseconds: 120),
+          child: AnimatedBuilder(
+            animation: _glow,
+            builder:
+                (context, child) => SizedBox(
+                  width: widget.diameter,
+                  height: widget.diameter,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 160),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: fill,
+                      border: Border.all(color: ring, width: held ? 8 : 2),
+                      boxShadow:
+                          held
+                              ? [
+                                BoxShadow(
+                                  color: palette.transmit.withValues(
+                                    alpha: .30 + .30 * _glow.value,
+                                  ),
+                                  blurRadius: 18 + 14 * _glow.value,
+                                  spreadRadius: 2 + 4 * _glow.value,
+                                ),
+                              ]
+                              : enabled
+                              ? [
+                                BoxShadow(
+                                  color: palette.accent.withValues(alpha: .18),
+                                  blurRadius: 18,
+                                ),
+                              ]
+                              : null,
                     ),
-                    SizedBox(height: widget.diameter * .05),
-                    Text(
-                      widget.recording
-                          ? AppLocalizations.of(context).txReleaseToStop
-                          : !widget.enabled && widget.disabledText != null
-                          ? widget.disabledText!
-                          : AppLocalizations.of(context).txHoldToTalk,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: (widget.diameter * .085).clamp(11, 15),
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: .4,
-                      ),
-                    ),
-                  ],
+                    child: child,
+                  ),
                 ),
+            // Mic centred in the circle with the label directly under it; the
+            // padding keeps a long label off the curved edge.
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: widget.diameter * .14),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    held ? Icons.mic : Icons.mic_none,
+                    color: held ? palette.onTransmit : palette.accent,
+                    size: widget.diameter * .22,
+                  ),
+                  SizedBox(height: widget.diameter * .04),
+                  Text(
+                    'TX',
+                    key: const ValueKey('tx-ptt-mode'),
+                    style: consoleState(
+                      palette,
+                      size: labelSize + 2,
+                      color: ink,
+                    ).copyWith(letterSpacing: 2),
+                  ),
+                  Text(
+                    held
+                        ? l10n.txReleaseToStop
+                        : !enabled && widget.disabledText != null
+                        ? widget.disabledText!
+                        : l10n.txHoldToTalk,
+                    textAlign: TextAlign.center,
+                    style: consoleState(
+                      palette,
+                      size: labelSize,
+                      color: ink,
+                    ).copyWith(letterSpacing: 1),
+                  ),
+                ],
               ),
             ),
           ),

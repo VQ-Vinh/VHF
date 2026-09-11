@@ -779,4 +779,19 @@ class AppLocalizationsVi extends AppLocalizations {
 
   @override
   String get darkModeHint => 'Dùng giao diện tối trong toàn bộ ứng dụng';
+
+  @override
+  String get liveStartCapture => 'BẮT ĐẦU THU';
+
+  @override
+  String get liveStopCapture => 'DỪNG THU';
+
+  @override
+  String get liveChannel => 'Kênh';
+
+  @override
+  String get liveTransmission => 'Truyền trực tiếp';
+
+  @override
+  String get simulatedShort => 'MÔ PHỎNG';
 }

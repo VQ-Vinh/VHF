@@ -1531,6 +1531,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Use the dark appearance throughout the app'**
   String get darkModeHint;
+
+  /// No description provided for @liveStartCapture.
+  ///
+  /// In en, this message translates to:
+  /// **'START CAPTURE'**
+  String get liveStartCapture;
+
+  /// No description provided for @liveStopCapture.
+  ///
+  /// In en, this message translates to:
+  /// **'STOP CAPTURE'**
+  String get liveStopCapture;
+
+  /// No description provided for @liveChannel.
+  ///
+  /// In en, this message translates to:
+  /// **'Channel'**
+  String get liveChannel;
+
+  /// No description provided for @liveTransmission.
+  ///
+  /// In en, this message translates to:
+  /// **'Live transmission'**
+  String get liveTransmission;
+
+  /// No description provided for @simulatedShort.
+  ///
+  /// In en, this message translates to:
+  /// **'SIM'**
+  String get simulatedShort;
 }
 
 class _AppLocalizationsDelegate

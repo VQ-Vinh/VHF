@@ -11,6 +11,7 @@ import 'package:prana_mobile/data/radio/flutter_speech_engine.dart';
 import 'package:prana_mobile/domain/radio/source_audio_engine.dart';
 import 'package:prana_mobile/domain/radio/speech_engine.dart';
 import 'package:prana_mobile/domain/radio/results.dart';
+import 'package:prana_mobile/domain/radio/vhf_channel.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 
@@ -123,3 +124,9 @@ final liveUxControllerProvider = Provider.autoDispose
     .family<LiveUxController, String>(
       (ref, stationId) => ref.watch(stationSessionProvider(stationId)).rx,
     );
+
+/// The channel shown on the Live console. Simulated until the Station reports
+/// the radio's own; replace this provider, not its readers, when it does.
+final vhfChannelProvider = Provider<VhfChannel>(
+  (ref) => const VhfChannel(16, simulated: true),
+);

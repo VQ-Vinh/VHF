@@ -304,5 +304,10 @@
   "txDiscard": "Discard and leave",
   "countryLanguageUnavailable": "Only an English interface is currently available for this country.",
   "darkMode": "Dark mode",
-  "darkModeHint": "Use the dark appearance throughout the app"
+  "darkModeHint": "Use the dark appearance throughout the app",
+  "liveStartCapture": "START CAPTURE",
+  "liveStopCapture": "STOP CAPTURE",
+  "liveChannel": "Channel",
+  "liveTransmission": "Live transmission",
+  "simulatedShort": "SIM"
 }
