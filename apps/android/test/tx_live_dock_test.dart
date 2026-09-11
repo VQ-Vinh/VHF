@@ -88,7 +88,6 @@ void main() {
           ),
           TxLiveDock(
             controller: subject,
-            stationState: 'IDLE',
             stationOnline: stationOnline,
             apiOnline: apiOnline,
           ),
@@ -179,7 +178,24 @@ void main() {
 
     expect(subject.state.phase, TxPhase.recording);
     expect(find.byKey(const ValueKey('tx-recording-status')), findsOneWidget);
-    expect(find.textContaining('RECORDING'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('tx-recording-status')),
+        matching: find.textContaining('RECORDING'),
+      ),
+      findsOneWidget,
+    );
+    // Holding records the voice for translation. Nothing is on air until the
+    // draft is reviewed and confirmed, so the strip must not say it is.
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('tx-status-state')),
+        matching: find.text('RECORDING'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('TRANSMITTING'), findsNothing);
+    expect(find.textContaining('ON AIR'), findsNothing);
     expect(find.textContaining('00:00 / 01:00'), findsOneWidget);
     expect(find.text('RX IDLE'), findsNothing);
     expect(find.text('TX'), findsWidgets);

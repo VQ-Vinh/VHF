@@ -2,6 +2,7 @@ import 'package:prana_mobile/l10n/app_localizations.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:prana_mobile/features/station/radio/presentation/widgets/console_palette.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:prana_mobile/core/theme.dart';
@@ -106,6 +107,8 @@ void main() {
     expect(decoration.shape, BoxShape.circle);
 
     expect(find.text('HOLD TO TALK'), findsOneWidget);
+    // The label reads TX · HOLD TO TALK, on two lines.
+    expect(find.byKey(const ValueKey('tx-ptt-mode')), findsOneWidget);
     expect(find.byIcon(Icons.mic_none), findsOneWidget);
     expect(find.textContaining('MAX'), findsNothing);
 
@@ -200,7 +203,6 @@ void main() {
             const Spacer(),
             TxLiveDock(
               controller: subject,
-              stationState: 'IDLE',
               stationOnline: true,
               apiOnline: true,
             ),
@@ -222,23 +224,35 @@ void main() {
       greaterThanOrEqualTo(48),
     );
 
-    final decoration =
-        tester
-                .widget<Container>(
-                  find.descendant(
-                    of: find.byKey(const ValueKey('tx-dock-language')),
-                    matching: find.byType(Container),
-                  ),
-                )
-                .decoration
-            as BoxDecoration;
-    final colors =
-        Theme.of(
-          tester.element(find.byKey(const ValueKey('tx-dock-language'))),
-        ).colorScheme;
-    expect(decoration.color, colors.surface);
-    expect(decoration.borderRadius, BorderRadius.circular(11));
-    expect(decoration.border, Border.all(color: colors.outlineVariant));
+    // One frame for all three language fields: the console field, which has
+    // no box and no radius. The rounded 11dp form card is gone by design.
+    expect(
+      tester.widget(find.byKey(const ValueKey('tx-language-region'))),
+      isA<ConsoleField>(),
+    );
+    expect(
+      tester.widget(find.byKey(const ValueKey('input-language-field'))),
+      isA<ConsoleField>(),
+    );
+    expect(
+      tester.widget(find.byKey(const ValueKey('output-language-field'))),
+      isA<ConsoleField>(),
+    );
+    for (final region in const ['tx-language-region', 'input-language-field']) {
+      final rounded = tester
+          .widgetList<Container>(
+            find.descendant(
+              of: find.byKey(ValueKey(region)),
+              matching: find.byType(Container),
+            ),
+          )
+          .where(
+            (box) =>
+                box.decoration is BoxDecoration &&
+                (box.decoration! as BoxDecoration).borderRadius != null,
+          );
+      expect(rounded, isEmpty, reason: region);
+    }
     expect(tester.takeException(), isNull);
   });
 
@@ -276,7 +290,6 @@ void main() {
                 const Spacer(),
                 TxLiveDock(
                   controller: subject,
-                  stationState: 'IDLE',
                   stationOnline: true,
                   apiOnline: true,
                 ),

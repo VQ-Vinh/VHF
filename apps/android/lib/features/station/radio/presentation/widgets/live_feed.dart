@@ -6,47 +6,44 @@ class LiveFeedHeader extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    final palette = ConsolePalette.of(context);
     final speech = ref.watch(translationSpeechProvider);
     final audioEnabled = speech.autoPlaybackEnabled;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 11, 10, 5),
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: palette.hairline)),
+      ),
+      padding: const EdgeInsets.fromLTRB(14, 4, 4, 4),
       child: Row(
         children: [
           Expanded(
             child: Text(
-              AppLocalizations.of(context).translations.toUpperCase(),
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                letterSpacing: .8,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
+              l10n.liveTransmission.toUpperCase(),
+              style: consoleCaption(palette),
             ),
           ),
           IconButton(
             key: const ValueKey('live-audio-toggle'),
+            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
             tooltip:
-                (audioEnabled
-                    ? AppLocalizations.of(context).disableLiveAudio
-                    : AppLocalizations.of(context).enableLiveAudio),
+                audioEnabled ? l10n.disableLiveAudio : l10n.enableLiveAudio,
             isSelected: audioEnabled,
             onPressed: () => speech.setAutoPlaybackEnabled(!audioEnabled),
             icon: Icon(
               audioEnabled
                   ? Icons.volume_up_outlined
                   : Icons.volume_off_outlined,
-              color:
-                  audioEnabled
-                      ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).colorScheme.onSurfaceVariant,
+              size: 20,
+              color: audioEnabled ? palette.accent : palette.muted,
             ),
           ),
           IconButton(
             key: const ValueKey('live-history-button'),
             constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-            tooltip: AppLocalizations.of(context).history,
+            tooltip: l10n.history,
             onPressed: onHistory,
-            icon: const Icon(Icons.history, color: PranaTheme.brandBlue),
+            icon: Icon(Icons.history, size: 20, color: palette.accent),
           ),
         ],
       ),
@@ -57,9 +54,16 @@ class LiveFeedHeader extends ConsumerWidget {
 /// Shows only the newest translation of the day. Everything older stays one tap
 /// away behind the history button in [LiveFeedHeader].
 class _TranslationFeed extends StatelessWidget {
-  const _TranslationFeed({required this.value, required this.onRetry});
+  const _TranslationFeed({
+    required this.value,
+    required this.onRetry,
+    required this.listening,
+  });
   final AsyncValue<List<TranslationResult>> value;
   final VoidCallback onRetry;
+
+  /// Capture is running, so an empty feed really is waiting for speech.
+  final bool listening;
 
   @override
   Widget build(BuildContext context) => value.when(
@@ -71,10 +75,10 @@ class _TranslationFeed extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(
+                Icon(
                   Icons.cloud_off,
-                  size: 52,
-                  color: PranaTheme.brandBlue,
+                  size: 44,
+                  color: ConsolePalette.of(context).muted,
                 ),
                 const SizedBox(height: 16),
                 Text(
@@ -109,13 +113,7 @@ class _TranslationFeed extends StatelessWidget {
           ),
         ),
     data: (items) {
-      if (items.isEmpty) {
-        return EmptyState(
-          icon: Icons.graphic_eq,
-          title: AppLocalizations.of(context).emptyTitle,
-          subtitle: AppLocalizations.of(context).emptyBody,
-        );
-      }
+      if (items.isEmpty) return _WaitingForSpeech(listening: listening);
       final newest = items.last;
       // Scrollable so a long translation still fits without overflowing, but
       // shrink-wrapped so a short one leaves the space to the talk button.
@@ -128,6 +126,44 @@ class _TranslationFeed extends StatelessWidget {
       );
     },
   );
+}
+
+class _WaitingForSpeech extends StatelessWidget {
+  const _WaitingForSpeech({required this.listening});
+  final bool listening;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final palette = ConsolePalette.of(context);
+    return Padding(
+      key: const ValueKey('live-waiting'),
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          LiveWaveform(listening: listening),
+          const SizedBox(height: 12),
+          Text(
+            l10n.emptyTitle.toUpperCase(),
+            textAlign: TextAlign.center,
+            style: consoleState(palette, size: 13, color: palette.ink),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            l10n.emptyBody,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: consoleLabel,
+              fontSize: 13,
+              height: 1.35,
+              color: palette.muted,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _QuotaBanner extends StatelessWidget {
