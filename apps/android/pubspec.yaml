@@ -38,3 +38,24 @@ flutter:
   assets:
     - assets/logo_mark.png
     - assets/logo_lockup.png
+    # OFL 1.1 requires the licence to travel with the fonts it covers.
+    - assets/fonts/RobotoMono-OFL.txt
+    - assets/fonts/Archivo-OFL.txt
+  # Live VHF console faces, bundled so the console reads the same offshore
+  # with no network. Pinned upstream: googlefonts/RobotoMono@895ec691 and
+  # Omnibus-Type/Archivo@21112769.
+  fonts:
+    - family: RobotoMono
+      fonts:
+        - asset: assets/fonts/RobotoMono-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/RobotoMono-Bold.ttf
+          weight: 700
+    - family: Archivo
+      fonts:
+        - asset: assets/fonts/Archivo-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Archivo-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Archivo-Bold.ttf
+          weight: 700
