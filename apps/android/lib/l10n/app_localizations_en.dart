@@ -791,4 +791,19 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get darkModeHint => 'Use the dark appearance throughout the app';
+
+  @override
+  String get liveStartCapture => 'START CAPTURE';
+
+  @override
+  String get liveStopCapture => 'STOP CAPTURE';
+
+  @override
+  String get liveChannel => 'Channel';
+
+  @override
+  String get liveTransmission => 'Live transmission';
+
+  @override
+  String get simulatedShort => 'SIM';
 }
