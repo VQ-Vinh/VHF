@@ -11,6 +11,7 @@ import 'package:prana_mobile/features/station/control/application/steering_state
 import 'package:prana_mobile/features/station/control/presentation/control_tab.dart';
 import 'package:prana_mobile/features/station/control/presentation/widgets/control_widget.dart';
 import 'package:prana_mobile/features/station/control/presentation/widgets/coordinates.dart';
+import 'package:prana_mobile/features/station/control/presentation/widgets/instruments/instrument_value.dart';
 import 'package:prana_mobile/features/station/control/presentation/widgets/rudder_scale.dart';
 import 'package:prana_mobile/features/station/control/presentation/widgets/steering_wheel.dart';
 import 'telemetry_instruments_test.dart' show TestTelemetry;
@@ -111,6 +112,18 @@ void main() {
       Icons.explore_outlined,
     ]) {
       expect(find.byIcon(icon), findsOneWidget);
+    }
+
+    // One size for the three: the readings differ in length and one cell
+    // carries a chip where another carries a depth track, but a row of
+    // instruments reads as a row only if the boxes match.
+    final cells = [
+      for (var i = 0; i < 3; i++)
+        tester.getRect(find.byType(InstrumentValue).at(i)),
+    ];
+    for (final cell in cells.skip(1)) {
+      expect(cell.width, closeTo(cells.first.width, .5));
+      expect(cell.height, closeTo(cells.first.height, .5));
     }
 
     // The fix, on the chart, in degrees and minutes and seconds.

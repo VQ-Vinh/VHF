@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:prana_mobile/core/responsive.dart';
 
 import 'depth_widget.dart';
 import 'heading_widget.dart';
@@ -30,19 +29,49 @@ class InstrumentStrip extends StatelessWidget {
   static const double _gap = 10;
 
   /// Whether three cells fit side by side in [width] at this text scale.
-  /// Mirrors what [AdaptiveFields] decides with the same numbers.
+  /// The tab asks this too, before deciding whether to pin the strip.
   static bool fitsOneRow(BuildContext context, double width) =>
       width >=
       MediaQuery.textScalerOf(context).scale(_minimumCell) * 3 + _gap * 2;
 
   @override
-  Widget build(BuildContext context) => AdaptiveFields(
-    minimumWidth: _minimumCell,
-    gap: _gap,
-    children: [
+  Widget build(BuildContext context) {
+    final cells = <Widget>[
       SpeedWidget(value: speedKnots, delta: speedDelta),
       DepthWidget(value: depthMetres),
       HeadingWidget(value: headingDegrees),
-    ],
-  );
+    ];
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (!fitsOneRow(context, constraints.maxWidth)) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var i = 0; i < cells.length; i++) ...[
+                if (i > 0) const SizedBox(height: _gap),
+                cells[i],
+              ],
+            ],
+          );
+        }
+        // Three cells of one size: Expanded for equal widths against readings
+        // of different lengths, and IntrinsicHeight with a stretched row for
+        // equal heights against a chip in one cell and a depth track in
+        // another. AdaptiveFields would leave each cell its own size, which
+        // is right for a form and wrong for a row of instruments.
+        return IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var i = 0; i < cells.length; i++) ...[
+                if (i > 0) const SizedBox(width: _gap),
+                Expanded(child: cells[i]),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
 }
