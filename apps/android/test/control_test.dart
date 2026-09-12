@@ -6,14 +6,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:prana_mobile/app/di/telemetry_providers.dart';
 import 'package:prana_mobile/core/theme.dart';
+import 'package:prana_mobile/telemetry/data/mock_telemetry_generator.dart';
 import 'package:prana_mobile/features/station/control/application/steering_state.dart';
 import 'package:prana_mobile/features/station/control/presentation/control_tab.dart';
 import 'package:prana_mobile/features/station/control/presentation/widgets/control_widget.dart';
-import 'package:prana_mobile/features/station/control/presentation/widgets/position_widget.dart';
+import 'package:prana_mobile/features/station/control/presentation/widgets/coordinates.dart';
 import 'package:prana_mobile/features/station/control/presentation/widgets/rudder_scale.dart';
 import 'package:prana_mobile/features/station/control/presentation/widgets/steering_wheel.dart';
-import 'package:prana_mobile/telemetry/domain/telemetry_repository.dart';
-import 'dashboard_test.dart' show TestTelemetry;
+import 'telemetry_instruments_test.dart' show TestTelemetry;
 
 void main() {
   test(
@@ -52,35 +52,86 @@ void main() {
     expect(RudderScale.fraction(-400), -1);
   });
 
-  testWidgets('position reads hemispheres off the sign, not a minus sign', (
+  test('a fix reads in degrees, minutes and seconds, never with a minus', () {
+    expect(formatDms(10.769722, positive: 'N', negative: 'S'), '10°46\'11"N');
+    expect(formatDms(106.661944, positive: 'E', negative: 'W'), '106°39\'43"E');
+    // A southern or western fix takes the other letter, not a minus sign.
+    expect(formatDms(-33.8688, positive: 'N', negative: 'S'), '33°52\'08"S');
+    expect(formatDms(-151.2093, positive: 'E', negative: 'W'), '151°12\'33"W');
+    // Rounding carries into minutes and degrees rather than printing 60.
+    expect(formatDms(10.999999, positive: 'N', negative: 'S'), '11°00\'00"N');
+    expect(formatDms(0, positive: 'N', negative: 'S'), '0°00\'00"N');
+  });
+
+  testWidgets('Control carries the readings the Dashboard tab used to', (
     tester,
   ) async {
-    Future<void> show(TelemetryPosition? position) => tester.pumpWidget(
-      MaterialApp(
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        supportedLocales: AppLocalizations.supportedLocales,
-        theme: PranaTheme.light(),
-        home: Scaffold(
-          body: PositionWidget(
-            position: position,
-            timestamp: DateTime.utc(2026, 9, 10, 22, 52, 34),
-            showSource: false,
-          ),
+    tester.view.physicalSize = const Size(430, 932);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final repo = TestTelemetry();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [telemetryRepositoryProvider.overrideWithValue(repo)],
+        child: MaterialApp(
+          theme: PranaTheme.light(),
+          locale: const Locale('en'),
+          supportedLocales: AppLocalizations.supportedLocales,
+          localizationsDelegates: const [
+            AppLocalizations.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          home: const Scaffold(body: ControlTab(stationId: 's', active: true)),
         ),
       ),
     );
+    await tester.pump();
+    // Two samples, the pinned one last, so the speed carries a delta.
+    final generator = MockTelemetryGenerator();
+    repo.stream.add(generator.at(const Duration(seconds: 4), DateTime.now()));
+    repo.stream.add(generator.at(Duration.zero, DateTime.now()));
+    await tester.pump();
+    await tester.pump();
 
-    await show(TelemetryPosition(10.76972, 106.66188));
-    expect(find.text('10.76972°  N'), findsOneWidget);
-    expect(find.text('106.66188°  E'), findsOneWidget);
+    // The three readings, in the strip above the chart.
+    expect(find.byKey(const ValueKey('control-instruments')), findsOneWidget);
+    expect(find.text('10.2'), findsOneWidget);
+    expect(find.text('KT'), findsOneWidget);
+    expect(find.text('8.2'), findsOneWidget);
+    expect(find.text('315'), findsOneWidget, reason: 'three-digit bearing');
+    expect(find.text('NW'), findsOneWidget);
+    // Nothing knows whether the heading is true or magnetic, so nothing says.
+    expect(find.textContaining('TRUE'), findsNothing);
+    for (final icon in const [
+      Icons.speed,
+      Icons.vertical_align_bottom,
+      Icons.explore_outlined,
+    ]) {
+      expect(find.byIcon(icon), findsOneWidget);
+    }
 
-    await show(TelemetryPosition(-33.86880, -151.20930));
-    expect(find.text('33.86880°  S'), findsOneWidget);
-    expect(find.text('151.20930°  W'), findsOneWidget);
-    expect(find.textContaining('-'), findsNothing);
+    // The fix, on the chart, in degrees and minutes and seconds.
+    expect(find.byKey(const ValueKey('gps-coordinates')), findsOneWidget);
+    expect(find.textContaining('"N'), findsOneWidget);
+    expect(find.textContaining('"E'), findsOneWidget);
+    expect(find.byKey(const ValueKey('telemetry-map')), findsOneWidget);
 
-    await show(null);
-    expect(find.text('—'), findsNWidgets(2));
+    // The source is what it really is, and no accuracy is claimed.
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('gps-source')),
+        matching: find.text('SIMULATED'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('HDOP'), findsNothing);
+    expect(find.textContaining('NMEA'), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await repo.stream.close();
   });
 
   testWidgets('the mode selector reports the mode that was tapped', (
@@ -212,18 +263,23 @@ void main() {
               ),
             );
             await tester.pump();
-            final position = tester.getRect(
-              find.byKey(const ValueKey('control-position')),
-            );
+            final strip = find.byKey(const ValueKey('control-instruments'));
+            final pinned = strip.evaluate().isNotEmpty;
+            final before = pinned ? tester.getRect(strip) : null;
             final scroll = tester.state<ScrollableState>(
               find.byType(Scrollable).first,
             );
             scroll.position.jumpTo(scroll.position.maxScrollExtent);
             await tester.pump();
-            expect(
-              tester.getRect(find.byKey(const ValueKey('control-position'))),
-              position,
-            );
+            if (pinned) {
+              // Speed, depth and heading stay put while the wheel is scrolled
+              // to; stacked they are too tall to hold and scroll with the rest.
+              expect(
+                tester.getRect(strip),
+                before,
+                reason: '$size/$locale/$scale',
+              );
+            }
             expect(repo.watches, 1);
             expect(
               tester.takeException(),

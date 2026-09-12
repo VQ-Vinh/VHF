@@ -1,21 +1,15 @@
-import 'package:prana_mobile/l10n/app_localizations.dart';
 import 'package:prana_mobile/telemetry/data/mock_telemetry_repository.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:prana_mobile/app/di/telemetry_providers.dart';
 import 'package:prana_mobile/core/theme.dart';
 import 'package:prana_mobile/telemetry/domain/telemetry_repository.dart';
 import 'package:prana_mobile/telemetry/data/mock_telemetry_generator.dart';
 import 'package:prana_mobile/features/station/shared/application/station_telemetry_controller.dart';
-import 'package:prana_mobile/features/station/dashboard/presentation/dashboard_tab.dart';
 import 'package:prana_mobile/features/station/control/presentation/widgets/map_widget.dart';
-import 'package:prana_mobile/features/station/dashboard/presentation/widgets/depth_scale.dart';
-import 'package:prana_mobile/features/station/dashboard/presentation/widgets/speed_trend.dart';
-import 'package:prana_mobile/features/station/dashboard/presentation/widgets/telemetry_delta.dart';
+import 'package:prana_mobile/features/station/control/presentation/widgets/instruments/depth_scale.dart';
+import 'package:prana_mobile/features/station/control/presentation/widgets/instruments/telemetry_delta.dart';
 
 class TestTelemetry implements TelemetryRepository {
   final stream = StreamController<TelemetrySnapshot>.broadcast();
@@ -102,95 +96,6 @@ void main() {
   // The handset widths AGENTS.md pins, plus the landscape and tablet cases.
   // 320 at text scale 2.0 is the tightest column the three instrument
   // graphics ever get.
-  for (final size in [
-    const Size(320, 568),
-    const Size(360, 800),
-    const Size(375, 812),
-    const Size(390, 844),
-    const Size(400, 800),
-    const Size(430, 932),
-    const Size(800, 360),
-    const Size(1024, 768),
-    const Size(1280, 800),
-  ]) {
-    for (final scale in [1.0, 1.5, 2.0]) {
-      for (final locale in ['vi', 'en']) {
-        testWidgets('dashboard $size scale $scale locale $locale', (
-          tester,
-        ) async {
-          tester.view.physicalSize = size;
-          tester.view.devicePixelRatio = 1;
-          addTearDown(tester.view.resetPhysicalSize);
-          addTearDown(tester.view.resetDevicePixelRatio);
-          final repo = TestTelemetry();
-          await tester.pumpWidget(
-            ProviderScope(
-              overrides: [telemetryRepositoryProvider.overrideWithValue(repo)],
-              child: MaterialApp(
-                theme: PranaTheme.light(),
-                locale: Locale(locale),
-                supportedLocales: AppLocalizations.supportedLocales,
-                localizationsDelegates: const [
-                  AppLocalizations.delegate,
-                  GlobalMaterialLocalizations.delegate,
-                  GlobalWidgetsLocalizations.delegate,
-                  GlobalCupertinoLocalizations.delegate,
-                ],
-                builder:
-                    (context, child) => MediaQuery(
-                      data: MediaQuery.of(
-                        context,
-                      ).copyWith(textScaler: TextScaler.linear(scale)),
-                      child: child!,
-                    ),
-                home: const Scaffold(
-                  body: DashboardTab(stationId: 'station', stationOnline: true),
-                ),
-              ),
-            ),
-          );
-          await tester.pump();
-          // Two samples, the pinned one last: the reading stays 10.2 while the
-          // controller gains a previous sample and a history, so the delta chip
-          // and the speed trend are both on screen. That is the densest the
-          // card ever gets, which is what these widths need to prove.
-          final generator = MockTelemetryGenerator();
-          repo.stream.add(
-            generator.at(const Duration(seconds: 4), DateTime.now()),
-          );
-          repo.stream.add(generator.at(Duration.zero, DateTime.now()));
-          await tester.pump();
-          await tester.pump();
-          await tester.pump();
-          for (final icon in [
-            Icons.speed,
-            Icons.vertical_align_bottom,
-            Icons.explore_outlined,
-          ]) {
-            expect(find.byIcon(icon), findsOneWidget);
-          }
-          expect(find.text('10.2'), findsOneWidget);
-          expect(find.text('°  NW'), findsOneWidget);
-          expect(
-            find.text(locale == 'vi' ? 'Tốc độ' : 'Speed'),
-            findsOneWidget,
-          );
-          expect(
-            find.text(locale == 'vi' ? 'Độ sâu' : 'Depth'),
-            findsOneWidget,
-          );
-          expect(find.byKey(const ValueKey('compass-rose')), findsOneWidget);
-          expect(find.byType(DepthScale), findsOneWidget);
-          expect(find.byType(SpeedTrend), findsOneWidget);
-          expect(find.byKey(const ValueKey('telemetry-map')), findsNothing);
-          expect(tester.takeException(), isNull);
-          await tester.pumpWidget(const SizedBox.shrink());
-          await repo.stream.close();
-        });
-      }
-    }
-  }
-
   test('depth scale places decades evenly and clamps beyond the range', () {
     expect(DepthScale.fraction(1), 0);
     expect(DepthScale.fraction(10000), 1);
@@ -242,7 +147,7 @@ void main() {
     }
     for (final file
         in Directory(
-          'lib/features/station/dashboard',
+          'lib/features/station/control',
         ).listSync(recursive: true).whereType<File>()) {
       expect(
         file.readAsStringSync(),

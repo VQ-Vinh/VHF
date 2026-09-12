@@ -36,9 +36,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get stationUnavailable => 'Station unavailable';
 
   @override
-  String get dashboard => 'Dashboard';
-
-  @override
   String get speed => 'Speed';
 
   @override
@@ -51,9 +48,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get position => 'Position';
 
   @override
-  String get map => 'Coordinate map';
-
-  @override
   String get control => 'Control';
 
   @override
@@ -61,9 +55,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get manual => 'Manual';
-
-  @override
-  String get dashboardStatus => 'Status';
 
   @override
   String get stationOnline => 'Station Online';
@@ -806,4 +797,13 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get simulatedShort => 'SIM';
+
+  @override
+  String get gpsPosition => 'GPS position';
+
+  @override
+  String get source => 'Source';
+
+  @override
+  String get sourceSimulated => 'Simulated';
 }

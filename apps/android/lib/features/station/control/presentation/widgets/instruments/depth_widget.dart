@@ -2,12 +2,10 @@ import 'package:prana_mobile/l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'depth_scale.dart';
 import 'instrument_value.dart';
-import 'telemetry_delta.dart';
 
 class DepthWidget extends StatelessWidget {
-  const DepthWidget({super.key, required this.value, this.delta});
+  const DepthWidget({super.key, required this.value});
   final double? value;
-  final double? delta;
 
   @override
   Widget build(BuildContext context) {
@@ -16,11 +14,9 @@ class DepthWidget extends StatelessWidget {
       label: AppLocalizations.of(context).depth,
       value: value?.toStringAsFixed(1) ?? '—',
       unit: 'M',
-      delta:
-          delta == null
-              ? null
-              : TelemetryDelta(value: delta!, unit: 'm', fractionDigits: 2),
-      visual: DepthScale(metres: value),
+      // The track carries the change a delta chip would state, and in a strip
+      // cell there is room for one of the two, not both.
+      visual: DepthScale(metres: value, height: 10, labelled: false),
     );
   }
 }

@@ -9,16 +9,13 @@
   "moduleDevices": "Thiết bị",
   "modulePending": "Chưa tích hợp",
   "stationUnavailable": "Station không còn khả dụng",
-  "dashboard": "Dashboard",
   "speed": "Tốc độ",
   "depth": "Độ sâu",
   "heading": "Hướng",
   "position": "Vị trí",
-  "map": "Sơ đồ tọa độ",
   "control": "Điều khiển",
   "auto": "Tự động",
   "manual": "Thủ công",
-  "dashboardStatus": "Trạng thái",
   "stationOnline": "Station Online",
   "stationOffline": "Station Offline",
   "telemetryMock": "Telemetry mô phỏng",
@@ -243,5 +240,8 @@
   "liveStopCapture": "DỪNG THU",
   "liveChannel": "Kênh",
   "liveTransmission": "Truyền trực tiếp",
-  "simulatedShort": "MÔ PHỎNG"
+  "simulatedShort": "MÔ PHỎNG",
+  "gpsPosition": "Vị trí GPS",
+  "source": "Nguồn",
+  "sourceSimulated": "Mô phỏng"
 }
