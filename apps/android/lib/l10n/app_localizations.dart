@@ -152,12 +152,6 @@ abstract class AppLocalizations {
   /// **'Station unavailable'**
   String get stationUnavailable;
 
-  /// No description provided for @dashboard.
-  ///
-  /// In en, this message translates to:
-  /// **'Dashboard'**
-  String get dashboard;
-
   /// No description provided for @speed.
   ///
   /// In en, this message translates to:
@@ -182,12 +176,6 @@ abstract class AppLocalizations {
   /// **'Position'**
   String get position;
 
-  /// No description provided for @map.
-  ///
-  /// In en, this message translates to:
-  /// **'Coordinate map'**
-  String get map;
-
   /// No description provided for @control.
   ///
   /// In en, this message translates to:
@@ -205,12 +193,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Manual'**
   String get manual;
-
-  /// No description provided for @dashboardStatus.
-  ///
-  /// In en, this message translates to:
-  /// **'Status'**
-  String get dashboardStatus;
 
   /// No description provided for @stationOnline.
   ///
@@ -1561,6 +1543,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'SIM'**
   String get simulatedShort;
+
+  /// No description provided for @gpsPosition.
+  ///
+  /// In en, this message translates to:
+  /// **'GPS position'**
+  String get gpsPosition;
+
+  /// No description provided for @source.
+  ///
+  /// In en, this message translates to:
+  /// **'Source'**
+  String get source;
+
+  /// No description provided for @sourceSimulated.
+  ///
+  /// In en, this message translates to:
+  /// **'Simulated'**
+  String get sourceSimulated;
 }
 
 class _AppLocalizationsDelegate

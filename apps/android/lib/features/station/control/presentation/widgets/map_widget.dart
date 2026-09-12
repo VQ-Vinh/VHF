@@ -1,10 +1,10 @@
 import 'package:prana_mobile/l10n/app_localizations.dart';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:prana_mobile/core/surfaces.dart';
 import 'package:prana_mobile/telemetry/domain/telemetry_repository.dart';
-import 'sim_notice.dart';
 
+/// The chart itself. Its frame, the fix readout over it and the caution under
+/// it belong to GpsPositionCard, which is the only thing that shows it.
 class MapWidget extends StatelessWidget {
   const MapWidget({
     super.key,
@@ -21,57 +21,33 @@ class MapWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 10),
-          child: Text(l10n.map, style: panelLabelStyle(context)),
-        ),
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: panelDecoration(context),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Semantics(
-                label:
-                    '${l10n.position}: '
-                    '${position?.latitude ?? '—'}, ${position?.longitude ?? '—'}',
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: AspectRatio(
-                    aspectRatio: 4 / 3,
-                    child: CustomPaint(
-                      key: const ValueKey('telemetry-map'),
-                      painter: TelemetryMapPainter(
-                        position,
-                        heading,
-                        track: track,
-                        background: colors.surfaceContainerHighest,
-                        gridColor: colors.outlineVariant,
-                        foreground: colors.onSurface,
-                        markerColor: colors.surface,
-                        vesselColor: colors.primary,
-                        trackColor: colors.primary.withValues(alpha: 0.55),
-                        badgeColor: colors.surface.withValues(alpha: 0.86),
-                        textDirection: Directionality.of(context),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-              SimNotice(
-                icon: Icons.warning_amber_rounded,
-                message: l10n.mapMockNotice,
-              ),
-            ],
+    final colors = Theme.of(context).colorScheme;
+    return Semantics(
+      label:
+          '${l10n.position}: '
+          '${position?.latitude ?? '—'}, ${position?.longitude ?? '—'}',
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: AspectRatio(
+          aspectRatio: 4 / 3,
+          child: CustomPaint(
+            key: const ValueKey('telemetry-map'),
+            painter: TelemetryMapPainter(
+              position,
+              heading,
+              track: track,
+              background: colors.surfaceContainerHighest,
+              gridColor: colors.outlineVariant,
+              foreground: colors.onSurface,
+              markerColor: colors.surface,
+              vesselColor: colors.primary,
+              trackColor: colors.primary.withValues(alpha: 0.55),
+              badgeColor: colors.surface.withValues(alpha: 0.86),
+              textDirection: Directionality.of(context),
+            ),
           ),
         ),
-      ],
+      ),
     );
   }
 }
@@ -183,16 +159,6 @@ class TelemetryMapPainter extends CustomPainter {
       _text('↑ N', 12, foreground, FontWeight.w700),
     );
     _scaleBar(canvas, size);
-
-    if (position != null && heading != null) {
-      final label = _text(
-        'HDG ${heading!.round().toString().padLeft(3, '0')}°',
-        11,
-        foreground,
-        FontWeight.w700,
-      );
-      _badge(canvas, Offset(size.width - label.width - 24, 10), label);
-    }
 
     if (position == null) return;
     _track(canvas, size);

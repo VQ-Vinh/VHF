@@ -36,9 +36,6 @@ class AppLocalizationsVi extends AppLocalizations {
   String get stationUnavailable => 'Station không còn khả dụng';
 
   @override
-  String get dashboard => 'Dashboard';
-
-  @override
   String get speed => 'Tốc độ';
 
   @override
@@ -51,9 +48,6 @@ class AppLocalizationsVi extends AppLocalizations {
   String get position => 'Vị trí';
 
   @override
-  String get map => 'Sơ đồ tọa độ';
-
-  @override
   String get control => 'Điều khiển';
 
   @override
@@ -61,9 +55,6 @@ class AppLocalizationsVi extends AppLocalizations {
 
   @override
   String get manual => 'Thủ công';
-
-  @override
-  String get dashboardStatus => 'Trạng thái';
 
   @override
   String get stationOnline => 'Station Online';
@@ -794,4 +785,13 @@ class AppLocalizationsVi extends AppLocalizations {
 
   @override
   String get simulatedShort => 'MÔ PHỎNG';
+
+  @override
+  String get gpsPosition => 'Vị trí GPS';
+
+  @override
+  String get source => 'Nguồn';
+
+  @override
+  String get sourceSimulated => 'Mô phỏng';
 }

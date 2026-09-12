@@ -7,8 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:prana_mobile/app/di/telemetry_providers.dart';
 import '../application/steering_state.dart';
 import 'widgets/control_widget.dart';
-import 'widgets/map_widget.dart';
-import 'widgets/position_widget.dart';
+import 'widgets/gps_position_card.dart';
+import 'widgets/instruments/instrument_strip.dart';
 import 'widgets/steering_wheel.dart';
 
 class ControlTab extends ConsumerStatefulWidget {
@@ -50,64 +50,77 @@ class _ControlTabState extends ConsumerState<ControlTab> {
         ),
       ],
     );
-    final map = MapWidget(
+    final instruments = InstrumentStrip(
+      speedKnots: sample?.speedKnots,
+      speedDelta: state.speedDelta,
+      depthMetres: sample?.depthMetres,
+      headingDegrees: sample?.headingDegrees,
+    );
+    final chart = GpsPositionCard(
       position: sample?.position,
       heading: sample?.headingDegrees,
+      timestamp: sample?.timestamp,
+      source: sample?.source,
       track: [for (final entry in state.history) entry.position],
     );
-    return Column(
-      // Stretch, or the position strip shrinks to its own text and floats in
-      // the middle of the screen while the cards below run edge to edge.
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          key: const ValueKey('control-position'),
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: PositionWidget(
-            position: sample?.position,
-            timestamp: sample?.timestamp,
-            showSource: false,
-          ),
-        ),
-        Expanded(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final wide =
-                  constraints.maxWidth >=
-                  MediaQuery.textScalerOf(context).scale(840);
-              return SingleChildScrollView(
-                key: const PageStorageKey('control-scroll'),
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wide =
+            constraints.maxWidth >= MediaQuery.textScalerOf(context).scale(840);
+        final available = constraints.maxWidth - 32;
+        // Pinned above the chart while the readings stay put as the wheel is
+        // scrolled to. That needs room in both directions: stacked, or on a
+        // short landscape screen at a large text scale, the strip is taller
+        // than everything it would leave behind, so it scrolls with the rest.
+        // A cell runs about 94dp at text scale 1: caption, number, chip, pad.
+        final stripHeight = MediaQuery.textScalerOf(context).scale(94);
+        final pinned =
+            InstrumentStrip.fitsOneRow(context, available) &&
+            (!constraints.hasBoundedHeight ||
+                constraints.maxHeight >= stripHeight * 2.6);
+        final body = SingleChildScrollView(
+          key: const PageStorageKey('control-scroll'),
+          padding: EdgeInsets.fromLTRB(16, pinned ? 12 : 16, 16, 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (!pinned) ...[instruments, const SizedBox(height: 20)],
+              if (wide)
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (wide)
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(flex: 2, child: map),
-                          const SizedBox(width: 24),
-                          Expanded(child: controls),
-                        ],
-                      )
-                    else ...[
-                      map,
-                      const SizedBox(height: 24),
-                      controls,
-                    ],
-                    const SizedBox(height: 20),
-                    _TelemetryFooter(
-                      freshness: state.freshness,
-                      timestamp: sample?.timestamp,
-                      onRetry: controller.retry,
-                    ),
+                    Expanded(flex: 2, child: chart),
+                    const SizedBox(width: 24),
+                    Expanded(child: controls),
                   ],
-                ),
-              );
-            },
+                )
+              else ...[
+                chart,
+                const SizedBox(height: 24),
+                controls,
+              ],
+              const SizedBox(height: 20),
+              _TelemetryFooter(
+                freshness: state.freshness,
+                timestamp: sample?.timestamp,
+                onRetry: controller.retry,
+              ),
+            ],
           ),
-        ),
-      ],
+        );
+        if (!pinned) return body;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              key: const ValueKey('control-instruments'),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: instruments,
+            ),
+            Expanded(child: body),
+          ],
+        );
+      },
     );
   }
 }

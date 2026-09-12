@@ -70,7 +70,7 @@ class StationListScreen extends ConsumerWidget {
                                       );
                                   if (context.mounted) {
                                     context.push(
-                                      '/stations/${items[index].id}/dashboard',
+                                      '/stations/${items[index].id}/control',
                                     );
                                   }
                                 },
