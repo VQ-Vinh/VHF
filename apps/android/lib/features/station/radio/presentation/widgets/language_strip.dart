@@ -21,25 +21,15 @@ class LanguageStrip extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final palette = ConsolePalette.of(context);
     final code = detectedLanguage;
-    final name = code == null ? null : supportedLanguages[code];
     final heard = ConsoleField(
       key: const ValueKey('input-language-field'),
       caption: l10n.rxHeard,
-      child: Text.rich(
-        TextSpan(
-          children: [
-            if (code != null && name != null) ...[
-              TextSpan(
-                text: code.toUpperCase(),
-                style: consoleState(palette, size: 15, color: palette.accent),
-              ),
-              const TextSpan(text: '  '),
-            ],
-            TextSpan(
-              text: code == null ? l10n.detecting : name ?? code.toUpperCase(),
-            ),
-          ],
-        ),
+      // The name alone. The two-letter code said the same thing twice, and
+      // the row is about the direction, not about codes.
+      child: Text(
+        code == null
+            ? l10n.detecting
+            : supportedLanguages[code] ?? code.toUpperCase(),
         style: TextStyle(
           fontFamily: consoleLabel,
           fontSize: 15,
@@ -104,26 +94,28 @@ class LanguageStrip extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 // Both sides Expanded at the same flex, so the two fields stay
-                // the same width whatever the arrow and rule between them take.
+                // the same width whatever the arrow and rules between them
+                // take. The arrow sits in its own bay: rule, arrow, rule.
                 Expanded(child: heard),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Center(
-                    child: ExcludeSemantics(
-                      child: Icon(
-                        Icons.arrow_forward,
-                        size: 18,
-                        color: palette.accent,
-                      ),
+                VerticalDivider(
+                  width: 13,
+                  thickness: 1,
+                  color: palette.hairline,
+                ),
+                Center(
+                  child: ExcludeSemantics(
+                    child: Icon(
+                      Icons.arrow_forward,
+                      size: 18,
+                      color: palette.accent,
                     ),
                   ),
                 ),
                 VerticalDivider(
-                  width: 1,
+                  width: 13,
                   thickness: 1,
                   color: palette.hairline,
                 ),
-                const SizedBox(width: 14),
                 Expanded(child: target),
               ],
             ),
