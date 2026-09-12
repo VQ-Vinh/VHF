@@ -159,7 +159,7 @@ flowchart TD
 
 ### Lifecycle and navigation
 
-- Station list opens `/stations/:id/dashboard`. Existing `/live`, `/history`, `/settings` suffixes render in the same workspace. Tab replacement keeps the page identity; route identity also includes uid. Auth refresh updates redirect policy without rebuilding the router.
+- Station list opens `/stations/:id/control`. Existing `/live`, `/history`, `/settings` suffixes render in the same workspace, and an unknown suffix - including a saved `/dashboard` link from before the readings moved into Control - lands on Control. Tab replacement keeps the page identity; route identity also includes uid. Auth refresh updates redirect policy without rebuilding the router.
 - Workspace attachment selects phone observation/audio only. No tab or Back path sends START/STOP. START/STOP remains in Live VHF.
 - Host keeps the selected session and RX polling alive after Back while app is foreground. Telemetry belongs to workspace observation and can dispose independently.
 - Recording leaves its phase synchronously before awaiting stop, so tab and pointer release cannot upload twice. Background cancellation invalidates the operation before awaiting microphone startup. Processing/queued/transmitting belong to the session.
