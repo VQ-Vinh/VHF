@@ -3,9 +3,7 @@ import 'package:prana_mobile/core/surfaces.dart';
 
 /// One reading in the instrument strip above the chart.
 ///
-/// The number keeps its scale-down fitting so a long value at text scale 2.0
-/// shrinks inside its cell instead of overflowing it, which is the exception
-/// docs/architecture/responsive-ui-audit.md records for numeric instruments.
+/// Values and units wrap naturally; the strip reflows at large text scales.
 class InstrumentValue extends StatelessWidget {
   const InstrumentValue({
     super.key,
@@ -13,11 +11,15 @@ class InstrumentValue extends StatelessWidget {
     required this.icon,
     required this.value,
     required this.unit,
+    this.superscriptUnit = false,
+    this.qualifier,
     this.extra,
     this.visual,
   });
   final String label, value, unit;
+  final bool superscriptUnit;
   final IconData icon;
+  final String? qualifier;
 
   /// A chip under the reading: the change since the last sample, or the
   /// compass point for a heading. Null when there is nothing to add.
@@ -31,7 +33,7 @@ class InstrumentValue extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     return Semantics(
-      label: '$label: $value $unit',
+      label: '$label: $value $unit${qualifier == null ? '' : ', $qualifier'}',
       excludeSemantics: true,
       child: Container(
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
@@ -47,52 +49,64 @@ class InstrumentValue extends StatelessWidget {
                 ),
                 const SizedBox(width: 6),
                 Expanded(
-                  child: Text(
-                    label,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.6,
-                      color: colors.onSurfaceVariant,
-                    ),
+                  child: Wrap(
+                    spacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(
+                        label,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.6,
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 6),
-            // Number and unit on one line: in a strip cell a unit on its own
-            // row costs a whole line for two letters.
             Row(
               crossAxisAlignment: CrossAxisAlignment.baseline,
               textBaseline: TextBaseline.alphabetic,
               children: [
                 Flexible(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      value,
-                      style: TextStyle(
-                        fontSize: 28,
-                        height: 1.05,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.5,
-                        color: colors.onSurface,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      ),
+                  child: Text(
+                    value,
+                    style: TextStyle(
+                      fontSize: 28,
+                      height: 1.05,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.5,
+                      color: colors.onSurface,
+                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
                 ),
-                const SizedBox(width: 4),
-                Flexible(
-                  child: Text(
-                    unit,
+                SizedBox(width: superscriptUnit ? 0 : 4),
+                Text(
+                  unit,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    fontSize: superscriptUnit ? 28 : null,
+                    height: superscriptUnit ? 1.05 : null,
+                    fontWeight: FontWeight.w600,
+                    color:
+                        superscriptUnit
+                            ? colors.onSurface
+                            : colors.onSurfaceVariant,
+                  ),
+                ),
+                if (qualifier != null) ...[
+                  const SizedBox(width: 4),
+                  Text(
+                    qualifier!,
                     style: theme.textTheme.labelMedium?.copyWith(
                       fontWeight: FontWeight.w600,
-                      letterSpacing: 0.4,
                       color: colors.onSurfaceVariant,
                     ),
                   ),
-                ),
+                ],
               ],
             ),
             if (extra != null) ...[const SizedBox(height: 6), extra!],

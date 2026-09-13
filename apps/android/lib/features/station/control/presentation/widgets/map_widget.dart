@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:prana_mobile/telemetry/domain/telemetry_repository.dart';
 
-/// The chart itself. Its frame, the fix readout over it and the caution under
+/// The chart itself. Its frame, the fix readout above it and the caution under
 /// it belong to GpsPositionCard, which is the only thing that shows it.
 class MapWidget extends StatelessWidget {
   const MapWidget({
@@ -29,7 +29,7 @@ class MapWidget extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(10),
         child: AspectRatio(
-          aspectRatio: 4 / 3,
+          aspectRatio: 2,
           child: CustomPaint(
             key: const ValueKey('telemetry-map'),
             painter: TelemetryMapPainter(

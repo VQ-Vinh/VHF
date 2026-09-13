@@ -307,6 +307,7 @@
   "liveChannel": "Channel",
   "liveTransmission": "Live transmission",
   "simulatedShort": "SIM",
+  "telemetryUpdatedAt": "Updated at",
   "gpsPosition": "GPS position",
   "source": "Source",
   "sourceSimulated": "Simulated"

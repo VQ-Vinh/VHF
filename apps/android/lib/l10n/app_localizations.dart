@@ -1544,6 +1544,12 @@ abstract class AppLocalizations {
   /// **'SIM'**
   String get simulatedShort;
 
+  /// No description provided for @telemetryUpdatedAt.
+  ///
+  /// In en, this message translates to:
+  /// **'Updated at'**
+  String get telemetryUpdatedAt;
+
   /// No description provided for @gpsPosition.
   ///
   /// In en, this message translates to:

@@ -57,8 +57,8 @@ class InstrumentStrip extends StatelessWidget {
         }
         // Three cells of one size: Expanded for equal widths against readings
         // of different lengths, and IntrinsicHeight with a stretched row for
-        // equal heights against a chip in one cell and a depth track in
-        // another. AdaptiveFields would leave each cell its own size, which
+        // equal heights with the compass-point chip in the heading cell.
+        // AdaptiveFields would leave each cell its own size, which
         // is right for a form and wrong for a row of instruments.
         return IntrinsicHeight(
           child: Row(

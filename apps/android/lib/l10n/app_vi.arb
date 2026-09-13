@@ -241,6 +241,7 @@
   "liveChannel": "Kênh",
   "liveTransmission": "Truyền trực tiếp",
   "simulatedShort": "MÔ PHỎNG",
+  "telemetryUpdatedAt": "Cập nhật lúc",
   "gpsPosition": "Vị trí GPS",
   "source": "Nguồn",
   "sourceSimulated": "Mô phỏng"

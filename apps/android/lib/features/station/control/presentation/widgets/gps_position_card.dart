@@ -10,7 +10,7 @@ import 'instruments/compass_rose.dart';
 import 'map_widget.dart';
 import 'sim_notice.dart';
 
-/// The chart with the fix on it: coordinates, heading, when it was taken and
+/// The chart with coordinates above it, heading, when it was taken and
 /// where it came from.
 class GpsPositionCard extends StatelessWidget {
   const GpsPositionCard({
@@ -35,13 +35,6 @@ class GpsPositionCard extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final palette = Theme.of(context).colorScheme;
     final fix = position;
-    final readout =
-        fix == null
-            ? null
-            : _Coordinates(
-              latitude: formatDms(fix.latitude, positive: 'N', negative: 'S'),
-              longitude: formatDms(fix.longitude, positive: 'E', negative: 'W'),
-            );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -55,65 +48,44 @@ class GpsPositionCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  // Over the chart while there is room for the readout and the
-                  // rose without covering the vessel; under a large text scale
-                  // the readout drops below the chart instead of swallowing it.
-                  final overlay =
-                      readout != null &&
-                      constraints.maxWidth >=
-                          MediaQuery.textScalerOf(context).scale(260);
-                  final chart = MapWidget(
-                    position: position,
-                    heading: heading,
-                    track: track,
-                  );
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Stack(
-                        children: [
-                          chart,
-                          if (overlay)
-                            PositionedDirectional(
-                              top: 8,
-                              start: 8,
-                              child: ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  maxWidth: constraints.maxWidth * .5,
-                                ),
-                                child: readout,
-                              ),
-                            ),
-                          if (heading != null)
-                            PositionedDirectional(
-                              top: 8,
-                              end: 8,
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  color: palette.surface.withValues(alpha: .86),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: CompassRose(degrees: heading, size: 58),
-                              ),
-                            ),
-                        ],
+              _Coordinates(
+                latitude:
+                    fix == null
+                        ? '—'
+                        : formatDms(fix.latitude, positive: 'N', negative: 'S'),
+                longitude:
+                    fix == null
+                        ? '—'
+                        : formatDms(
+                          fix.longitude,
+                          positive: 'E',
+                          negative: 'W',
+                        ),
+              ),
+              const SizedBox(height: 10),
+              Stack(
+                children: [
+                  MapWidget(position: position, heading: heading, track: track),
+                  if (heading != null)
+                    PositionedDirectional(
+                      top: 8,
+                      end: 8,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: palette.surface.withValues(alpha: .86),
+                          shape: BoxShape.circle,
+                        ),
+                        child: CompassRose(degrees: heading, size: 48),
                       ),
-                      if (readout != null && !overlay) ...[
-                        const SizedBox(height: 10),
-                        readout,
-                      ],
-                    ],
-                  );
-                },
+                    ),
+                ],
               ),
               const SizedBox(height: 12),
               AdaptiveFields(
                 minimumWidth: 120,
                 children: [
                   _Field(
-                    label: 'FIX',
+                    label: l10n.telemetryUpdatedAt,
                     value:
                         timestamp == null
                             ? '—'
@@ -158,40 +130,11 @@ class _Coordinates extends StatelessWidget {
       color: colors.onSurface,
       fontFeatures: const [FontFeature.tabularFigures()],
     );
-    return Container(
+    return Wrap(
       key: const ValueKey('gps-coordinates'),
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 9),
-      decoration: BoxDecoration(
-        color: colors.surface.withValues(alpha: .86),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: colors.outlineVariant),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.place_outlined, size: 12, color: colors.primary),
-              const SizedBox(width: 4),
-              Flexible(
-                child: Text(
-                  'GPS',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.8,
-                    color: colors.onSurfaceVariant,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 3),
-          Text(latitude, style: style),
-          Text(longitude, style: style),
-        ],
-      ),
+      spacing: 16,
+      runSpacing: 4,
+      children: [Text(latitude, style: style), Text(longitude, style: style)],
     );
   }
 }

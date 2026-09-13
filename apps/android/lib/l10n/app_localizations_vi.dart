@@ -787,6 +787,9 @@ class AppLocalizationsVi extends AppLocalizations {
   String get simulatedShort => 'MÔ PHỎNG';
 
   @override
+  String get telemetryUpdatedAt => 'Cập nhật lúc';
+
+  @override
   String get gpsPosition => 'Vị trí GPS';
 
   @override

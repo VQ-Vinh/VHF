@@ -21,10 +21,10 @@ class HeadingWidget extends StatelessWidget {
       // Three digits, as a bearing is spoken and written: 034, not 34.
       value: degrees?.round().toString().padLeft(3, '0') ?? '—',
       unit: '°',
+      superscriptUnit: true,
       // The point only; nothing here knows whether the heading is true or
       // magnetic, so the cell does not claim a reference.
-      extra:
-          degrees == null ? null : InstrumentChip(label: compassPoint(degrees)),
+      qualifier: degrees == null ? null : compassPoint(degrees),
     );
   }
 }

@@ -799,6 +799,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get simulatedShort => 'SIM';
 
   @override
+  String get telemetryUpdatedAt => 'Updated at';
+
+  @override
   String get gpsPosition => 'GPS position';
 
   @override

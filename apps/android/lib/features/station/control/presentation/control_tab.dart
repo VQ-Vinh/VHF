@@ -10,6 +10,7 @@ import 'widgets/control_widget.dart';
 import 'widgets/gps_position_card.dart';
 import 'widgets/instruments/instrument_strip.dart';
 import 'widgets/steering_wheel.dart';
+import 'widgets/sim_notice.dart';
 
 class ControlTab extends ConsumerStatefulWidget {
   const ControlTab({super.key, required this.stationId, required this.active});
@@ -39,22 +40,40 @@ class _ControlTabState extends ConsumerState<ControlTab> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         ControlWidget(
+          showNotice: false,
           mode: steering.mode,
           onChanged: (mode) => setState(() => steering.selectMode(mode)),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 12),
         SteeringWheel(
           state: steering,
           active: widget.active,
           onChanged: () => setState(() {}),
         ),
+        const SizedBox(height: 12),
+        SimNotice(
+          icon: Icons.link_off,
+          message: AppLocalizations.of(context).controlMock,
+        ),
       ],
     );
-    final instruments = InstrumentStrip(
+    final readings = InstrumentStrip(
       speedKnots: sample?.speedKnots,
       speedDelta: state.speedDelta,
       depthMetres: sample?.depthMetres,
       headingDegrees: sample?.headingDegrees,
+    );
+    final instruments = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          AppLocalizations.of(context).telemetryMock,
+          style: Theme.of(context).textTheme.labelMedium,
+        ),
+        const SizedBox(height: 6),
+        readings,
+      ],
     );
     final chart = GpsPositionCard(
       position: sample?.position,

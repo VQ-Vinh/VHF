@@ -1,5 +1,27 @@
 # Android: Control và cấu hình theo module
 
+## Tinh chỉnh Control ngày 2026-09-13
+
+Source hiện tại gộp instrument vào Control, workspace còn Control và Live VHF.
+Đợt tinh chỉnh này giữ nguyên runtime, telemetry subscription và SteeringState:
+
+- Nhãn telemetry mô phỏng nằm ngay trên Speed/Depth/Heading, độc lập trạng thái
+  Online/Offline thật của Station.
+- Bỏ delta tốc độ chưa ghi khoảng thời gian và thanh Depth không có mốc khỏi
+  strip. Giá trị chính, đơn vị và hướng la bàn vẫn giữ nguyên.
+- Heading hiển thị góc và hướng trên cùng hàng (ví dụ `327° NW`); ký hiệu độ
+  đọc rõ phía trên, hướng la bàn căn cùng baseline như đơn vị KT/M.
+- Tọa độ nằm ngoài Map, tự xuống dòng và hiển thị `—` khi chưa có mẫu.
+  Map dùng vùng vẽ rộng 2:1 để giảm chiều cao; metadata ghi “Cập nhật lúc”/“Updated at”.
+- Auto/Manual sát cụm vô lăng hơn; cảnh báo điều khiển mô phỏng nằm sau cụm này.
+  Cảnh báo Map không dùng dẫn đường vẫn hiện bên dưới Map.
+- Regression tọa độ không đè Map và layout được bổ sung vào `control_test.dart`.
+  Không build APK; kiểm chứng UI/mock không chứng minh điều khiển phần cứng.
+- Kiểm chứng: toàn bộ 201 tests PASS trước tinh chỉnh cuối phần số; sau bỏ
+  `FittedBox`, 22 tests Control/instrument/preview layout PASS
+  (gồm 648 tổ hợp preview). Analyze sạch, format sạch. Web debug compile và
+  hot reload thành công; đã xem portrait 393×852 và landscape 800×360.
+
 ## Thay đổi ngày 2026-09-09
 
 Workspace có ba tab **Dashboard | Control | Live VHF**. Route mới

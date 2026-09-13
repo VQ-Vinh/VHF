@@ -90,7 +90,7 @@ void main() {
       ),
     );
     await tester.pump();
-    // Two samples, the pinned one last, so the speed carries a delta.
+    // Two samples, the pinned one last, so readings reflect the latest sample.
     final generator = MockTelemetryGenerator();
     repo.stream.add(generator.at(const Duration(seconds: 4), DateTime.now()));
     repo.stream.add(generator.at(Duration.zero, DateTime.now()));
@@ -104,6 +104,11 @@ void main() {
     expect(find.text('8.2'), findsOneWidget);
     expect(find.text('315'), findsOneWidget, reason: 'three-digit bearing');
     expect(find.text('NW'), findsOneWidget);
+    expect(
+      tester.getRect(find.text('NW')).top,
+      lessThan(tester.getRect(find.text('315')).bottom),
+      reason: 'Compass direction aligns with the lower edge of the value',
+    );
     // Nothing knows whether the heading is true or magnetic, so nothing says.
     expect(find.textContaining('TRUE'), findsNothing);
     for (final icon in const [
@@ -115,7 +120,7 @@ void main() {
     }
 
     // One size for the three: the readings differ in length and one cell
-    // carries a chip where another carries a depth track, but a row of
+    // carries a compass chip, but a row of
     // instruments reads as a row only if the boxes match.
     final cells = [
       for (var i = 0; i < 3; i++)
@@ -126,11 +131,19 @@ void main() {
       expect(cell.height, closeTo(cells.first.height, .5));
     }
 
-    // The fix, on the chart, in degrees and minutes and seconds.
+    // Coordinates wrap above the chart, never obscure its marker.
     expect(find.byKey(const ValueKey('gps-coordinates')), findsOneWidget);
     expect(find.textContaining('"N'), findsOneWidget);
     expect(find.textContaining('"E'), findsOneWidget);
     expect(find.byKey(const ValueKey('telemetry-map')), findsOneWidget);
+    expect(find.text('Simulated telemetry'), findsOneWidget);
+    expect(find.text('UPDATED AT'), findsOneWidget);
+    final coordinates = tester.getRect(
+      find.byKey(const ValueKey('gps-coordinates')),
+    );
+    final map = tester.getRect(find.byKey(const ValueKey('telemetry-map')));
+    expect(coordinates.bottom, lessThan(map.top));
+    expect(map.height, lessThanOrEqualTo(map.width / 2 + 1));
 
     // The source is what it really is, and no accuracy is claimed.
     expect(
