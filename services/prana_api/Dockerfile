@@ -1,5 +1,10 @@
 FROM python:3.14-slim@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6
 
+# Apply Debian's perl-base security fixes missing from the pinned base image.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends --only-upgrade perl-base \
+    && rm -rf /var/lib/apt/lists/*
+
 ARG VCS_REF=unknown
 ARG BUILD_URL=unknown
 ARG BUILD_RUN_ID=unknown
