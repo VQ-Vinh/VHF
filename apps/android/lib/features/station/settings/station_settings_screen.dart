@@ -232,34 +232,40 @@ class _StationSettingsScreenState extends ConsumerState<StationSettingsScreen> {
                   ),
                 ),
                 const SizedBox(height: 18),
-                DropdownButtonFormField<String>(
-                  key: ValueKey(
-                    '$selectedMode|$selectedDevice|'
-                    '${capabilities?.capabilityHash ?? ''}',
+                Text(
+                  AppLocalizations.of(context).audioDevice,
+                  style: Theme.of(context).textTheme.labelLarge,
+                ),
+                const SizedBox(height: 8),
+                Semantics(
+                  label: AppLocalizations.of(context).audioDevice,
+                  child: DropdownButtonFormField<String>(
+                    key: ValueKey(
+                      '$selectedMode|$selectedDevice|'
+                      '${capabilities?.capabilityHash ?? ''}',
+                    ),
+                    initialValue:
+                        selectedDevice.isEmpty ? null : selectedDevice,
+                    isExpanded: true,
+                    itemHeight: null,
+                    items:
+                        devices
+                            .map(
+                              (item) => DropdownMenuItem(
+                                value: item.id,
+                                child: Text(item.name),
+                              ),
+                            )
+                            .toList(),
+                    onChanged:
+                        controlsEnabled
+                            ? (value) => setState(() {
+                              deviceId = value;
+                              controller.error = null;
+                              controller.refreshResultKey = null;
+                            })
+                            : null,
                   ),
-                  initialValue: selectedDevice.isEmpty ? null : selectedDevice,
-                  isExpanded: true,
-                  itemHeight: null,
-                  decoration: InputDecoration(
-                    labelText: AppLocalizations.of(context).audioDevice,
-                  ),
-                  items:
-                      devices
-                          .map(
-                            (item) => DropdownMenuItem(
-                              value: item.id,
-                              child: Text(item.name),
-                            ),
-                          )
-                          .toList(),
-                  onChanged:
-                      controlsEnabled
-                          ? (value) => setState(() {
-                            deviceId = value;
-                            controller.error = null;
-                            controller.refreshResultKey = null;
-                          })
-                          : null,
                 ),
                 if (selectedDevice.isNotEmpty)
                   _DeviceDetails(
@@ -269,29 +275,34 @@ class _StationSettingsScreenState extends ConsumerState<StationSettingsScreen> {
                   ),
                 if (txChoiceNeeded) ...[
                   const SizedBox(height: 18),
+                  Text(
+                    AppLocalizations.of(context).txOutputDevice,
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                  const SizedBox(height: 8),
                   // RX and TX share one sound card, so they belong in one card.
-                  DropdownButtonFormField<String>(
-                    key: const ValueKey('tx-output-device'),
-                    initialValue:
-                        selectedTxDevice.isEmpty ? null : selectedTxDevice,
-                    isExpanded: true,
-                    itemHeight: null,
-                    decoration: InputDecoration(
-                      labelText: AppLocalizations.of(context).txOutputDevice,
+                  Semantics(
+                    label: AppLocalizations.of(context).txOutputDevice,
+                    child: DropdownButtonFormField<String>(
+                      key: const ValueKey('tx-output-device'),
+                      initialValue:
+                          selectedTxDevice.isEmpty ? null : selectedTxDevice,
+                      isExpanded: true,
+                      itemHeight: null,
+                      items:
+                          outputDevices
+                              .map(
+                                (device) => DropdownMenuItem(
+                                  value: device.id,
+                                  child: Text(device.name),
+                                ),
+                              )
+                              .toList(),
+                      onChanged:
+                          controlsEnabled
+                              ? (value) => setState(() => txDeviceId = value)
+                              : null,
                     ),
-                    items:
-                        outputDevices
-                            .map(
-                              (device) => DropdownMenuItem(
-                                value: device.id,
-                                child: Text(device.name),
-                              ),
-                            )
-                            .toList(),
-                    onChanged:
-                        controlsEnabled
-                            ? (value) => setState(() => txDeviceId = value)
-                            : null,
                   ),
                 ] else if (selectedTxDevice.isNotEmpty)
                   // Silent auto-pick would hide where transmissions go.

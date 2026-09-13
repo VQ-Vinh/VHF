@@ -83,6 +83,17 @@ flowchart LR
 
 ## 🚀 Quick Start
 
+**Xem UI App trên browser, không cần Emulator:** chạy từ thư mục repo:
+
+```powershell
+.\run\_android\_preview.bat
+```
+
+Mở [UI Preview trên localhost](http://127.0.0.1:8876) với tài khoản và dữ liệu demo.
+Launcher ưu tiên Chrome; khi chưa cài Chrome, dùng Web Server và trình duyệt mặc định.
+Giữ terminal mở, nhấn `r` để hot reload, `R` để khởi động lại, `q` để dừng.
+Chi tiết phạm vi mô phỏng và kiểm chứng: [Web UI Preview](docs/android-web-preview.md).
+
 ### Triển khai cho người dùng
 
 1. Tải APK và checksum từ [GitHub Releases](https://github.com/VQ-Vinh/VHF/releases).

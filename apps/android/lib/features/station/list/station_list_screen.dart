@@ -157,15 +157,17 @@ class _StationCard extends StatelessWidget {
                             : Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                   const SizedBox(width: 7),
-                  Text(
-                    online ? station.captureState.toUpperCase() : 'OFFLINE',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  Expanded(
+                    child: Text(
+                      online ? station.captureState.toUpperCase() : 'OFFLINE',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
-                  const Spacer(),
+                  const SizedBox(width: 8),
                   Text(
                     'RX ${station.sequence}',
                     style: const TextStyle(color: Color(0xFF607983)),

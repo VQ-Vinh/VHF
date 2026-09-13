@@ -11,6 +11,14 @@ import 'package:prana_mobile/features/auth/verify_email_screen.dart';
 import 'package:prana_mobile/features/pairing/pairing_screen.dart';
 import 'package:prana_mobile/features/station/list/station_list_screen.dart';
 
+/// Platform composition may substitute entry flows without duplicating routes.
+final signInPageProvider = Provider<WidgetBuilder>(
+  (ref) => (_) => const SignInScreen(),
+);
+final pairingPageProvider = Provider<Widget Function(BuildContext, Uri)>(
+  (ref) => (_, uri) => PairingScreen(initialUri: uri),
+);
+
 final routerProvider = Provider<GoRouter>((ref) {
   final refresh = _RouterRefresh();
   ref.listen(authStateProvider, (_, _) => refresh.changed());
@@ -31,7 +39,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
-      GoRoute(path: '/sign-in', builder: (_, _) => const SignInScreen()),
+      GoRoute(
+        path: '/sign-in',
+        builder: (context, _) => ref.read(signInPageProvider)(context),
+      ),
       GoRoute(
         path: '/verify-email',
         builder: (_, _) => const VerifyEmailScreen(),
@@ -39,11 +50,15 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/stations', builder: (_, _) => const StationListScreen()),
       GoRoute(
         path: '/pair',
-        builder: (_, state) => PairingScreen(initialUri: state.uri),
+        builder:
+            (context, state) =>
+                ref.read(pairingPageProvider)(context, state.uri),
       ),
       GoRoute(
         path: '/activate',
-        builder: (_, state) => PairingScreen(initialUri: state.uri),
+        builder:
+            (context, state) =>
+                ref.read(pairingPageProvider)(context, state.uri),
       ),
       GoRoute(
         path: '/stations/:id/:tab',
