@@ -6,6 +6,7 @@ abstract interface class AuthenticationService {
   Future<void> signIn({required String email, required String password});
   Future<void> signUp({required String email, required String password});
   Future<bool> signInWithGoogle();
+  Future<void> linkGoogle();
   Future<void> sendPasswordReset(String email);
   Future<void> resendEmailVerification();
   Future<bool> refreshEmailVerification();
@@ -17,6 +18,14 @@ class FirebaseAuthenticationService implements AuthenticationService {
 
   final FirebaseAuth _auth;
   final GoogleSignIn _google;
+
+  @override
+  Future<void> linkGoogle() async {
+    final googleUser = await _google.authenticate();
+    await _auth.currentUser?.linkWithCredential(
+      GoogleAuthProvider.credential(idToken: googleUser.authentication.idToken),
+    );
+  }
 
   @override
   Future<void> signIn({required String email, required String password}) async {

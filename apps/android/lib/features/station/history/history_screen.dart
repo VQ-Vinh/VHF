@@ -5,13 +5,11 @@ import 'dart:async';
 import 'package:prana_mobile/app/di/history_providers.dart';
 import 'package:prana_mobile/app/di/auth_providers.dart';
 import 'package:prana_mobile/domain/radio/results.dart';
-import 'dart:io';
+import 'package:prana_mobile/domain/radio/history_audio_engine.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:just_audio/just_audio.dart';
-import 'package:path_provider/path_provider.dart';
 
 import 'package:prana_mobile/core/widgets.dart';
 import 'package:prana_mobile/features/station/shared/widgets/translation_result_card.dart';
@@ -237,17 +235,17 @@ class _TxDayHistory extends ConsumerStatefulWidget {
 class _TxDayHistoryState extends ConsumerState<_TxDayHistory>
     with WidgetsBindingObserver {
   final search = TextEditingController();
-  final player = AudioPlayer();
+  late final HistoryAudioEngine player;
   late Future<List<TxDraft>> jobs;
   String query = '';
   String? playingId;
   int _playbackEpoch = 0;
-  StreamSubscription<PlayerState>? _playerSubscription;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    player = ref.read(historyAudioEngineProvider)();
     jobs = ref
         .read(historyControllerProvider)
         .txHistoryDayJobs(
@@ -256,18 +254,12 @@ class _TxDayHistoryState extends ConsumerState<_TxDayHistory>
           timezoneOffsetMinutes: widget.timezoneOffsetMinutes,
           timezone: widget.timezoneName,
         );
-    _playerSubscription = player.playerStateStream.listen((state) {
-      if (state.processingState == ProcessingState.completed && mounted) {
-        setState(() => playingId = null);
-      }
-    });
   }
 
   @override
   void dispose() {
     _playbackEpoch++;
     WidgetsBinding.instance.removeObserver(this);
-    _playerSubscription?.cancel();
     search.dispose();
     player.dispose();
     super.dispose();
@@ -304,22 +296,8 @@ class _TxDayHistoryState extends ConsumerState<_TxDayHistory>
       return;
     }
     setState(() => playingId = job.id);
-    File? temporaryFile;
     try {
-      final bytes = await ref
-          .read(historyControllerProvider)
-          .txHistoryAudio(widget.stationId, job.id);
-      if (!mounted || !widget.active || epoch != _playbackEpoch) return;
-      final directory = await getTemporaryDirectory();
-      final file = File(
-        '${directory.path}/prana-tx-history-${job.id}-$epoch.wav',
-      );
-      temporaryFile = file;
-      await file.writeAsBytes(bytes, flush: true);
-      if (!mounted || !widget.active || epoch != _playbackEpoch) return;
-      await player.setFilePath(file.path);
-      if (!mounted || !widget.active || epoch != _playbackEpoch) return;
-      await player.play();
+      await player.play(widget.stationId, job.id);
     } catch (error) {
       if (mounted && widget.active && epoch == _playbackEpoch) {
         ScaffoldMessenger.of(
@@ -327,11 +305,7 @@ class _TxDayHistoryState extends ConsumerState<_TxDayHistory>
         ).showSnackBar(SnackBar(content: Text(error.toString())));
       }
     } finally {
-      final file = temporaryFile;
-      if (file != null && await file.exists()) await file.delete();
-      if (mounted &&
-          epoch == _playbackEpoch &&
-          player.processingState != ProcessingState.ready) {
+      if (mounted && epoch == _playbackEpoch) {
         setState(() => playingId = null);
       }
     }
