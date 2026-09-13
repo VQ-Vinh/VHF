@@ -2,7 +2,7 @@ import 'package:prana_mobile/l10n/app_localizations.dart';
 import 'package:prana_mobile/features/station/history/history_screen.dart';
 import 'package:prana_mobile/domain/radio/tx/tx_phase.dart';
 import 'package:prana_mobile/app/di/telemetry_providers.dart';
-import 'dashboard_test.dart' show TestTelemetry;
+import 'telemetry_instruments_test.dart' show TestTelemetry;
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -89,8 +89,8 @@ class _History implements HistoryRepository {
 
 void main() {
   for (final (running, initialPage) in [
-    (false, 'dashboard'),
-    (true, 'dashboard'),
+    (false, 'control'),
+    (true, 'control'),
     (false, 'control'),
     (false, 'history'),
     (false, 'settings'),
@@ -224,7 +224,7 @@ void main() {
 
         Future<void> openPage(String page) async {
           while (find
-              .byKey(const ValueKey('station-tab-dashboard'))
+              .byKey(const ValueKey('station-tab-control'))
               .evaluate()
               .isEmpty) {
             await backPage();
@@ -245,9 +245,9 @@ void main() {
           await settlePage();
         }
 
-        if (initialPage != 'dashboard' && initialPage != 'control') {
+        if (initialPage != 'control') {
           expect(
-            find.byKey(const ValueKey('station-tab-dashboard')),
+            find.byKey(const ValueKey('station-tab-control')),
             findsNothing,
           );
           await backPage();
@@ -255,12 +255,12 @@ void main() {
             router.routeInformationProvider.value.uri.path,
             initialPage == 'history'
                 ? '/stations/s/live'
-                : '/stations/s/dashboard',
+                : '/stations/s/control',
           );
         }
-        await openPage('dashboard');
+        await openPage('control');
         expect(
-          find.byKey(const ValueKey('station-tab-dashboard')),
+          find.byKey(const ValueKey('station-tab-control')),
           findsOneWidget,
         );
         expect(
@@ -275,14 +275,11 @@ void main() {
         );
         expect(find.byIcon(Icons.settings_outlined), findsOneWidget);
         await openPage('settings');
-        expect(
-          find.byKey(const ValueKey('station-tab-dashboard')),
-          findsNothing,
-        );
+        expect(find.byKey(const ValueKey('station-tab-control')), findsNothing);
         await backPage();
         expect(
           router.routeInformationProvider.value.uri.path,
-          '/stations/s/dashboard',
+          '/stations/s/control',
         );
         await openPage('control');
         await tester.ensureVisible(
@@ -316,7 +313,7 @@ void main() {
           router.routeInformationProvider.value.uri.path,
           '/stations/s/live',
         );
-        await openPage('dashboard');
+        await openPage('control');
 
         results.add([]);
         await tester.pump();
@@ -338,13 +335,7 @@ void main() {
         await tester.pump();
         await tester.pump();
         expect(speech.spoken, ['New RX result']);
-        for (final tab in [
-          'live',
-          'dashboard',
-          'history',
-          'settings',
-          'live',
-        ]) {
+        for (final tab in ['live', 'control', 'history', 'settings', 'live']) {
           await openPage(tab);
           for (var i = 0; i < 4; i++) {
             await tester.pump(const Duration(milliseconds: 100));
@@ -395,7 +386,7 @@ void main() {
         if (running) {
           session.tx.startRecording();
           await tester.pump(const Duration(milliseconds: 200));
-          await tester.tap(find.byKey(const ValueKey('station-tab-dashboard')));
+          await tester.tap(find.byKey(const ValueKey('station-tab-control')));
           for (var i = 0; i < 5; i++) {
             await tester.pump(const Duration(milliseconds: 100));
           }
@@ -446,7 +437,7 @@ void main() {
             'Edited translation',
           );
           await session.tx.confirmTransmission('Duplicate');
-          await tester.tap(find.byKey(const ValueKey('station-tab-dashboard')));
+          await tester.tap(find.byKey(const ValueKey('station-tab-control')));
           await tester.pump(const Duration(milliseconds: 100));
           expect(session.tx.state.phase, TxPhase.processing);
           await tester.pump(const Duration(milliseconds: 900));
@@ -458,7 +449,7 @@ void main() {
           expect(session.tx.state.phase, TxPhase.completed);
           expect(txRepository.lastConfirmedTranslation, 'Edited translation');
         }
-        if (!running && initialPage == 'dashboard') {
+        if (!running && initialPage == 'control') {
           for (final size in [
             const Size(320, 800),
             const Size(375, 800),
@@ -486,13 +477,7 @@ void main() {
                   isNull,
                   reason: '$size / $scale / $locale',
                 );
-                for (final tab in [
-                  'dashboard',
-                  'control',
-                  'live',
-                  'history',
-                  'settings',
-                ]) {
+                for (final tab in ['control', 'live', 'history', 'settings']) {
                   await openPage(tab);
                   await tester.pump(const Duration(milliseconds: 200));
                   await tester.pump();
@@ -501,10 +486,10 @@ void main() {
                     isNull,
                     reason: '$tab / $size / $scale / $locale',
                   );
-                  if (tab == 'dashboard' || tab == 'control' || tab == 'live') {
+                  if (tab == 'control' || tab == 'live') {
                     final where = 'tabs on $tab / $size / $scale / $locale';
                     final tabs = [
-                      for (final key in const ['dashboard', 'control', 'live'])
+                      for (final key in const ['control', 'live'])
                         tester.getRect(
                           find.byKey(ValueKey('station-tab-$key')),
                         ),
@@ -515,16 +500,13 @@ void main() {
                     final span = tabs.last.right - tabs.first.left;
                     // Equal tabs that never stop short of the frame's right
                     // edge; when they fit, they run edge to edge exactly.
-                    expect(
-                      tabs[1].width,
-                      closeTo(tabs[0].width, .5),
-                      reason: where,
-                    );
-                    expect(
-                      tabs[2].width,
-                      closeTo(tabs[0].width, .5),
-                      reason: where,
-                    );
+                    for (final cell in tabs.skip(1)) {
+                      expect(
+                        cell.width,
+                        closeTo(tabs.first.width, .5),
+                        reason: where,
+                      );
+                    }
                     expect(
                       span,
                       greaterThanOrEqualTo(frame.width - .5),
@@ -558,7 +540,7 @@ void main() {
         tester.platformDispatcher.textScaleFactorTestValue = 1;
         tester.platformDispatcher.localesTestValue = const [Locale('en')];
         await tester.pump();
-        await openPage('dashboard');
+        await openPage('control');
         await tester.tap(find.byKey(const ValueKey('workspace-back')));
         for (var i = 0; i < 5; i++) {
           await tester.pump(const Duration(milliseconds: 100));

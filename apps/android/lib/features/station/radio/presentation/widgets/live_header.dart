@@ -146,6 +146,8 @@ class _ChannelCell extends StatelessWidget {
     final palette = ConsolePalette.of(context);
     return Semantics(
       container: true,
+      // The dial is not read off the radio yet. The cell shows the number
+      // alone, so the disclosure lives here, where it costs no space.
       label:
           '${l10n.liveChannel} ${channel.number} VHF'
           '${channel.simulated ? ', ${l10n.simulatedShort}' : ''}',
@@ -181,21 +183,6 @@ class _ChannelCell extends StatelessWidget {
                 Text('VHF', style: consoleCaption(palette, size: 10)),
               ],
             ),
-            // The number is not read off the radio yet. Saying so beside it
-            // keeps a bare 16, the distress channel, from reading as a fact.
-            if (channel.simulated) ...[
-              const SizedBox(height: 3),
-              Text(
-                l10n.simulatedShort,
-                key: const ValueKey('live-channel-simulated'),
-                style: consoleState(
-                  palette,
-                  size: 9,
-                  color: palette.muted,
-                  weight: FontWeight.w500,
-                ),
-              ),
-            ],
           ],
         ),
       ),

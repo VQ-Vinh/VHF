@@ -6,7 +6,13 @@ import '../../application/steering_state.dart';
 import 'sim_notice.dart';
 
 class ControlWidget extends StatelessWidget {
-  const ControlWidget({super.key, required this.mode, required this.onChanged});
+  const ControlWidget({
+    super.key,
+    required this.mode,
+    required this.onChanged,
+    this.showNotice = true,
+  });
+  final bool showNotice;
   final MockControlMode mode;
   final ValueChanged<MockControlMode> onChanged;
 
@@ -39,8 +45,10 @@ class ControlWidget extends StatelessWidget {
               ),
           ],
         ),
-        const SizedBox(height: 12),
-        SimNotice(icon: Icons.link_off, message: l10n.controlMock),
+        if (showNotice) ...[
+          const SizedBox(height: 12),
+          SimNotice(icon: Icons.link_off, message: l10n.controlMock),
+        ],
       ],
     );
   }

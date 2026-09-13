@@ -10,7 +10,9 @@ import 'package:prana_mobile/runtime/station/station_runtime_host.dart';
 import 'package:prana_mobile/app/navigation/router.dart';
 
 class PranaMobileApp extends ConsumerWidget {
-  const PranaMobileApp({super.key});
+  const PranaMobileApp({super.key, this.frameBuilder});
+
+  final Widget Function(BuildContext, Widget)? frameBuilder;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -31,9 +33,12 @@ class PranaMobileApp extends ConsumerWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      builder:
-          (context, child) =>
-              StationRuntimeHost(child: child ?? const SizedBox.shrink()),
+      builder: (context, child) {
+        final host = StationRuntimeHost(
+          child: child ?? const SizedBox.shrink(),
+        );
+        return frameBuilder?.call(context, host) ?? host;
+      },
       routerConfig: ref.watch(routerProvider),
     );
   }

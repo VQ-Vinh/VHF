@@ -11,7 +11,6 @@ import 'package:prana_mobile/app/di/account_providers.dart';
 import 'package:prana_mobile/app/di/auth_providers.dart';
 import 'package:prana_mobile/app/di/station_providers.dart';
 import 'package:prana_mobile/app/di/radio_providers.dart';
-import 'package:prana_mobile/features/station/dashboard/presentation/dashboard_tab.dart';
 import 'package:prana_mobile/features/station/radio/presentation/live_screen.dart';
 import 'package:prana_mobile/features/station/history/history_screen.dart';
 import 'package:prana_mobile/features/station/settings/station_settings_screen.dart';
@@ -34,7 +33,7 @@ class _StationWorkspaceState extends ConsumerState<StationWorkspaceScreen> {
   final _visited = <StationPage>{};
   final _historyKey = GlobalKey<HistoryScreenState>();
   bool _leaving = false;
-  StationPage _settingsReturn = StationPage.dashboard;
+  StationPage _settingsReturn = StationPage.control;
   @override
   void initState() {
     super.initState();
@@ -144,11 +143,7 @@ class _StationWorkspaceState extends ConsumerState<StationWorkspaceScreen> {
     }
     final runtime = ref.watch(stationRuntimeStateProvider(widget.stationId));
     final primary = widget.page.primaryTab;
-    final labels = [
-      AppLocalizations.of(context).dashboard,
-      'Control',
-      'Live VHF',
-    ];
+    final labels = ['Control', 'Live VHF'];
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
@@ -280,10 +275,6 @@ class _StationWorkspaceState extends ConsumerState<StationWorkspaceScreen> {
                           !_visited.contains(tab)
                               ? const SizedBox.shrink()
                               : switch (tab) {
-                                StationPage.dashboard => DashboardTab(
-                                  stationId: widget.stationId,
-                                  stationOnline: runtime.online,
-                                ),
                                 StationPage.control => ControlTab(
                                   key: ValueKey(
                                     'control-${auth.value!.uid}-${widget.stationId}',

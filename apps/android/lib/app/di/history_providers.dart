@@ -3,6 +3,12 @@ import 'package:prana_mobile/data/radio/api_history_repository.dart';
 import 'package:prana_mobile/domain/radio/history_repository.dart';
 import 'package:prana_mobile/features/station/history/history_controller.dart';
 import 'auth_providers.dart';
+import 'package:prana_mobile/data/radio/history_audio.dart';
+import 'package:prana_mobile/domain/radio/history_audio_engine.dart';
+
+final historyAudioEngineProvider = Provider<HistoryAudioEngine Function()>(
+  (ref) => () => NativeHistoryAudioEngine(ref.read(apiProvider)),
+);
 
 final historyRepositoryProvider = Provider<HistoryRepository>(
   (ref) => ApiHistoryRepository(ref.watch(apiProvider)),

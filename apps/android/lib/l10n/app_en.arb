@@ -9,16 +9,13 @@
   "moduleDevices": "Devices",
   "modulePending": "Not integrated",
   "stationUnavailable": "Station unavailable",
-  "dashboard": "Dashboard",
   "speed": "Speed",
   "depth": "Depth",
   "heading": "Heading",
   "position": "Position",
-  "map": "Coordinate map",
   "control": "Control",
   "auto": "Auto",
   "manual": "Manual",
-  "dashboardStatus": "Status",
   "stationOnline": "Station Online",
   "stationOffline": "Station Offline",
   "telemetryMock": "Simulated telemetry",
@@ -309,5 +306,9 @@
   "liveStopCapture": "STOP CAPTURE",
   "liveChannel": "Channel",
   "liveTransmission": "Live transmission",
-  "simulatedShort": "SIM"
+  "simulatedShort": "SIM",
+  "telemetryUpdatedAt": "Updated at",
+  "gpsPosition": "GPS position",
+  "source": "Source",
+  "sourceSimulated": "Simulated"
 }

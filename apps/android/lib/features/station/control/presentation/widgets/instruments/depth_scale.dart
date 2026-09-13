@@ -9,9 +9,18 @@ import 'package:flutter/material.dart';
 /// how a sounder presents the same range. Anything under a metre pins to the
 /// left edge, since a log axis has no zero.
 class DepthScale extends StatelessWidget {
-  const DepthScale({super.key, required this.metres, this.height = 30});
+  const DepthScale({
+    super.key,
+    required this.metres,
+    this.height = 30,
+    this.labelled = true,
+  });
   final double? metres;
   final double height;
+
+  /// Decade labels under the track. Off in a strip cell, where the track is
+  /// a few pixels tall and the numbers would have nowhere to sit.
+  final bool labelled;
 
   static const double minMetres = 1;
   static const double maxMetres = 10000;
@@ -30,6 +39,7 @@ class DepthScale extends StatelessWidget {
       child: CustomPaint(
         painter: _DepthScalePainter(
           metres: metres,
+          labelled: labelled,
           track: colors.surfaceContainerHighest,
           fill: colors.primary,
           tick: colors.outlineVariant,
@@ -44,6 +54,7 @@ class DepthScale extends StatelessWidget {
 class _DepthScalePainter extends CustomPainter {
   _DepthScalePainter({
     required this.metres,
+    required this.labelled,
     required this.track,
     required this.fill,
     required this.tick,
@@ -51,6 +62,7 @@ class _DepthScalePainter extends CustomPainter {
     required this.textDirection,
   });
   final double? metres;
+  final bool labelled;
   final Color track, fill, tick, label;
   final TextDirection textDirection;
 
@@ -87,6 +99,8 @@ class _DepthScalePainter extends CustomPainter {
       );
     }
 
+    if (!labelled) return;
+
     // Decade ticks and their labels, skipping any label that would collide
     // with the previous one on a narrow card.
     var occupied = double.negativeInfinity;
@@ -117,6 +131,7 @@ class _DepthScalePainter extends CustomPainter {
   @override
   bool shouldRepaint(_DepthScalePainter old) =>
       old.metres != metres ||
+      old.labelled != labelled ||
       old.track != track ||
       old.fill != fill ||
       old.tick != tick ||

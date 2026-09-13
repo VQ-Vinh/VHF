@@ -5,11 +5,9 @@ import 'package:prana_mobile/l10n/app_localizations.dart';
 import 'package:prana_mobile/core/responsive.dart';
 import 'package:prana_mobile/app/di/account_providers.dart';
 import 'package:prana_mobile/app/di/auth_providers.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 
 import 'package:prana_mobile/core/user_region.dart';
 import 'package:prana_mobile/core/widgets.dart';
@@ -132,16 +130,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
   }
 
   Future<void> _linkGoogle() async {
-    await _action(() async {
-      final googleUser = await GoogleSignIn.instance.authenticate();
-      final authentication = googleUser.authentication;
-      await ref
-          .read(authProvider)
-          .currentUser
-          ?.linkWithCredential(
-            GoogleAuthProvider.credential(idToken: authentication.idToken),
-          );
-    });
+    await _action(ref.read(authenticationServiceProvider).linkGoogle);
   }
 
   Future<void> _signOut() async {
@@ -360,7 +349,9 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                                   busy
                                       ? null
                                       : () => _action(
-                                        () => user!.sendEmailVerification(),
+                                        ref
+                                            .read(authenticationServiceProvider)
+                                            .resendEmailVerification,
                                       ),
                               icon: const Icon(Icons.mark_email_read_outlined),
                               label: Text(
@@ -381,10 +372,8 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                                     ? null
                                     : () => _action(
                                       () => ref
-                                          .read(authProvider)
-                                          .sendPasswordResetEmail(
-                                            email: user!.email!,
-                                          ),
+                                          .read(authenticationServiceProvider)
+                                          .sendPasswordReset(user!.email!),
                                     ),
                             icon: const Icon(Icons.mail_outline),
                             label: Text(

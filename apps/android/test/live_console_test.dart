@@ -251,27 +251,77 @@ void main() {
     }
   });
 
-  testWidgets('a simulated channel says so beside the number', (tester) async {
+  testWidgets('the channel shows the number, and discloses the simulation', (
+    tester,
+  ) async {
     final tx = controller();
     addTearDown(tx.dispose);
+    final semantics = tester.ensureSemantics();
 
     await tester.pumpWidget(console(tx: tx));
     expect(find.text('16'), findsOneWidget);
+    // The cell carries the number alone; the disclosure rides the semantics
+    // label, where it costs no space on a crowded hero row.
+    expect(find.text('SIM'), findsNothing);
     expect(
-      find.byKey(const ValueKey('live-channel-simulated')),
-      findsOneWidget,
+      tester.getSemantics(find.byKey(const ValueKey('live-channel'))).label,
+      contains('SIM'),
     );
-    expect(find.text('SIM'), findsOneWidget);
 
     await tester.pumpWidget(console(tx: tx, locale: const Locale('vi')));
-    expect(find.text('MÔ PHỎNG'), findsOneWidget);
+    expect(
+      tester.getSemantics(find.byKey(const ValueKey('live-channel'))).label,
+      contains('MÔ PHỎNG'),
+    );
 
-    // Once a real source reports the channel, the tag goes.
+    // A channel a real source reports says nothing about simulation.
     await tester.pumpWidget(
       console(tx: tx, channel: const VhfChannel(72, simulated: false)),
     );
     expect(find.text('72'), findsOneWidget);
-    expect(find.byKey(const ValueKey('live-channel-simulated')), findsNothing);
+    expect(
+      tester.getSemantics(find.byKey(const ValueKey('live-channel'))).label,
+      isNot(contains('SIM')),
+    );
+    semantics.dispose();
+  });
+
+  testWidgets('the heard language reads as a name, between two rules', (
+    tester,
+  ) async {
+    final tx = controller();
+    addTearDown(tx.dispose);
+    await tester.pumpWidget(console(tx: tx));
+
+    // The name only: the two-letter code said the same thing twice. Scoped to
+    // the field, because the TX dock names a language of its own.
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('input-language-field')),
+        matching: find.text('Tiếng Việt'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('VI'), findsNothing);
+
+    // The arrow sits in its own bay between the two fields: rule, arrow, rule.
+    final heard = tester.getRect(
+      find.byKey(const ValueKey('input-language-field')),
+    );
+    final target = tester.getRect(
+      find.byKey(const ValueKey('output-language-field')),
+    );
+    final arrow = tester.getRect(find.byIcon(Icons.arrow_forward));
+    final rules =
+        tester.widgetList<VerticalDivider>(find.byType(VerticalDivider)).length;
+    expect(rules, greaterThanOrEqualTo(2));
+    expect(arrow.left, greaterThan(heard.right));
+    expect(arrow.right, lessThan(target.left));
+    expect(
+      arrow.center.dx - heard.right,
+      closeTo(target.left - arrow.center.dx, 1),
+      reason: 'centred between the fields',
+    );
   });
 
   testWidgets('speech on the channel reads as RX RECEIVING', (tester) async {
