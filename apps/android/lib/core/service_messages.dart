@@ -7,6 +7,7 @@ String localizedServiceMessage(BuildContext context, String code) {
   return switch (code) {
     'rx_audio_input_not_found' => l10n.rxAudioInputNotFound,
     'rx_start_failed' => l10n.rxStartFailed,
+    'rx_control_taken' => l10n.rxControlTaken,
     'auth_invalid_email' => l10n.authInvalidEmail,
     'auth_invalid_credentials' => l10n.authInvalidCredentials,
     'auth_email_in_use' => l10n.authEmailInUse,

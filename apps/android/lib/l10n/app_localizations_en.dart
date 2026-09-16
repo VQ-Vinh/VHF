@@ -137,6 +137,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get rxStartFailed => 'The Station could not start RX.';
 
   @override
+  String get rxControlTaken =>
+      'A remote operator has taken control of this Station.';
+
+  @override
+  String stationRemotelyControlled(Object controller) {
+    return '$controller is controlling this Station. Controls are locked until they release it.';
+  }
+
+  @override
   String get offline => 'Offline for more than 15 seconds';
 
   @override

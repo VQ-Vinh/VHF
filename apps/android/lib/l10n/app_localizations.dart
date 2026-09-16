@@ -350,6 +350,18 @@ abstract class AppLocalizations {
   /// **'The Station could not start RX.'**
   String get rxStartFailed;
 
+  /// No description provided for @rxControlTaken.
+  ///
+  /// In en, this message translates to:
+  /// **'A remote operator has taken control of this Station.'**
+  String get rxControlTaken;
+
+  /// No description provided for @stationRemotelyControlled.
+  ///
+  /// In en, this message translates to:
+  /// **'{controller} is controlling this Station. Controls are locked until they release it.'**
+  String stationRemotelyControlled(Object controller);
+
   /// No description provided for @offline.
   ///
   /// In en, this message translates to:

@@ -42,6 +42,15 @@
   "retry": "Retry",
   "rxAudioInputNotFound": "No USB SoundCard input was found. Connect the device and try again.",
   "rxStartFailed": "The Station could not start RX.",
+  "rxControlTaken": "A remote operator has taken control of this Station.",
+  "stationRemotelyControlled": "{controller} is controlling this Station. Controls are locked until they release it.",
+  "@stationRemotelyControlled": {
+    "placeholders": {
+      "controller": {
+        "type": "Object"
+      }
+    }
+  },
   "offline": "Offline for more than 15 seconds",
   "apiReady": "API READY",
   "apiError": "API ERROR",

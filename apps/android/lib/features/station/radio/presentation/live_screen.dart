@@ -55,7 +55,11 @@ bool canToggleLiveStation({
   required bool busy,
   required bool commandPending,
   bool commandFailed = false,
+  bool viewOnly = false,
 }) =>
+    // A remote operator holds the control lease. Nothing this client sends
+    // would be accepted, so the toggle must not look available.
+    !viewOnly &&
     (online || running) &&
     !busy &&
     // An offline Station can never acknowledge the generation, so treating its
@@ -218,6 +222,9 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
         }
 
         final online = station.isOnlineAt(now);
+        // A remote operator console holds the control lease. The owner keeps
+        // every read; only the controls go away until the lease lapses.
+        final viewOnly = station.controlHeldByOther(now);
         final controller = ref.watch(
           liveUxControllerProvider(widget.stationId),
         );
@@ -280,6 +287,7 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
                     busy: ux.busy,
                     commandPending: station.commandPending,
                     commandFailed: commandFailed,
+                    viewOnly: viewOnly,
                   )
                   ? () =>
                       controller.setRunning(station, !station.desired.running)
@@ -315,12 +323,16 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
                             LanguageStrip(
                               detectedLanguage: detectedLanguage,
                               targetLanguage: targetLanguage,
-                              enabled: online && !ux.busy,
+                              enabled: online && !ux.busy && !viewOnly,
                               onChanged:
                                   (value) =>
                                       controller.setLanguage(station, value),
                             ),
                             _QuotaBanner(account: ref.watch(accountProvider)),
+                            if (viewOnly)
+                              _RemoteControlBanner(
+                                controller: station.controllerLabel,
+                              ),
                             if (station.retrying)
                               _RetryingBanner(attempt: station.retryAttempt),
                             if (ux.error != null)
