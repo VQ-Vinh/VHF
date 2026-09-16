@@ -179,9 +179,17 @@ vượt qua ranh giới đó. Trước khi mở rộng số lượng operator, n
 request trả về **nội dung**, và cho chủ Station thấy được dấu vết "bộ phận hỗ
 trợ đã truy cập Station của bạn".
 
-**`list_station_live_results` có lỗi đói kết quả có sẵn** (`repository.py`):
+**`list_station_live_results` có một lỗi hẹp nhưng có thật** (`repository.py`):
 `.limit(1000)` áp lên truy vấn `collection_group` **trước** bộ lọc tiền tố
-`users/{uid}/...`. Với Station từng được release rồi người khác claim lại, kết
-quả cùng ngày của chủ cũ ăn hết limit. Console poll nó 2 s trên nhiều Station
-nên sẽ làm lỗi này lộ ra rõ hơn. Cách sửa: ghi `owner_uid` lên document kết quả
-và lọc phía server.
+`users/{uid}/...` chạy trong Python. Truy vấn sắp xếp `timestamp` giảm dần, nên
+một lần chuyển chủ A→B **không** gây vấn đề: kết quả của B luôn mới hơn của A và
+luôn nằm trong 1000 bản mới nhất.
+
+Lỗi chỉ xuất hiện khi kết quả của chủ cũ lại **mới hơn** một phần kết quả của
+chủ hiện tại trong cùng cửa sổ một ngày — tức Station bị chuyển đi rồi chuyển về
+(A→B→A) trong ngày đó, và B tạo đủ nhiều kết quả để đẩy phần sớm hơn của A ra
+khỏi 1000 bản mới nhất. Khi đó A mất phần kết quả buổi sáng của chính mình, âm
+thầm, không có lỗi nào được báo.
+
+Cách sửa: ghi `owner_uid` lên document kết quả và lọc phía server, để `limit`
+áp sau khi đã loại kết quả của chủ khác.
