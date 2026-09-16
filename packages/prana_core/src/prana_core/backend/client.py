@@ -22,6 +22,21 @@ class BackendApiError(RuntimeError):
         self.detail = dict(detail or {})
 
 
+def raise_for_api_error(response: httpx.Response) -> None:
+    """Turn an error response into a BackendApiError carrying the API's code."""
+    if not response.is_error:
+        return
+    detail = {}
+    try:
+        raw_detail = response.json().get("detail", {})
+        detail = raw_detail if isinstance(raw_detail, dict) else {}
+        code = detail.get("code", "API_ERROR")
+        message = detail.get("message", str(raw_detail) or response.text)
+    except Exception:
+        code, message = "API_ERROR", response.text
+    raise BackendApiError(code, message, response.status_code, detail)
+
+
 def canonical_request(
     request_id: str,
     timestamp: str,
@@ -65,22 +80,15 @@ class BackendClient:
             self.device = DeviceIdentity(self.credential_store)
         return self.device.id
 
-    def _headers(self) -> dict[str, str]:
+    def auth_headers(self) -> dict[str, str]:
+        """Bearer header for the signed-in user. Public so the console layer can
+        reuse the same session without reaching into privates."""
         return {"Authorization": f"Bearer {self.auth.id_token()}"}
 
-    @staticmethod
-    def _raise(response: httpx.Response) -> None:
-        if not response.is_error:
-            return
-        detail = {}
-        try:
-            raw_detail = response.json().get("detail", {})
-            detail = raw_detail if isinstance(raw_detail, dict) else {}
-            code = detail.get("code", "API_ERROR")
-            message = detail.get("message", str(raw_detail) or response.text)
-        except Exception:
-            code, message = "API_ERROR", response.text
-        raise BackendApiError(code, message, response.status_code, detail)
+    # Retained as the historical internal name used throughout this class.
+    _headers = auth_headers
+
+    _raise = staticmethod(raise_for_api_error)
 
     def me(self) -> dict:
         try:
