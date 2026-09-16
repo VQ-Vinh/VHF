@@ -777,6 +777,49 @@ def set_status(request: Request, uid: str, status: str = Form(), csrf_token: str
     return _redirect(f"/users/{uid}", "status_updated")
 
 
+@app.post("/users/{uid}/fleet-operator")
+def set_fleet_operator(request: Request, uid: str, granted: str = Form(), csrf_token: str = Form(),
+                       operator: str = Header(default=None, alias="X-Goog-Authenticated-User-Email")):
+    """Grant or revoke fleet operator rights on a user account.
+
+    The flag lives on the user document rather than in a Firebase custom claim so
+    that a revocation takes effect on the operator's next API request instead of
+    waiting out an ID token. A fleet operator can read any customer's transcripts
+    and seize control of any radio, so revocation latency matters.
+    """
+    email = _operator(operator)
+    _verify_csrf(request, email, csrf_token)
+    if granted not in {"true", "false"}:
+        raise HTTPException(400, "Invalid value")
+    enabled = granted == "true"
+    db = _db()
+    user_ref = db.collection("users").document(uid)
+    snapshot = user_ref.get()
+    if not snapshot.exists:
+        raise HTTPException(404, "User not found")
+    user = snapshot.to_dict()
+    if enabled and not user.get("email_verified"):
+        raise HTTPException(409, "Email must be verified before granting operator rights")
+    update = {
+        "fleet_operator": enabled,
+        "fleet_operator_label": user.get("email", "") if enabled else "",
+        "updated_at": firestore.SERVER_TIMESTAMP,
+    }
+    batch = db.batch()
+    batch.update(user_ref, update)
+    _write_audit(
+        batch,
+        db,
+        email,
+        "user.fleet_operator_granted" if enabled else "user.fleet_operator_revoked",
+        uid,
+        {"before": bool(user.get("fleet_operator")), "after": enabled},
+        _request_id(request),
+    )
+    batch.commit()
+    return _redirect(f"/users/{uid}", "fleet_operator_updated")
+
+
 @app.post("/users/{uid}/devices/reset")
 def reset_devices(request: Request, uid: str, csrf_token: str = Form(),
                   operator: str = Header(default=None, alias="X-Goog-Authenticated-User-Email")):
