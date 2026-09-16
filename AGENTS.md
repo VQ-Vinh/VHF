@@ -5,7 +5,7 @@
 The repository contains a Python 3.11+ desktop/Pi client and two FastAPI services:
 
 - `packages/prana_core/src/prana_core/` — platform-neutral pipeline, VAD, storage, backend and station protocol.
-- `apps/windows/`, `apps/linux/`, and `apps/android/` — platform composition roots and build assets.
+- `apps/windows/`, `apps/linux/`, and `apps/android/` — platform composition roots and build assets. `apps/windows/` is the fleet **Operator Console** plus the headless Windows Station; the console runs no local RX pipeline.
 - `services/prana_api/` and `services/prana_admin/` — public API and IAP-protected admin service.
 - `tests/` — suites grouped by `core/`, `windows/`, `linux/`, `api/`, `admin/`, `packaging/`, and `conventions/`. `packaging/` exercises the release tooling and the artifacts it produces; `conventions/` reads tracked files as text to pin repository rules that no runtime check would catch.
 - Platform TOML files live beside their app; shared release validators live in `tools/packaging/`. The Windows configs commit a Firebase Web API key because the desktop app signs users in and that key is public by design; the Linux station signs nobody in and ships it empty, and the Android config is generated per build and stays out of git. Each config carries a comment saying so.
@@ -54,6 +54,42 @@ host, so the only iOS build is the `ios` CI job; do not push a branch merely to
 watch it compile. iOS ships no installable artifact: simulator builds are
 unsigned by design and there is no Apple Developer Program membership, so no
 `.ipa`, TestFlight or ad-hoc distribution exists to produce.
+
+
+## Fleet Operator Console
+
+The Windows desktop app is an operator console for remote Stations, not a local
+translation client. Read
+[docs/architecture/operator-console.md](docs/architecture/operator-console.md)
+before changing it. The rules that are easy to break by accident:
+
+- **The console is REST-only.** Firestore rules deny a signed-in client every
+  read outside its own `users/{uid}` subtree, so an operator cannot subscribe to
+  a Station it does not own, and nobody can subscribe to results. Do not
+  "fix" console latency by widening `infra/firebase/firestore.rules`; a test in
+  `tests/api/test_firestore_rules.py` exists to stop that.
+- **Operator access lives in its own router.** Keep `/v1/operator/*` separate;
+  never add `or is_operator` to an owner-scoped `/v1/stations/*` handler. The
+  invariant "these 404 unless you own the Station" must stay readable.
+- **`uid` in a station repository call means the data owner, not the caller.**
+  Operator routes resolve `owner_uid` from `station_registry` and pass that.
+  Never relax the `users/{uid}/...` prefix filter: a released-and-reclaimed
+  Station would leak the previous owner's transcripts.
+- **Content limits follow the Station owner's plan**, never the operator's.
+- **Never auto-replay a failed transmission**, and never re-upload TX audio
+  after a network error — recover the draft by `X-Request-ID` instead. Both
+  risk a duplicate transmission on a live marine channel.
+- `PRANA_API_CONTROL_LEASE_ENABLED` must stay off until an Android build that
+  understands view-only has actually shipped to users. An older build receiving
+  `CONTROL_TAKEN` shows an untranslated error on a safety-adjacent device.
+- Operator reads of result content are audited to `operator_audit`, not
+  `admin_audit`. Keep them separate; Web Admin pages the latter with its own
+  schema.
+
+Cross-tenant transcript access is the most sensitive capability in this
+repository. `services/prana_admin` was deliberately built with zero access to
+transcripts; widening what the console can read is a product decision, not a
+refactor.
 
 ## Coding Style & Naming Conventions
 

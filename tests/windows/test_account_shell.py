@@ -16,14 +16,10 @@ try:
     from PySide6.QtTest import QSignalSpy
     from prana_core.config.schema import AppConfig
     from prana_windows.ui.account import AccountController, AccountState
-    from prana_windows.ui.dialogs.settings import SettingsDialog
     from prana_windows.ui.components.chat_feed import ChatFeed
-    from prana_windows.ui.components.header_bar import HeaderBar
-    from prana_windows.ui.components.language_block import LanguageBlock
     from prana_windows.ui.pages.account import AuthPage
     from prana_windows.ui.pages.account_center import AccountCenterPage
     from prana_windows.ui.pages.plans import PlansPage
-    from prana_windows.ui.pages.translation import TranslationPage
     from prana_windows.ui.i18n import language
     from prana_windows.ui.main_window import MainWindow
 except ModuleNotFoundError as exc:
@@ -38,11 +34,7 @@ except ModuleNotFoundError as exc:
     MainWindow = None  # type: ignore[assignment]
     AccountCenterPage = None  # type: ignore[assignment]
     PlansPage = None  # type: ignore[assignment]
-    TranslationPage = None  # type: ignore[assignment]
-    SettingsDialog = None  # type: ignore[assignment]
     ChatFeed = None  # type: ignore[assignment]
-    HeaderBar = None  # type: ignore[assignment]
-    LanguageBlock = None  # type: ignore[assignment]
     QSignalSpy = None  # type: ignore[assignment]
 
 
@@ -336,49 +328,12 @@ class AccountShellUiTests(unittest.TestCase):
         language.set_locale("en")
         page.close()
 
-    def test_translation_header_controls_are_vertically_aligned(self) -> None:
-        header = HeaderBar()
-        header.resize(960, 72)
-        header.show()
-        self.app.processEvents()
-        controls = [
-            header._locale,
-            header._start_stop_btn,
-            header._settings_btn,
-            header._account_btn,
-            header._rx_badge,
-        ]
-        self.assertEqual({control.height() for control in controls}, {36})
-        self.assertEqual(len({control.geometry().center().y() for control in controls}), 1)
-        header.close()
-
     def test_translation_status_bar_does_not_show_latency(self) -> None:
         feed = ChatFeed()
         self.assertFalse(hasattr(feed, "_latency_label"))
         self.assertIsNotNone(feed._listening_label)
         self.assertIsNotNone(feed._gcs_label)
         feed.close()
-
-    def test_language_bar_uses_balanced_input_and_output_fields(self) -> None:
-        block = LanguageBlock()
-        block.resize(960, 96)
-        block.show()
-        self.app.processEvents()
-        self.assertEqual(block._input_box.height(), 40)
-        self.assertEqual(block._output_combo.height(), 40)
-        self.assertEqual(block._input_box.width(), block._output_combo.width())
-        self.assertEqual(block._input_box.y(), block._output_combo.y())
-        self.assertEqual(block._input_label.y(), block._output_label.y())
-
-        language.set_locale("vi")
-        block.set_detected_language("vi")
-        self.app.processEvents()
-        self.assertEqual(block._input_lang.text(), "Tiếng Việt")
-        self.assertLessEqual(
-            block._input_lang.sizeHint().width(), block._input_lang.width()
-        )
-        language.set_locale("en")
-        block.close()
 
     def test_account_center_localizes_usage_and_protects_current_device(self) -> None:
         page = AccountCenterPage(google_enabled=True)
@@ -469,90 +424,63 @@ class AccountShellUiTests(unittest.TestCase):
         language.set_locale("en")
         page.close()
 
-    def test_quota_banner_counts_down_and_keeps_retry_available(self) -> None:
-        from datetime import datetime, timedelta, timezone
 
-        page = TranslationPage("en")
-        reset = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
-        page.show_quota_exhausted(reset)
-        self.assertFalse(page.quota_banner.isHidden())
-        self.assertIn("Daily quota exhausted", page.quota_banner.text())
-        self.assertIn("00:04:", page.quota_banner.text())
-        page.clear_quota_exhausted()
-        self.assertTrue(page.quota_banner.isHidden())
-        page.close_logging()
-        page.close()
 
-    def test_settings_contains_only_application_preferences(self) -> None:
-        dialog = SettingsDialog(-1, "device", [], [])
-        self.assertFalse(hasattr(dialog, "_account_heading"))
-        self.assertFalse(hasattr(dialog, "_sign_out_button"))
-        dialog.close()
-
-    def test_main_window_switches_pages_without_closing_on_sign_out(self) -> None:
-        class FakeOrchestrator:
-            is_running = True
-
-            def __init__(self, config, backend, audio_backend_factory):
-                self.config = config
-                self.backend = backend
-                self.audio_backend_factory = audio_backend_factory
-                self.stop_calls = 0
-
-            def shutdown(self, timeout=15):
-                return True
-
-            def stop(self):
-                self.stop_calls += 1
-
+    def test_main_window_switches_console_pages_without_closing_on_sign_out(self) -> None:
+        """The console has no local pipeline; page flow is all that changes."""
         profile = AccountControllerTests._profile()
+        profile["fleet_operator"] = True
         backend = _FakeBackend(profile)
         controller = AccountController(backend)  # type: ignore[arg-type]
         config = AppConfig.from_toml("apps/windows/config/default.toml")
-        with tempfile.TemporaryDirectory() as temporary:
-            with patch("prana_windows.ui.main_window.PipelineOrchestrator", FakeOrchestrator):
-                window = MainWindow(config, account_controller=controller, data_root=temporary)
-                window._on_account_state(AccountState.SIGNED_OUT, {}, "")
-                self.assertIs(window._stack.currentWidget(), window._auth_page)
+        window = MainWindow(config, account_controller=controller)
 
-                window._on_account_state(AccountState.ACTIVE, profile, "")
-                controller.state = AccountState.ACTIVE
-                self.assertIs(window._stack.currentWidget(), window._translation_page)
-                self.assertEqual(window._active_uid, "user-1")
+        window._on_account_state(AccountState.SIGNED_OUT, {}, "")
+        self.assertIs(window._stack.currentWidget(), window._auth_page)
 
-                with patch.object(controller, "load_account_center") as load_details:
-                    window.open_account_center()
-                    self.assertIs(window._stack.currentWidget(), window._account_center)
-                    self.assertEqual(window._orchestrator.stop_calls, 0)
-                    load_details.assert_called_once()
-                    window._close_account_center()
-                    self.assertIs(window._stack.currentWidget(), window._translation_page)
+        window._on_account_state(AccountState.ACTIVE, profile, "")
+        controller.state = AccountState.ACTIVE
+        self.assertIs(window._stack.currentWidget(), window._fleet_page)
 
-                    with patch.object(controller, "load_plans") as load_plans:
-                        window.open_plans()
-                        self.assertIs(window._stack.currentWidget(), window._plans_page)
-                        self.assertTrue(window._account_refresh_timer.isActive())
-                        self.assertEqual(window._account_refresh_timer.interval(), 30_000)
-                        load_plans.assert_called_once()
-                        window._refresh_visible_account_page()
-                        self.assertEqual(load_plans.call_count, 2)
-                    window._back_to_account_center()
-                    self.assertIs(window._stack.currentWidget(), window._account_center)
-                    window._close_account_center()
+        with patch.object(controller, "load_account_center") as load_details:
+            window.open_account_center()
+            self.assertIs(window._stack.currentWidget(), window._account_center)
+            load_details.assert_called_once()
+            window._close_account_center()
+            self.assertIs(window._stack.currentWidget(), window._fleet_page)
 
-                    window._on_account_state(
-                        AccountState.RESTRICTED,
-                        AccountControllerTests._profile("suspended"),
-                        "",
-                    )
-                    self.assertIs(window._stack.currentWidget(), window._account_center)
-                    self.assertGreaterEqual(window._orchestrator.stop_calls, 1)
-                    self.assertTrue(window._account_center._back.isHidden())
+            with patch.object(controller, "load_plans") as load_plans:
+                window.open_plans()
+                self.assertIs(window._stack.currentWidget(), window._plans_page)
+                load_plans.assert_called_once()
+            window._back_to_account_center()
+            self.assertIs(window._stack.currentWidget(), window._account_center)
+            window._close_account_center()
 
-                window._finish_sign_out()
-                self.assertIs(window._stack.currentWidget(), window._auth_page)
-                self.assertFalse(backend.auth.has_session)
-                window.close()
+            window._on_account_state(
+                AccountState.RESTRICTED,
+                AccountControllerTests._profile("suspended"),
+                "",
+            )
+            self.assertIs(window._stack.currentWidget(), window._account_center)
+            self.assertTrue(window._account_center._back.isHidden())
+
+        window._finish_sign_out()
+        self.assertIs(window._stack.currentWidget(), window._auth_page)
+        self.assertFalse(backend.auth.has_session)
+        window.close()
+
+    def test_account_without_operator_rights_gets_an_explanation(self) -> None:
+        """A valid non-operator account is a normal state, not an error."""
+        profile = AccountControllerTests._profile()
+        profile["fleet_operator"] = False
+        backend = _FakeBackend(profile)
+        controller = AccountController(backend)  # type: ignore[arg-type]
+        config = AppConfig.from_toml("apps/windows/config/default.toml")
+        window = MainWindow(config, account_controller=controller)
+        window._on_account_state(AccountState.ACTIVE, profile, "")
+        self.assertIs(window._stack.currentWidget(), window._not_operator_page)
+        window.close()
 
 
 if __name__ == "__main__":

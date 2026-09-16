@@ -46,6 +46,7 @@ class TxController extends ChangeNotifier {
   bool _stationRunning = false;
   bool _commandPending = false;
   bool _pttReady = true;
+  bool _viewOnly = false;
   bool _disposed = false;
   bool _cancelling = false;
   int _operation = 0;
@@ -82,17 +83,21 @@ class TxController extends ChangeNotifier {
     required bool running,
     required bool commandPending,
     bool pttReady = true,
+    bool viewOnly = false,
   }) {
     setStationOnline(online);
     final pttChanged = _pttReady != pttReady;
+    final viewOnlyChanged = _viewOnly != viewOnly;
     if (_stationRunning == running &&
         _commandPending == commandPending &&
-        !pttChanged) {
+        !pttChanged &&
+        !viewOnlyChanged) {
       return;
     }
     _stationRunning = running;
     _commandPending = commandPending;
     _pttReady = pttReady;
+    _viewOnly = viewOnly;
     if (!pttReady &&
         (state.phase == TxPhase.idle ||
             state.phase == TxPhase.queued ||
@@ -116,7 +121,12 @@ class TxController extends ChangeNotifier {
       _stationOnline &&
       _stationRunning &&
       _pttReady &&
+      // A remote operator holds the lease; the radio is not this client's to
+      // key, even though the owner is still signed in.
+      !_viewOnly &&
       !_commandPending;
+
+  bool get viewOnly => _viewOnly;
 
   bool get startRequired => _stationOnline && !_stationRunning;
 
@@ -128,6 +138,7 @@ class TxController extends ChangeNotifier {
       _stationOnline &&
       _stationRunning &&
       _pttReady &&
+      !_viewOnly &&
       !_commandPending;
 
   void setTargetLanguage(String language) {

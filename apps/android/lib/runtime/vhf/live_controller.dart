@@ -12,6 +12,9 @@ enum LiveCommandPhase {
   applied,
   failed,
   offline,
+
+  /// A remote operator console holds the control lease for this Station.
+  viewOnly,
 }
 
 @immutable
@@ -69,9 +72,30 @@ class LiveUxController extends ChangeNotifier {
   final DesiredStateSender _sendDesiredState;
   LiveUxState state = const LiveUxState();
 
-  void synchronize(StationModel station, {required bool online}) {
+  void synchronize(
+    StationModel station, {
+    required bool online,
+    bool viewOnly = false,
+  }) {
     var next = state;
-    if (!online && state.phase != LiveCommandPhase.offline) {
+    // View-only outranks every other branch: with the lease gone nothing this
+    // client has in flight can still land, so reporting anything else would
+    // promise the user an outcome that cannot happen.
+    if (viewOnly) {
+      if (state.phase != LiveCommandPhase.viewOnly) {
+        next = next.copyWith(
+          phase: LiveCommandPhase.viewOnly,
+          clearPendingRunning: true,
+          clearOptimisticLanguage: true,
+        );
+      }
+    } else if (state.phase == LiveCommandPhase.viewOnly) {
+      next = next.copyWith(
+        phase: LiveCommandPhase.idle,
+        clearError: true,
+        clearPendingRunning: true,
+      );
+    } else if (!online && state.phase != LiveCommandPhase.offline) {
       // Nothing is in flight once the Station is unreachable; keeping the
       // pending value would leave the toggle describing a command that can no
       // longer complete.
@@ -198,5 +222,6 @@ class LiveUxController extends ChangeNotifier {
 
 String _commandErrorKey(String code) => switch (code) {
   'AUDIO_INPUT_DEVICE_NOT_FOUND' => 'rx_audio_input_not_found',
+  'CONTROL_TAKEN' => 'rx_control_taken',
   _ => 'rx_start_failed',
 };

@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 from zoneinfo import ZoneInfo
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import JSONResponse
 from google.api_core.exceptions import Aborted
 from google.cloud import firestore
@@ -69,7 +69,12 @@ from services.prana_api.models import (
     StationPairingResponse,
     StationProvisionRequest,
     StationProvisionResponse,
+    ControlAcquireRequest,
+    ControlLease,
     CountryOption,
+    OperatorStation,
+    OperatorStationPage,
+    UserAccount,
     UserSettingsPatch,
     TxDraft,
     TxConfirmRequest,
@@ -77,7 +82,12 @@ from services.prana_api.models import (
     TxJob,
     TxJobUpdate,
 )
-from services.prana_api.repository import FirestoreRepository, Repository
+from services.prana_api.repository import (
+    ControlActor,
+    FirestoreRepository,
+    Repository,
+    assert_control,
+)
 from services.prana_api.security import (
     body_hash,
     canonical_request,
@@ -180,6 +190,22 @@ def active_account(identity: Identity, repo: Repository):
     if not account.subscription_active or not account.plan_id:
         raise api_error(403, "SUBSCRIPTION_INACTIVE", "Subscription is not active")
     return account, repo.get_plan(account.plan_id)
+
+
+def require_fleet_operator(
+    identity: Identity = Depends(require_identity),
+    repo: Repository = Depends(get_repository),
+) -> UserAccount:
+    """Gate the fleet console on the operator flag, not on a subscription.
+
+    Deliberately `verified_account` and not `active_account`: an operator acts on
+    other people's Stations, so their own plan is irrelevant, and requiring one
+    would lock out support staff sitting on a free account.
+    """
+    account = verified_account(identity, repo)
+    if not account.fleet_operator:
+        raise api_error(403, "OPERATOR_REQUIRED", "This account is not a fleet operator")
+    return account
 
 
 def _pairing_hash(pairing_id: str, code: str) -> str:
@@ -885,7 +911,18 @@ def update_station_desired_state(
         updates["capability_refresh_increment"] = True
     if not updates:
         raise api_error(422, "INVALID_REQUEST", "No desired state change was supplied")
-    return repo.update_station_desired_state(identity.uid, station_id, updates)
+    return repo.update_station_desired_state(
+        identity.uid,
+        station_id,
+        updates,
+        ControlActor(
+            uid=identity.uid,
+            kind="owner",
+            # Until the owner's own clients can explain a seized Station, an
+            # operator lease coordinates operators without demoting the owner.
+            enforce_owner_lease=get_settings().control_lease_enabled,
+        ),
+    )
 
 
 @app.get("/v1/stations/{station_id}/desired-state", response_model=StationDesiredState)
@@ -1643,3 +1680,544 @@ def update_tx_job(station_id: str, job_id: str, request: TxJobUpdate,
     payload = request.model_dump(exclude_none=True)
     _signed_tx_station(station_id, "POST", path, request_id, request_timestamp, signature, payload, repo)
     return TxDraft.model_validate(tx_repo.station_update(station_id, job_id, request.status, request.error))
+
+
+# ---------------------------------------------------------------------------
+# Fleet operator console
+#
+# A separate router, not extra branches inside the owner routes above. The
+# invariant "every /v1/stations/* route 404s unless you own the Station" stays
+# provable by reading those handlers, and the Android contract is untouched.
+# ---------------------------------------------------------------------------
+
+operator_router = APIRouter(
+    prefix="/v1/operator",
+    dependencies=[Depends(require_fleet_operator)],
+)
+
+
+def _operator_station(repo: Repository, station_id: str) -> tuple[dict, str]:
+    registry = repo.get_station_registry(station_id)
+    if not registry:
+        raise api_error(404, "STATION_NOT_FOUND", "Station was not found")
+    owner_uid = str(registry.get("owner_uid") or "")
+    if not owner_uid:
+        raise api_error(409, "STATION_UNCLAIMED", "Station has no owner yet")
+    if not registry.get("active", True):
+        raise api_error(403, "STATION_REVOKED", "Station access has been revoked")
+    return registry, owner_uid
+
+
+def _operator_owner_plan(repo: Repository, owner_uid: str, require_active: bool) -> Plan:
+    """Content limits follow the Station owner's plan, never the operator's.
+
+    An operator must not be able to read further back than the customer paid to
+    retain. That window is the customer's contract, not a support privilege.
+    """
+    account = repo.get_account(owner_uid)
+    if account is None:
+        raise api_error(404, "STATION_NOT_FOUND", "Station owner was not found")
+    if require_active and (not account.subscription_active or not account.plan_id):
+        raise api_error(
+            409,
+            "OWNER_SUBSCRIPTION_INACTIVE",
+            "The Station owner's subscription is not active",
+        )
+    return repo.get_plan(account.plan_id or "free")
+
+
+def _operator_audit(
+    repo: Repository,
+    operator: UserAccount,
+    action: str,
+    station_id: str,
+    owner_uid: str,
+    payload: dict | None = None,
+) -> None:
+    repo.record_operator_event(
+        {
+            "actor_uid": operator.uid,
+            "actor_email": operator.email,
+            "action": action,
+            "station_id": station_id,
+            "owner_uid": owner_uid,
+            "payload": payload or {},
+        }
+    )
+
+
+def _operator_actor(operator: UserAccount, epoch: int | None) -> ControlActor:
+    return ControlActor(uid=operator.uid, kind="operator", epoch=epoch)
+
+
+@operator_router.get("/stations", response_model=OperatorStationPage)
+def operator_list_stations(
+    limit: int = 50,
+    cursor: str | None = None,
+    query: str = "",
+    online_only: bool = False,
+    operator: UserAccount = Depends(require_fleet_operator),
+    repo: Repository = Depends(get_repository),
+):
+    del operator
+    items, next_cursor = repo.list_all_stations(
+        max(1, min(limit, 200)),
+        cursor,
+        query,
+        online_only,
+    )
+    return OperatorStationPage(items=items, next_cursor=next_cursor)
+
+
+@operator_router.get("/stations/{station_id}", response_model=OperatorStation)
+def operator_get_station(
+    station_id: str,
+    operator: UserAccount = Depends(require_fleet_operator),
+    repo: Repository = Depends(get_repository),
+):
+    del operator
+    registry, owner_uid = _operator_station(repo, station_id)
+    owner = repo.get_account(owner_uid)
+    return OperatorStation(
+        **repo.station_from_registry(station_id, registry).model_dump(),
+        owner_uid=owner_uid,
+        owner_email=owner.email if owner else "",
+    )
+
+
+@operator_router.post("/stations/{station_id}/control", response_model=ControlLease)
+def operator_acquire_control(
+    station_id: str,
+    request: ControlAcquireRequest,
+    operator: UserAccount = Depends(require_fleet_operator),
+    repo: Repository = Depends(get_repository),
+):
+    _registry, owner_uid = _operator_station(repo, station_id)
+    lease = repo.acquire_station_control(
+        station_id,
+        operator.uid,
+        "operator",
+        request.label or operator.fleet_operator_label or operator.email,
+        get_settings().control_lease_ttl_seconds,
+        request.force,
+    )
+    _operator_audit(
+        repo,
+        operator,
+        "control.force_takeover" if request.force else "control.acquire",
+        station_id,
+        owner_uid,
+        {"epoch": lease.epoch, "preempted_from_uid": lease.preempted_from_uid},
+    )
+    return lease
+
+
+@operator_router.post("/stations/{station_id}/control/renew", response_model=ControlLease)
+def operator_renew_control(
+    station_id: str,
+    epoch: int = Header(alias="X-Control-Epoch"),
+    operator: UserAccount = Depends(require_fleet_operator),
+    repo: Repository = Depends(get_repository),
+):
+    return repo.renew_station_control(
+        station_id,
+        operator.uid,
+        epoch,
+        get_settings().control_lease_ttl_seconds,
+    )
+
+
+@operator_router.delete("/stations/{station_id}/control", status_code=204)
+def operator_release_control(
+    station_id: str,
+    epoch: int = Header(alias="X-Control-Epoch"),
+    operator: UserAccount = Depends(require_fleet_operator),
+    repo: Repository = Depends(get_repository),
+):
+    repo.release_station_control(station_id, operator.uid, epoch)
+    _operator_audit(repo, operator, "control.release", station_id, "", {"epoch": epoch})
+    return Response(status_code=204)
+
+
+@operator_router.patch(
+    "/stations/{station_id}/desired-state",
+    response_model=StationDesiredState,
+)
+def operator_update_desired_state(
+    station_id: str,
+    request: StationDesiredStatePatch,
+    epoch: int = Header(alias="X-Control-Epoch"),
+    operator: UserAccount = Depends(require_fleet_operator),
+    repo: Repository = Depends(get_repository),
+):
+    _registry, owner_uid = _operator_station(repo, station_id)
+    _operator_owner_plan(repo, owner_uid, require_active=True)
+    updates = request.model_dump(
+        exclude={"retry", "refresh_capabilities"}, exclude_none=True
+    )
+    if request.retry:
+        updates["retry_generation_increment"] = True
+    if request.refresh_capabilities:
+        updates["capability_refresh_increment"] = True
+    if not updates:
+        raise api_error(422, "INVALID_REQUEST", "No desired state change was supplied")
+    # `owner_uid` is the data owner so the projection lands under the customer;
+    # the actor is the operator so the lease is what authorises the write.
+    desired = repo.update_station_desired_state(
+        owner_uid,
+        station_id,
+        updates,
+        _operator_actor(operator, epoch),
+    )
+    _operator_audit(
+        repo,
+        operator,
+        "station.desired_state",
+        station_id,
+        owner_uid,
+        {"updates": updates},
+    )
+    return desired
+
+
+@operator_router.get(
+    "/stations/{station_id}/live/results",
+    response_model=list[ProcessingResponse],
+)
+def operator_live_results(
+    station_id: str,
+    timezone_offset_minutes: int = 0,
+    timezone_name: str | None = Query(default=None, alias="timezone"),
+    limit: int = 1000,
+    operator: UserAccount = Depends(require_fleet_operator),
+    repo: Repository = Depends(get_repository),
+):
+    _registry, owner_uid = _operator_station(repo, station_id)
+    local_timezone = _history_timezone(timezone_offset_minutes, timezone_name)
+    local_now = datetime.now(timezone.utc).astimezone(local_timezone)
+    local_start = datetime.combine(local_now.date(), datetime.min.time(), local_timezone)
+    _operator_audit(repo, operator, "station.live_read", station_id, owner_uid)
+    return repo.list_station_live_results(
+        owner_uid,
+        station_id,
+        local_start.astimezone(timezone.utc),
+        (local_start + timedelta(days=1)).astimezone(timezone.utc),
+        max(1, min(limit, 1000)),
+    )
+
+
+@operator_router.get(
+    "/stations/{station_id}/history/days",
+    response_model=list[StationHistoryDay],
+)
+def operator_history_days(
+    station_id: str,
+    timezone_offset_minutes: int = 0,
+    timezone_name: str | None = Query(default=None, alias="timezone"),
+    operator: UserAccount = Depends(require_fleet_operator),
+    repo: Repository = Depends(get_repository),
+):
+    del operator
+    _registry, owner_uid = _operator_station(repo, station_id)
+    plan = _operator_owner_plan(repo, owner_uid, require_active=True)
+    local_timezone = _history_timezone(timezone_offset_minutes, timezone_name)
+    local_today = datetime.now(timezone.utc).astimezone(local_timezone).date()
+    days: dict[date, dict] = {}
+    for value in _station_history_values(repo, owner_uid, station_id):
+        timestamp = _history_timestamp(value)
+        history_date = timestamp.astimezone(local_timezone).date()
+        entry = days.setdefault(
+            history_date,
+            {"count": 0, "first": timestamp, "last": timestamp},
+        )
+        entry["count"] += 1
+        entry["first"] = min(entry["first"], timestamp)
+        entry["last"] = max(entry["last"], timestamp)
+    return [
+        StationHistoryDay(
+            date=history_date,
+            result_count=entry["count"],
+            first_result_at=entry["first"],
+            last_result_at=entry["last"],
+            locked=not _history_unlocked(history_date, plan, local_today),
+        )
+        for history_date, entry in sorted(days.items(), reverse=True)
+    ]
+
+
+@operator_router.get(
+    "/stations/{station_id}/history/days/{history_date}/results",
+    response_model=StationHistoryPage,
+)
+def operator_history_results(
+    station_id: str,
+    history_date: date,
+    timezone_offset_minutes: int = 0,
+    timezone_name: str | None = Query(default=None, alias="timezone"),
+    limit: int = 200,
+    cursor: str | None = None,
+    operator: UserAccount = Depends(require_fleet_operator),
+    repo: Repository = Depends(get_repository),
+):
+    _registry, owner_uid = _operator_station(repo, station_id)
+    plan = _operator_owner_plan(repo, owner_uid, require_active=True)
+    local_timezone = _history_timezone(timezone_offset_minutes, timezone_name)
+    local_today = datetime.now(timezone.utc).astimezone(local_timezone).date()
+    if not _history_unlocked(history_date, plan, local_today):
+        raise api_error(
+            403,
+            "HISTORY_LOCKED",
+            "This day is outside the history window for the Station owner's plan",
+        )
+    try:
+        offset = int(cursor or "0")
+    except ValueError as exc:
+        raise api_error(422, "INVALID_CURSOR", "History cursor is invalid") from exc
+    if offset < 0:
+        raise api_error(422, "INVALID_CURSOR", "History cursor is invalid")
+    values = [
+        value
+        for value in _station_history_values(repo, owner_uid, station_id)
+        if _history_timestamp(value).astimezone(local_timezone).date() == history_date
+    ]
+    safe_limit = max(1, min(limit, 1000))
+    page = values[offset : offset + safe_limit]
+    next_offset = offset + len(page)
+    _operator_audit(repo, operator, "station.history_read", station_id, owner_uid)
+    return StationHistoryPage(
+        items=page,
+        next_cursor=str(next_offset) if next_offset < len(values) else None,
+    )
+
+
+@operator_router.get(
+    "/stations/{station_id}/sessions/{session_id}/results",
+    response_model=list[ProcessingResponse],
+)
+def operator_session_results(
+    station_id: str,
+    session_id: str,
+    limit: int = 1000,
+    operator: UserAccount = Depends(require_fleet_operator),
+    repo: Repository = Depends(get_repository),
+):
+    _registry, owner_uid = _operator_station(repo, station_id)
+    plan = _operator_owner_plan(repo, owner_uid, require_active=True)
+    _operator_audit(repo, operator, "station.session_read", station_id, owner_uid)
+    return repo.list_station_results(
+        owner_uid,
+        station_id,
+        session_id,
+        plan,
+        max(1, min(limit, 1000)),
+    )
+
+
+@operator_router.get(
+    "/stations/{station_id}/sessions/{session_id}/results/{request_id}/audio"
+)
+def operator_result_audio(
+    station_id: str,
+    session_id: str,
+    request_id: str,
+    operator: UserAccount = Depends(require_fleet_operator),
+    repo: Repository = Depends(get_repository),
+):
+    _registry, owner_uid = _operator_station(repo, station_id)
+    result = repo.get_station_result(owner_uid, station_id, session_id, request_id)
+    object_name = (result or {}).get("_source_audio_object")
+    if not object_name:
+        raise api_error(
+            404,
+            "SOURCE_AUDIO_UNAVAILABLE",
+            "Source audio is not available for this result",
+        )
+    audio = get_archive().download_audio(str(object_name))
+    if audio is None:
+        raise api_error(
+            404,
+            "SOURCE_AUDIO_UNAVAILABLE",
+            "Source audio is not available for this result",
+        )
+    _operator_audit(
+        repo,
+        operator,
+        "station.audio_read",
+        station_id,
+        owner_uid,
+        {"request_id": request_id},
+    )
+    return Response(
+        content=audio,
+        media_type="audio/wav",
+        headers={"Cache-Control": "private, no-store"},
+    )
+
+
+# --- Operator TX -----------------------------------------------------------
+#
+# Transmitting on somebody else's radio is the highest-consequence action in
+# this service, so these routes add three things on top of the owner handlers
+# and otherwise reuse them verbatim rather than forking the TX pipeline:
+#   1. the operator must hold an unexpired control lease for the Station,
+#   2. every call is written to operator_audit, and
+#   3. the draft is created as the OWNER, so quota, storage folder and the
+#      Station's own TX history stay coherent with an owner-initiated
+#      transmission.
+# Point 3 is why these build an Identity for the owner: it is not impersonation
+# for authorisation (the operator was already authorised above), it is so the
+# transmission is filed against the radio it actually went out on.
+
+
+def _operator_tx_station(
+    repo: Repository,
+    operator: UserAccount,
+    station_id: str,
+    epoch: int,
+) -> tuple[dict, str, Identity]:
+    registry, owner_uid = _operator_station(repo, station_id)
+    assert_control(
+        registry,
+        _operator_actor(operator, epoch),
+        datetime.now(timezone.utc),
+    )
+    owner = repo.get_account(owner_uid)
+    if owner is None:
+        raise api_error(404, "STATION_NOT_FOUND", "Station owner was not found")
+    return registry, owner_uid, Identity(owner.uid, owner.email, True)
+
+
+@operator_router.post("/stations/{station_id}/tx/drafts", response_model=TxDraft)
+def operator_create_tx_draft(
+    station_id: str,
+    audio: UploadFile = File(),
+    target_language: str = Form(),
+    request_id: str = Header(alias="X-Request-ID"),
+    epoch: int = Header(alias="X-Control-Epoch"),
+    operator: UserAccount = Depends(require_fleet_operator),
+    repo: Repository = Depends(get_repository),
+    tx_repo=Depends(get_tx_repository),
+):
+    _registry, owner_uid, owner = _operator_tx_station(repo, operator, station_id, epoch)
+    _operator_audit(
+        repo,
+        operator,
+        "tx.draft_created",
+        station_id,
+        owner_uid,
+        {"request_id": request_id, "target_language": target_language},
+    )
+    return create_tx_draft(
+        station_id=station_id,
+        audio=audio,
+        target_language=target_language,
+        request_id=request_id,
+        identity=owner,
+        repo=repo,
+        tx_repo=tx_repo,
+    )
+
+
+@operator_router.get(
+    "/stations/{station_id}/tx/drafts/{job_id}", response_model=TxDraft
+)
+def operator_get_tx_draft(
+    station_id: str,
+    job_id: str,
+    epoch: int = Header(alias="X-Control-Epoch"),
+    operator: UserAccount = Depends(require_fleet_operator),
+    repo: Repository = Depends(get_repository),
+    tx_repo=Depends(get_tx_repository),
+):
+    _registry, _owner_uid, owner = _operator_tx_station(repo, operator, station_id, epoch)
+    return get_tx_draft(
+        station_id=station_id,
+        job_id=job_id,
+        identity=owner,
+        repo=repo,
+        tx_repo=tx_repo,
+    )
+
+
+@operator_router.post(
+    "/stations/{station_id}/tx/drafts/{job_id}/confirm", response_model=TxDraft
+)
+def operator_confirm_tx_draft(
+    station_id: str,
+    job_id: str,
+    request: TxConfirmRequest,
+    epoch: int = Header(alias="X-Control-Epoch"),
+    operator: UserAccount = Depends(require_fleet_operator),
+    repo: Repository = Depends(get_repository),
+    tx_repo=Depends(get_tx_repository),
+):
+    _registry, owner_uid, owner = _operator_tx_station(repo, operator, station_id, epoch)
+    # Audited before the radio is keyed, not after, so an interrupted request
+    # still leaves a record that a transmission was attempted.
+    _operator_audit(
+        repo,
+        operator,
+        "tx.transmit_confirmed",
+        station_id,
+        owner_uid,
+        {"job_id": job_id},
+    )
+    return confirm_tx_draft(
+        station_id=station_id,
+        job_id=job_id,
+        request=request,
+        identity=owner,
+        repo=repo,
+        tx_repo=tx_repo,
+    )
+
+
+@operator_router.delete(
+    "/stations/{station_id}/tx/drafts/{job_id}", status_code=204
+)
+def operator_cancel_tx_draft(
+    station_id: str,
+    job_id: str,
+    epoch: int = Header(alias="X-Control-Epoch"),
+    operator: UserAccount = Depends(require_fleet_operator),
+    repo: Repository = Depends(get_repository),
+    tx_repo=Depends(get_tx_repository),
+):
+    _registry, owner_uid, owner = _operator_tx_station(repo, operator, station_id, epoch)
+    _operator_audit(
+        repo, operator, "tx.draft_cancelled", station_id, owner_uid, {"job_id": job_id}
+    )
+    return cancel_tx_draft(
+        station_id=station_id,
+        job_id=job_id,
+        identity=owner,
+        repo=repo,
+        tx_repo=tx_repo,
+    )
+
+
+@operator_router.post(
+    "/stations/{station_id}/tx/drafts/{job_id}/retry", response_model=TxDraft
+)
+def operator_retry_tx_draft(
+    station_id: str,
+    job_id: str,
+    epoch: int = Header(alias="X-Control-Epoch"),
+    operator: UserAccount = Depends(require_fleet_operator),
+    repo: Repository = Depends(get_repository),
+    tx_repo=Depends(get_tx_repository),
+):
+    _registry, owner_uid, owner = _operator_tx_station(repo, operator, station_id, epoch)
+    _operator_audit(
+        repo, operator, "tx.retry", station_id, owner_uid, {"job_id": job_id}
+    )
+    return retry_tx_draft(
+        station_id=station_id,
+        job_id=job_id,
+        identity=owner,
+        repo=repo,
+        tx_repo=tx_repo,
+    )
+
+
+app.include_router(operator_router)

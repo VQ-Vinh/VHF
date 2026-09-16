@@ -56,6 +56,12 @@ class UserAccount(BaseModel):
     # Empty until the user picks a country; readers fall back to the server default.
     country_code: str = ""
     timezone: str = ""
+    # Fleet operator rights for the desktop console. Stored here rather than in a
+    # Firebase custom claim so that granting and revoking take effect on the next
+    # request instead of waiting out an ID token's lifetime. Web Admin owns the
+    # write; every authenticated request already loads this document.
+    fleet_operator: bool = False
+    fleet_operator_label: str = ""
 
     @property
     def subscription_active(self) -> bool:
@@ -138,6 +144,9 @@ class MeResponse(BaseModel):
     timezone: str = ""
     usage: Usage | None = None
     entitlements: PlanEntitlements = Field(default_factory=PlanEntitlements)
+    # Lets the desktop console tell an operator account from an ordinary one
+    # without a second round trip. Authorisation is still decided server-side.
+    fleet_operator: bool = False
 
 
 class UserSettingsPatch(BaseModel):
@@ -338,6 +347,30 @@ class StationHeartbeat(BaseModel):
     active_timezone: str = Field(default="", max_length=64)
 
 
+class ControlLease(BaseModel):
+    """Exclusive claim on a Station's desired state.
+
+    `epoch` is a fencing token. It only ever increases, and a holder must present
+    the epoch it was granted; that is what stops a console which slept through a
+    preemption from quietly reclaiming control when it wakes up.
+    """
+
+    holder_uid: str = Field(max_length=128)
+    holder_kind: Literal["owner", "operator"]
+    holder_label: str = Field(default="", max_length=120)
+    acquired_at: datetime | None = None
+    expires_at: datetime | None = None
+    epoch: int = Field(default=0, ge=0)
+    preempted_from_uid: str = Field(default="", max_length=128)
+    preempted_at: datetime | None = None
+
+    def is_active_at(self, now: datetime) -> bool:
+        return self.expires_at is not None and self.expires_at > now
+
+    def held_by(self, uid: str, now: datetime) -> bool:
+        return self.is_active_at(now) and self.holder_uid == uid
+
+
 class Station(BaseModel):
     station_id: str
     name: str
@@ -370,6 +403,28 @@ class Station(BaseModel):
     ptt_ready: bool = True
     ptt_error: str | None = None
     active_timezone: str = ""
+    # Present only once somebody has claimed exclusive control. Absent or expired
+    # means the owner holds control implicitly, which is what keeps every Station
+    # and every installed client working without a migration.
+    control_lease: ControlLease | None = None
+
+
+class OperatorStation(Station):
+    """Station as a fleet operator sees it: the owner is part of the record."""
+
+    owner_uid: str = ""
+    owner_email: str = ""
+
+
+class OperatorStationPage(BaseModel):
+    items: list[OperatorStation] = Field(default_factory=list)
+    next_cursor: str | None = None
+
+
+class ControlAcquireRequest(BaseModel):
+    # Preemption is never implicit: the console has to ask for it.
+    force: bool = False
+    label: str = Field(default="", max_length=120)
 
 
 class TxDraft(BaseModel):

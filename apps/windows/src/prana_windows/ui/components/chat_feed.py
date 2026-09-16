@@ -79,6 +79,10 @@ class ChatFeed(QWidget):
         self._history_btn.setToolTip(tr("feed.history"))
         self._history_btn.setAccessibleName(tr("feed.history"))
         self._history_btn.clicked.connect(self._on_history)
+        # Station history is a server-side, paged endpoint rather than the local
+        # in-memory table this button used to open. Hidden until the console
+        # grows a history view that reads it.
+        self._history_btn.setVisible(False)
         header_layout.addWidget(self._history_btn)
         layout.addLayout(header_layout)
 

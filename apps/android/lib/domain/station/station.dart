@@ -103,6 +103,32 @@ class StationCapabilities {
   }
 }
 
+class ControlLease {
+  const ControlLease({
+    required this.holderUid,
+    required this.holderKind,
+    this.holderLabel = '',
+    this.expiresAt,
+    this.epoch = 0,
+  });
+
+  final String holderUid;
+  final String holderKind;
+  final String holderLabel;
+  final DateTime? expiresAt;
+  final int epoch;
+
+  bool isActiveAt(DateTime now) => expiresAt != null && expiresAt!.isAfter(now);
+
+  factory ControlLease.fromMap(Map<String, dynamic> map) => ControlLease(
+    holderUid: map['holder_uid'] as String? ?? '',
+    holderKind: map['holder_kind'] as String? ?? 'owner',
+    holderLabel: map['holder_label'] as String? ?? '',
+    expiresAt: StationCapabilities._dateTime(map['expires_at']),
+    epoch: map['epoch'] as int? ?? 0,
+  );
+}
+
 class StationModel {
   const StationModel({
     required this.id,
@@ -132,6 +158,7 @@ class StationModel {
     this.pttMode = 'manual',
     this.pttReady = true,
     this.pttError,
+    this.controlLease,
   });
 
   final String id;
@@ -165,12 +192,29 @@ class StationModel {
   final bool pttReady;
   final String? pttError;
 
+  /// Present only while somebody holds exclusive control. Absent or expired
+  /// means the owner holds control implicitly, which is what keeps every
+  /// installed build working without a migration.
+  final ControlLease? controlLease;
+
   bool isOnlineAt(DateTime now) =>
       active &&
       lastSeenAt != null &&
       now.difference(lastSeenAt!).inSeconds <= 15;
   bool get isOnline => isOnlineAt(DateTime.now());
   bool get commandPending => observedGeneration < desired.generation;
+
+  /// True while a remote operator console is driving this Station. The owner
+  /// keeps every read; only the controls are taken away.
+  bool controlHeldByOther(DateTime now) =>
+      controlLease != null &&
+      controlLease!.isActiveAt(now) &&
+      controlLease!.holderKind != 'owner';
+
+  String get controllerLabel =>
+      controlLease?.holderLabel.isNotEmpty == true
+          ? controlLease!.holderLabel
+          : (controlLease?.holderUid ?? '');
 
   factory StationModel.fromMap(String id, Map<String, dynamic> map) {
     return StationModel(
@@ -208,6 +252,12 @@ class StationModel {
       pttMode: map['ptt_mode'] as String? ?? 'manual',
       pttReady: map['ptt_ready'] as bool? ?? true,
       pttError: map['ptt_error'] as String?,
+      controlLease:
+          map['control_lease'] is Map
+              ? ControlLease.fromMap(
+                Map<String, dynamic>.from(map['control_lease'] as Map),
+              )
+              : null,
     );
   }
 }

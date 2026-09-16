@@ -270,6 +270,33 @@ class _RetryingBanner extends StatelessWidget {
   );
 }
 
+class _RemoteControlBanner extends StatelessWidget {
+  const _RemoteControlBanner({required this.controller});
+  final String controller;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    color: const Color(0xFFFFF3D8),
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+    child: Row(
+      children: [
+        const Icon(Icons.lock_outline, size: 18, color: Color(0xFF9A6700)),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            AppLocalizations.of(context).stationRemotelyControlled(controller),
+            style: const TextStyle(
+              color: Color(0xFF6D4A00),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
 class _ResultSkeleton extends StatelessWidget {
   const _ResultSkeleton();
   @override
