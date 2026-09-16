@@ -12,6 +12,17 @@ datas += collect_data_files("qtawesome")
 datas += [
     (str(PROJECT_ROOT / "apps/windows/src/prana_windows/ui/resources/styles.qss"), "prana_windows/ui/resources"),
     (str(PROJECT_ROOT / "apps/windows/src/prana_windows/ui/resources/google-g.svg"), "prana_windows/ui/resources"),
+    # Brand mark (tinted at runtime) and the icon the window and tray load from
+    # disk -- the exe resource icon alone is not readable by QIcon.
+    (str(PROJECT_ROOT / "apps/windows/src/prana_windows/ui/resources/logo_mark.png"), "prana_windows/ui/resources"),
+    (str(PROJECT_ROOT / "apps/windows/src/prana_windows/ui/resources/prana-elex.ico"), "prana_windows/ui/resources"),
+    # Brand faces shared with the Flutter app, with the OFL licences the fonts
+    # require to travel beside them. Globbed so a new face cannot be forgotten.
+    *(
+        (str(path), "prana_windows/ui/resources/fonts")
+        for path in sorted((PROJECT_ROOT / "apps/windows/src/prana_windows/ui/resources/fonts").iterdir())
+        if path.suffix in {".ttf", ".txt"}
+    ),
     (str(PROJECT_ROOT / "apps/windows/config/default.toml"), "config"),
     # prana_core reads this at import time via importlib.resources; without it
     # the frozen app dies with FileNotFoundError before reaching main().

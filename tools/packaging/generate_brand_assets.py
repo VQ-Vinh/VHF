@@ -17,10 +17,12 @@ Run from the repository root:
 
 from __future__ import annotations
 
+import io
 import shutil
+import struct
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parents[2]
 MASTER = Path(__file__).resolve().parent / "brand" / "prana-elex-logo.png"
@@ -81,6 +83,115 @@ def write(image: Image.Image, relative: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     image.save(path, "PNG", optimize=True)
     print(f"  {image.size[0]:>5}x{image.size[1]:<5} {relative}")
+
+
+# Windows desktop brand colours, from apps/android/lib/core/theme.dart. The
+# desktop app reads its own tokens from prana_windows/ui/theme.py; a test pins
+# that these agree, so the installer and the running app cannot drift apart.
+NAVY = (13, 43, 79)          # #0D2B4F
+BRAND_BLUE = (18, 63, 126)   # #123F7E
+BLUE_BRIGHT = (78, 143, 213) # #4E8FD5
+MUTED_ON_NAVY = (158, 188, 194)  # #9EBCC2
+
+DESKTOP_RESOURCES = "apps/windows/src/prana_windows/ui/resources"
+DESKTOP_INSTALLER = "apps/windows/packaging/installer/assets"
+FONT_DIR = ROOT / "apps/android/assets/fonts"
+
+
+def tinted(artwork: Image.Image, colour: tuple[int, int, int]) -> Image.Image:
+    """Recolour single-ink artwork, keeping its alpha -- PIL's BlendMode.srcIn."""
+    solid = Image.new("RGBA", artwork.size, (*colour, 255))
+    solid.putalpha(artwork.getchannel("A"))
+    return solid
+
+
+def app_tile(mark: Image.Image, size: int) -> Image.Image:
+    """The desktop icon: a navy rounded square carrying the white mark.
+
+    A filled tile rather than a bare mark, because the same artwork has to read
+    on a light and a dark taskbar. Each size is rendered from the master rather
+    than scaled down from a larger frame -- the 16px frame is where a resample
+    shows.
+    """
+    scale = 4  # supersample the rounded corners, then downsample once
+    big = size * scale
+    tile = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+    ImageDraw.Draw(tile).rounded_rectangle(
+        (0, 0, big - 1, big - 1), radius=round(big * 0.2), fill=(*NAVY, 255)
+    )
+    glyph = render(tinted(mark, (255, 255, 255)), big, big, content_width=big * 0.66)
+    tile.alpha_composite(glyph)
+    return tile.resize((size, size), Image.LANCZOS)
+
+
+def write_ico(frames: list[Image.Image], relative: str) -> None:
+    """A Windows .ico with PNG-compressed frames, one per size.
+
+    Pillow's own ICO writer downscales a single source image; this keeps every
+    frame as rendered.
+    """
+    blobs = []
+    for frame in frames:
+        buffer = io.BytesIO()
+        frame.save(buffer, "PNG", optimize=True)
+        blobs.append((frame.size[0], buffer.getvalue()))
+    offset = 6 + 16 * len(blobs)
+    entries, payload = [], []
+    for size, png in blobs:
+        dimension = 0 if size >= 256 else size
+        entries.append(struct.pack("<BBBBHHII", dimension, dimension, 0, 0, 1, 32, len(png), offset))
+        payload.append(png)
+        offset += len(png)
+    data = struct.pack("<HHH", 0, 1, len(blobs)) + b"".join(entries) + b"".join(payload)
+    path = ROOT / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+    print(f"  {len(blobs)} frames  {relative}")
+
+
+def wizard_banner(lockup: Image.Image) -> Image.Image:
+    """Inno Setup's side panel: 430x824, navy, white lockup, brand-face tagline."""
+    width, height = 430, 824
+    banner = Image.new("RGB", (width, height), NAVY)
+    draw = ImageDraw.Draw(banner)
+    # A quiet sweep in the brand blue, standing in for the old teal wave. It
+    # starts below the tagline: crossing the mark's tail read as a mistake.
+    draw.pieslice((-width, height - 150, width * 2, height + 690), 180, 360, fill=BRAND_BLUE)
+    art = render(tinted(lockup, (255, 255, 255)), width, width, content_width=width * 0.62)
+    banner.paste(art, (0, 150), art)
+    rule_y = 150 + width - 30
+    draw.rectangle((width * 0.3, rule_y, width * 0.7, rule_y + 2), fill=BLUE_BRIGHT)
+    face = ImageFont.truetype(str(FONT_DIR / "Archivo-Bold.ttf"), 20)
+    for index, line in enumerate(("MARINE VHF", "TRANSCRIPTION & TRANSLATION")):
+        box = draw.textbbox((0, 0), line, font=face)
+        x = (width - (box[2] - box[0])) // 2
+        draw.text((x, rule_y + 26 + index * 32), line, font=face, fill=MUTED_ON_NAVY)
+    return banner
+
+
+def windows_desktop(mark: Image.Image, lockup: Image.Image) -> None:
+    print("Windows desktop")
+    # In-app mark, recoloured at runtime from the theme the way PranaLogo.mark
+    # takes a colour on the phone.
+    write(render(mark, 128, 128, content_height=128 * 0.721), f"{DESKTOP_RESOURCES}/logo_mark.png")
+
+    # One icon for the exe, installer, window, taskbar and tray. The UI copy is
+    # the same bytes, so the running app never needs the installer tree.
+    frames = [app_tile(mark, size) for size in (16, 32, 48, 64, 256)]
+    write_ico(frames, f"{DESKTOP_INSTALLER}/prana-elex.ico")
+    shutil.copyfile(ROOT / DESKTOP_INSTALLER / "prana-elex.ico", ROOT / DESKTOP_RESOURCES / "prana-elex.ico")
+    print(f"   copied  {DESKTOP_RESOURCES}/prana-elex.ico")
+
+    write(wizard_banner(lockup), f"{DESKTOP_INSTALLER}/wizard-banner.png")
+    write(app_tile(mark, 116).convert("RGBA"), f"{DESKTOP_INSTALLER}/wizard-logo.png")
+
+    # The brand faces travel with their OFL licences, byte for byte.
+    fonts = ROOT / DESKTOP_RESOURCES / "fonts"
+    fonts.mkdir(parents=True, exist_ok=True)
+    for source in sorted(FONT_DIR.iterdir()):
+        if source.suffix in {".ttf", ".txt"}:
+            shutil.copyfile(source, fonts / source.name)
+    print(f"   copied fonts  {DESKTOP_RESOURCES}/fonts")
 
 
 def main() -> None:
@@ -147,6 +258,8 @@ def main() -> None:
         render(lockup, 180, 180, content_width=180 * 0.80, background=CANVAS),
         "services/prana_admin/static/apple-touch-icon.png",
     )
+
+    windows_desktop(mark, lockup)
 
 
 if __name__ == "__main__":

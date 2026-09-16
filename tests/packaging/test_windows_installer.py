@@ -24,6 +24,33 @@ class WindowsInstallerDefinitionTests(unittest.TestCase):
         logo = (INSTALLER / "assets" / "wizard-logo.png").read_bytes()
         self.assertEqual(struct.unpack(">II", logo[16:24]), (116, 116))
 
+    def test_brand_artwork_is_generated_from_the_shared_master(self) -> None:
+        """The icon tile is the brand navy, not the retired hand-drawn slate."""
+        from PIL import Image
+
+        icon = Image.open(INSTALLER / "assets" / "prana-elex.ico")
+        icon.size = (256, 256)
+        corner_in = icon.convert("RGBA").getpixel((40, 128))
+        self.assertEqual(corner_in[:3], (13, 43, 79))  # #0D2B4F
+        banner = Image.open(INSTALLER / "assets" / "wizard-banner.png").convert("RGB")
+        self.assertEqual(banner.getpixel((10, 10)), (13, 43, 79))
+
+    def test_desktop_brand_assets_have_one_generator(self) -> None:
+        self.assertFalse((INSTALLER / "assets" / "generate_assets.py").exists())
+        generator = (ROOT / "tools/packaging/generate_brand_assets.py").read_text(encoding="utf-8")
+        self.assertIn('print("Windows desktop")', generator)
+        self.assertIn("apps/windows/packaging/installer/assets", generator)
+
+    def test_runtime_icon_is_the_installer_icon(self) -> None:
+        """Window, taskbar and tray must show exactly what the installer shows."""
+        runtime = ROOT / "apps/windows/src/prana_windows/ui/resources/prana-elex.ico"
+        self.assertEqual(runtime.read_bytes(), (INSTALLER / "assets" / "prana-elex.ico").read_bytes())
+
+    def test_pyinstaller_bundles_runtime_brand_assets(self) -> None:
+        spec = (ROOT / "apps/windows/packaging/PRANA_ELEX.spec").read_text(encoding="utf-8")
+        self.assertIn("ui/resources/logo_mark.png", spec)
+        self.assertIn("ui/resources/prana-elex.ico", spec)
+
     def test_installer_is_branded_bilingual_and_keeps_data(self) -> None:
         script = (INSTALLER / "PRANA_ELEX.iss").read_text(encoding="utf-8")
         self.assertIn("WizardStyle=modern windows11 includetitlebar", script)
@@ -55,6 +82,12 @@ class WindowsInstallerDefinitionTests(unittest.TestCase):
         spec = (INSTALLER.parent / "PRANA_ELEX.spec").read_text(encoding="utf-8")
         self.assertIn("installer/assets/prana-elex.ico", spec)
         self.assertIn("parents[2]", spec)
+
+    def test_pyinstaller_bundles_the_brand_fonts(self) -> None:
+        """Without this the frozen app silently falls back to Segoe UI."""
+        spec = (ROOT / "apps/windows/packaging/PRANA_ELEX.spec").read_text(encoding="utf-8")
+        self.assertIn("ui/resources/fonts", spec)
+        self.assertIn(".ttf", spec)
 
     def test_build_outputs_are_platform_scoped(self) -> None:
         script = (ROOT / "apps" / "windows" / "packaging" / "build.bat").read_text(
