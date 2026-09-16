@@ -214,4 +214,3 @@ sản phẩm; Station Workspace theo console.
 - Mọi cặp chữ/nền đạt WCAG AA ở cả hai theme; test tính tỉ lệ tương phản.
 - Logo, icon `.ico`, ảnh installer và bản sao font đều sinh từ
   `tools/packaging/generate_brand_assets.py`. Đừng vẽ tay asset desktop riêng.
-

@@ -6,3 +6,4 @@
 /apps/linux/packaging/debian/prana-station.service text eol=lf
 # Upstream font licences ship verbatim, trailing spaces and all.
 /apps/android/assets/fonts/*-OFL.txt -whitespace
+/apps/windows/src/prana_windows/ui/resources/fonts/*-OFL.txt -whitespace
