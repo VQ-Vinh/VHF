@@ -305,10 +305,27 @@ jobs:
       - name: Fail if the app did not stay running
         run: |
           set -Eeuo pipefail
-          if xcrun simctl spawn "${{ steps.sim.outputs.device }}" launchctl list 2>/dev/null | grep -q com.dlv.pranaMobile; then
-            echo "The app is still running."
+          # Probe a few times rather than sampling once. `simctl spawn` talks to
+          # a booted simulator over XPC and can fail transiently on a loaded
+          # runner, which failed this job with the app perfectly healthy. An app
+          # that genuinely exited never comes back, so retrying delays a real
+          # failure by seconds instead of hiding it.
+          alive=""
+          for attempt in 1 2 3 4 5; do
+            if xcrun simctl spawn "${{ steps.sim.outputs.device }}" launchctl list 2>/dev/null | grep -q com.dlv.pranaMobile; then
+              alive="$attempt"
+              break
+            fi
+            sleep 3
+          done
+          if [[ -n "$alive" ]]; then
+            echo "The app is still running (probe $alive)."
           else
             echo "::error::The app exited during launch; the screenshots show the simulator home screen."
+            # Surface the likely cause first. The raw tail below is mostly UIKit
+            # and XPC chatter, which buried the real reason last time this fired.
+            echo "--- crash-shaped lines ---"
+            xcrun simctl spawn "${{ steps.sim.outputs.device }}" log show               --last 5m --style compact               --predicate 'process == "Runner"' 2>/dev/null               | grep -Ei "fatal|exception|crash|assert|signal|terminating|Unhandled"               | tail -20 || echo "(none found)"
             echo "--- simulator log for Runner ---"
             xcrun simctl spawn "${{ steps.sim.outputs.device }}" log show               --last 5m --style compact               --predicate 'process == "Runner"' 2>&1               | tail -80 | tee "$RUNNER_TEMP/ios/app-log.txt"
             exit 1
