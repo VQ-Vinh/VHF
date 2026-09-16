@@ -193,3 +193,25 @@ thầm, không có lỗi nào được báo.
 
 Cách sửa: ghi `owner_uid` lên document kết quả và lọc phía server, để `limit`
 áp sau khi đã loại kết quả của chủ khác.
+
+## Giao diện: token, sáng/tối và thương hiệu
+
+Desktop dùng chung ngôn ngữ thương hiệu với app Flutter nhưng giữ bố cục desktop.
+Android có **hai** ngôn ngữ thị giác: bề mặt sản phẩm (`core/theme.dart`: canvas
+nhạt, card có viền) và console Live VHF (`console_palette.dart`: ô phẳng phân cách
+bằng hairline, không bo góc). Trên desktop, Fleet/Auth/Account/Plans theo bề mặt
+sản phẩm; Station Workspace theo console.
+
+- **Màu chỉ nằm ở `ui/theme.py`.** `styles.qss` là một `string.Template`; không
+  viết hex literal vào đó, và không viết dấu đô-la-ngoặc-nhọn ngay cả trong
+  comment — `substitute` sẽ coi nó là token. Test chặn cả hai.
+- **Không `setStyleSheet` ở cấp widget.** Nó bị nướng cứng một màu và bỏ qua nút
+  đổi theme. Màu thay đổi theo trạng thái đi qua dynamic property + luật QSS.
+- **Icon là pixmap nướng cứng màu.** Dùng `bind_icon` (tự vẽ lại khi đổi theme),
+  hoặc tự tạo lại icon trong handler `theme.changed` nếu glyph phụ thuộc trạng thái.
+- **Dừng thu (hổ phách) khác phát sóng (đỏ).** Android dùng chung màu đỏ cho
+  "STOP CAPTURE" và PTT đang giữ; desktop cố ý tách hai màu vì hậu quả khác hẳn nhau.
+- Mọi cặp chữ/nền đạt WCAG AA ở cả hai theme; test tính tỉ lệ tương phản.
+- Logo, icon `.ico`, ảnh installer và bản sao font đều sinh từ
+  `tools/packaging/generate_brand_assets.py`. Đừng vẽ tay asset desktop riêng.
+
