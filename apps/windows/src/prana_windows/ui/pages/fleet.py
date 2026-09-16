@@ -14,9 +14,11 @@ from PySide6.QtWidgets import (
 )
 
 from prana_core.console.models import StationSummary
+from prana_windows.ui.brand import BrandMark
 from prana_windows.ui.components.station_row import StationRow
+from prana_windows.ui.components.theme_toggle import ThemeToggle
 from prana_windows.ui.i18n import language, tr
-from prana_windows.ui.icons import phosphor_icon
+from prana_windows.ui.icons import bind_icon
 
 
 class FleetPage(QWidget):
@@ -37,6 +39,11 @@ class FleetPage(QWidget):
         root.setSpacing(14)
 
         header = QHBoxLayout()
+        # Every Flutter header carries the mark before its title
+        # (apps/android/lib/core/responsive.dart); the fleet page is the
+        # desktop's home screen, so it does the same.
+        header.addWidget(BrandMark(36), 0, Qt.AlignTop)
+        header.addSpacing(8)
         titles = QVBoxLayout()
         titles.setSpacing(2)
         self._title = QLabel()
@@ -57,13 +64,12 @@ class FleetPage(QWidget):
             lambda: language.set_locale(self._locale.currentData())
         )
         header.addWidget(self._locale, 0, Qt.AlignTop)
+        header.addWidget(ThemeToggle(), 0, Qt.AlignTop)
 
         self._account = QPushButton()
         self._account.setObjectName("SettingsButton")
         self._account.setFixedSize(36, 36)
-        self._account.setIcon(
-            phosphor_icon("ph.user-circle", color="#355762", active_color="#007B87")
-        )
+        bind_icon(self._account, "account-circle-outline", role="text_secondary")
         self._account.setIconSize(QSize(20, 20))
         self._account.setCursor(Qt.PointingHandCursor)
         self._account.clicked.connect(self.account_requested)

@@ -18,8 +18,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from prana_windows.ui.icons import phosphor_icon
+from prana_windows.ui.components.theme_toggle import ThemeToggle
+from prana_windows.ui.icons import themed_icon
 from prana_windows.ui.i18n import language, tr
+from prana_windows.ui.theme import theme
 
 
 class _CenteredPage(QWidget):
@@ -46,6 +48,7 @@ class _CenteredPage(QWidget):
         self._locale.currentIndexChanged.connect(lambda: language.set_locale(self._locale.currentData()))
         language.changed.connect(self._sync_locale)
         locale_row.addWidget(self._locale)
+        locale_row.addWidget(ThemeToggle())
         self.content.addLayout(locale_row)
         row = QHBoxLayout()
         row.addStretch()
@@ -111,13 +114,14 @@ class AuthPage(_CenteredPage):
         self.content.addLayout(google_row)
 
         self._google_divider = QWidget()
+        self._google_divider.setObjectName("AuthDivider")
         divider_layout = QHBoxLayout(self._google_divider)
         divider_layout.setContentsMargins(0, 0, 0, 0)
         divider_layout.setSpacing(12)
         left_line = QFrame()
-        left_line.setFrameShape(QFrame.HLine)
+        left_line.setObjectName("AuthDividerLine")
         right_line = QFrame()
-        right_line.setFrameShape(QFrame.HLine)
+        right_line.setObjectName("AuthDividerLine")
         self._divider_text = QLabel()
         self._divider_text.setObjectName("AuthDividerText")
         divider_layout.addWidget(left_line, stretch=1)
@@ -133,6 +137,7 @@ class AuthPage(_CenteredPage):
         self.content.addWidget(self._tabs)
 
         login = QWidget()
+        login.setObjectName("AuthTabPage")
         login_form = QFormLayout(login)
         login_form.setContentsMargins(18, 20, 18, 18)
         login_form.setHorizontalSpacing(18)
@@ -163,6 +168,7 @@ class AuthPage(_CenteredPage):
         self._tabs.addTab(login, "")
 
         register = QWidget()
+        register.setObjectName("AuthTabPage")
         register_form = QFormLayout(register)
         register_form.setContentsMargins(18, 20, 18, 18)
         register_form.setHorizontalSpacing(18)
@@ -193,8 +199,10 @@ class AuthPage(_CenteredPage):
         self._busy = False
         self._register_email.textChanged.connect(self._update_registration_state)
         self._register_password.textChanged.connect(self._update_registration_state)
+        theme.changed.connect(self._update_registration_state)
 
         self._message = QLabel()
+        self._message.setObjectName("AuthMessage")
         self._message.setWordWrap(True)
         self.content.addWidget(self._message)
         language.changed.connect(self._retranslate)
@@ -210,15 +218,24 @@ class AuthPage(_CenteredPage):
         def update(shown: bool) -> None:
             field.setEchoMode(QLineEdit.Normal if shown else QLineEdit.Password)
             toggle.setIcon(
-                phosphor_icon(
-                    "ph.eye-slash" if shown else "ph.eye",
-                    color="#355762",
-                    active_color="#007B87",
+                themed_icon(
+                    "eye-off-outline" if shown else "eye-outline",
+                    role="text_secondary",
+                    active_role="accent",
                     scale_factor=0.9,
                 )
             )
 
         toggle.toggled.connect(update)
+        def on_theme(*_args) -> None:
+            # A lambda-style connection to the theme singleton does not disconnect
+            # when this button is destroyed, unlike a bound QObject method.
+            import shiboken6
+
+            if shiboken6.isValid(toggle):
+                update(toggle.isChecked())
+
+        theme.changed.connect(on_theme)
         update(False)
 
     def _retranslate(self, *_args) -> None:
@@ -271,7 +288,7 @@ class AuthPage(_CenteredPage):
         checks = self._password_checks(self._register_password.text())
         rows = []
         for key, passed in checks.items():
-            color = "#21835A" if passed else "#A42A3A"
+            color = theme.token("ok") if passed else theme.token("error_text")
             marker = "&#10003;" if passed else "&#9675;"
             rows.append(
                 f'<span style="color:{color}">{marker} {tr(f"account.password_{key}")}</span>'
@@ -314,7 +331,9 @@ class AuthPage(_CenteredPage):
 
     def set_message(self, message: str, error: bool = False) -> None:
         self._message.setText(message)
-        self._message.setStyleSheet(f"color: {'#C34655' if error else '#21835A'};")
+        self._message.setProperty("kind", "error" if error else "success")
+        self._message.style().unpolish(self._message)
+        self._message.style().polish(self._message)
 
     def set_email(self, email: str) -> None:
         if email:

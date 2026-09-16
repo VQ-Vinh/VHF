@@ -9,7 +9,8 @@ from prana_core.common.languages import LANGUAGE_NAMES
 from prana_core.console.command_phase import CommandPhase, CommandState, can_toggle
 from prana_core.console.models import StationSummary
 from prana_windows.ui.i18n import language, tr
-from prana_windows.ui.icons import phosphor_icon
+from prana_windows.ui.icons import themed_icon
+from prana_windows.ui.theme import theme
 
 _PHASE_TEXT = {
     CommandPhase.SENDING: "phase.sending",
@@ -92,6 +93,7 @@ class ControlBar(QFrame):
         layout.addWidget(self._retry)
 
         language.changed.connect(self._retranslate)
+        theme.changed.connect(self._retranslate)
         self._retranslate()
 
     # -- input ------------------------------------------------------------
@@ -156,13 +158,9 @@ class ControlBar(QFrame):
         self._toggle.setEnabled(enabled)
         self._toggle.setText(tr("header.stop") if running else tr("header.start"))
         self._toggle.setProperty("mode", "stop" if running else "start")
+        role = "on_stop" if running else "on_accent"
         self._toggle.setIcon(
-            phosphor_icon(
-                "ph.stop" if running else "ph.play",
-                color="#2D2106" if running else "#081012",
-                active_color="#2D2106" if running else "#081012",
-                scale_factor=0.9,
-            )
+            themed_icon("stop" if running else "play", role=role, active_role=role, scale_factor=0.9)
         )
         self._toggle.style().unpolish(self._toggle)
         self._toggle.style().polish(self._toggle)
@@ -179,9 +177,9 @@ class ControlBar(QFrame):
         self._retry.setVisible(self._state.phase == CommandPhase.FAILED)
 
     def _retranslate(self, *_args) -> None:
-        self._language_label.setText(tr("language.output"))
-        self._mode_label.setText(tr("station.capture_mode"))
-        self._device_label.setText(tr("station.capture_device"))
+        self._language_label.setText(tr("language.output").upper())
+        self._mode_label.setText(tr("station.capture_mode").upper())
+        self._device_label.setText(tr("station.capture_device").upper())
         self._rescan.setText(tr("station.rescan_devices"))
         self._retry.setText(tr("common.retry"))
         if self._station is not None:

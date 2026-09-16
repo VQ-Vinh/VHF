@@ -46,6 +46,25 @@ class WindowsInstallerDefinitionTests(unittest.TestCase):
         runtime = ROOT / "apps/windows/src/prana_windows/ui/resources/prana-elex.ico"
         self.assertEqual(runtime.read_bytes(), (INSTALLER / "assets" / "prana-elex.ico").read_bytes())
 
+    def test_generator_brand_colours_match_the_app_theme(self) -> None:
+        """Installer art and the running app read colours from two places; pin them.
+
+        Parsed as text: this suite runs without PySide6, and theme.py imports it.
+        """
+        import re
+
+        theme = (ROOT / "apps/windows/src/prana_windows/ui/theme.py").read_text(encoding="utf-8")
+        light = theme.split("LIGHT: dict[str, str] = {", 1)[1].split("}", 1)[0]
+        tokens = dict(re.findall(r'"(\w+)": "(#[0-9A-Fa-f]{6})"', light))
+        generator = (ROOT / "tools/packaging/generate_brand_assets.py").read_text(encoding="utf-8")
+
+        def rgb(name: str) -> str:
+            r, g, b = re.search(rf"^{name} = \((\d+), (\d+), (\d+)\)", generator, re.M).groups()
+            return f"#{int(r):02X}{int(g):02X}{int(b):02X}"
+
+        self.assertEqual(rgb("NAVY"), tokens["navy"].upper())
+        self.assertEqual(rgb("BRAND_BLUE"), tokens["accent"].upper())
+
     def test_pyinstaller_bundles_runtime_brand_assets(self) -> None:
         spec = (ROOT / "apps/windows/packaging/PRANA_ELEX.spec").read_text(encoding="utf-8")
         self.assertIn("ui/resources/logo_mark.png", spec)

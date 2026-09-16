@@ -3,18 +3,15 @@ from datetime import datetime
 from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
-from prana_windows.ui.icons import phosphor_icon
+from prana_windows.ui.icons import bind_icon
 from prana_windows.ui.i18n import language, tr
 
 
-_STATE_COLORS = {
-    "starting": "#A66B12",
-    "listening": "#21835A",
-    "recording": "#087F8C",
-    "error": "#C34655",
-    "stopped": "#607683",
-    "stopping": "#A66B12",
-}
+def _repaint(widget, name: str, value: str) -> None:
+    """Set a dynamic property and make the stylesheet re-evaluate it."""
+    widget.setProperty(name, value)
+    widget.style().unpolish(widget)
+    widget.style().polish(widget)
 
 
 class ChatBubble(QFrame):
@@ -71,9 +68,7 @@ class ChatFeed(QWidget):
 
         self._history_btn = QPushButton()
         self._history_btn.setObjectName("HistoryButton")
-        self._history_btn.setIcon(
-            phosphor_icon("ph.clock-counter-clockwise", scale_factor=1.05)
-        )
+        bind_icon(self._history_btn, "history", role="console_muted", scale_factor=1.05)
         self._history_btn.setIconSize(QSize(18, 18))
         self._history_btn.setCursor(Qt.PointingHandCursor)
         self._history_btn.setToolTip(tr("feed.history"))
@@ -165,7 +160,10 @@ class ChatFeed(QWidget):
         scrollbar = self._scroll.verticalScrollBar()
         at_bottom = scrollbar.value() >= scrollbar.maximum() - 20
         if at_bottom:
-            QTimer.singleShot(50, lambda: scrollbar.setValue(scrollbar.maximum()))
+            # Scrollbar as the context object: if the feed is torn down within the
+            # 50ms (detach, sign-out), Qt drops the call instead of touching a
+            # deleted C++ object.
+            QTimer.singleShot(50, scrollbar, lambda: scrollbar.setValue(scrollbar.maximum()))
 
     def clear(self) -> None:
         for index in range(self._feed_layout.count() - 1, -1, -1):
@@ -181,7 +179,6 @@ class ChatFeed(QWidget):
 
     def set_state(self, state: str, message: str = "") -> None:
         self._state = state
-        color = _STATE_COLORS.get(state, "#777789")
         labels = {
             "listening": tr("feed.listening"),
             "recording": tr("feed.receiving"),
@@ -190,7 +187,8 @@ class ChatFeed(QWidget):
             "stopping": tr("feed.stopping"),
             "stopped": tr("feed.idle"),
         }
-        self._listening_dot.setStyleSheet(f"color: {color};")
+        _repaint(self._listening_dot, "state", state)
+        _repaint(self._listening_label, "state", state)
         self._listening_label.setText(labels.get(state, "IDLE"))
         self._listening_label.setToolTip(message if state == "error" else "")
 
@@ -203,23 +201,23 @@ class ChatFeed(QWidget):
         last_upload_ok: bool | None,
     ) -> None:
         if not enabled:
-            color, text, tooltip = "#777789", "API OFF", "PRANA API is not configured"
+            api, text, tooltip = "off", "API OFF", "PRANA API is not configured"
         elif retry_queue:
-            color, text = "#F2B84B", f"API RETRY ({retry_queue})"
+            api, text = "retry", f"API RETRY ({retry_queue})"
             tooltip = error or f"{retry_queue} file(s) waiting to upload"
         elif error:
-            color, text, tooltip = "#C34655", tr("feed.api_error"), error
+            api, text, tooltip = "error", tr("feed.api_error"), error
         elif last_upload_ok is True:
-            color, text, tooltip = "#21835A", tr("feed.api_ok"), "Latest translation request succeeded"
+            api, text, tooltip = "ok", tr("feed.api_ok"), "Latest translation request succeeded"
         elif last_upload_ok is False:
-            color, text, tooltip = "#C34655", tr("feed.api_error"), "Latest translation request failed"
+            api, text, tooltip = "error", tr("feed.api_error"), "Latest translation request failed"
         elif ready:
-            color, text, tooltip = "#087F8C", tr("feed.api_ready"), "Signed in and ready"
+            api, text, tooltip = "ready", tr("feed.api_ready"), "Signed in and ready"
         else:
-            color, text, tooltip = "#F2B84B", "API STARTING", "PRANA API is initializing"
+            api, text, tooltip = "starting", "API STARTING", "PRANA API is initializing"
 
-        self._gcs_dot.setStyleSheet(f"color: {color};")
-        self._gcs_label.setStyleSheet(f"color: {color};")
+        _repaint(self._gcs_dot, "api", api)
+        _repaint(self._gcs_label, "api", api)
         self._gcs_label.setText(text)
         self._gcs_dot.setToolTip(tooltip)
         self._gcs_label.setToolTip(tooltip)
