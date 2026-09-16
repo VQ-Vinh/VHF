@@ -1,23 +1,11 @@
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from prana_core.common.logger import get_logger
+from prana_windows.ui.brand import app_icon
 from prana_windows.ui.i18n import language, tr
 
 logger = get_logger(__name__)
-
-
-def _create_tray_icon() -> QIcon:
-    pixmap = QPixmap(64, 64)
-    pixmap.fill(Qt.transparent)
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.Antialiasing)
-    painter.setBrush(QColor("#00E5FF"))
-    painter.setPen(Qt.NoPen)
-    painter.drawEllipse(4, 4, 56, 56)
-    painter.end()
-    return QIcon(pixmap)
 
 
 class TrayManager:
@@ -32,7 +20,9 @@ class TrayManager:
         self._main_window = main_window
         self._authenticated = False
         self._tray = QSystemTrayIcon(parent)
-        self._tray.setIcon(_create_tray_icon())
+        # The brand tile, not a hand-drawn dot: a filled navy square reads on
+        # both a light and a dark taskbar without a second asset.
+        self._tray.setIcon(app_icon())
         self._tray.setToolTip("PRANA ELEX - VHF Marine Radio")
 
         menu = QMenu()

@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from prana_windows.ui.components.theme_toggle import ThemeToggle
 from prana_windows.ui.i18n import language, tr
 
 
@@ -71,6 +72,7 @@ class AccountCenterPage(QWidget):
             lambda: language.set_locale(self._locale.currentData())
         )
         top.addWidget(self._locale)
+        top.addWidget(ThemeToggle())
         root.addLayout(top)
 
         scroll = QScrollArea()

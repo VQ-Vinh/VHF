@@ -40,6 +40,9 @@ def _load_settings_file(path: Path) -> dict[str, str] | None:
                 return {
                     "data_dir": data.get("data_dir", "") if isinstance(data.get("data_dir", ""), str) else "",
                     "ui_locale": data.get("ui_locale", "en") if data.get("ui_locale") in {"en", "vi"} else "en",
+                    # save_settings re-reads through this function before writing,
+                    # so a key missing from this whitelist is erased on the next save.
+                    "ui_theme": data.get("ui_theme", "light") if data.get("ui_theme") in {"light", "dark"} else "light",
                 }
         except (OSError, ValueError):
             pass
@@ -49,26 +52,34 @@ def _load_settings_file(path: Path) -> dict[str, str] | None:
 def load_settings() -> dict[str, str]:
     paths = [get_settings_path()]
     paths.append(get_machine_settings_path())
-    result = {"data_dir": "", "ui_locale": "en"}
+    result = {"data_dir": "", "ui_locale": "en", "ui_theme": "light"}
     for index, path in enumerate(paths):
         settings = _load_settings_file(path)
         if not settings:
             continue
         if index == 0:
             result["ui_locale"] = settings.get("ui_locale", "en")
+            # Appearance is a personal choice; the machine-wide file does not pin it.
+            result["ui_theme"] = settings.get("ui_theme", "light")
         if settings.get("data_dir") and not result["data_dir"]:
             result["data_dir"] = settings["data_dir"]
     return result
 
 
-def save_settings(data_dir: str | None = None, ui_locale: str | None = None) -> None:
+def save_settings(
+    data_dir: str | None = None,
+    ui_locale: str | None = None,
+    ui_theme: str | None = None,
+) -> None:
     path = get_settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    current = _load_settings_file(path) or {"data_dir": "", "ui_locale": "en"}
+    current = _load_settings_file(path) or {"data_dir": "", "ui_locale": "en", "ui_theme": "light"}
     if data_dir is not None:
         current["data_dir"] = data_dir
     if ui_locale in {"en", "vi"}:
         current["ui_locale"] = ui_locale
+    if ui_theme in {"light", "dark"}:
+        current["ui_theme"] = ui_theme
     path.write_text(
         json.dumps(
             current,

@@ -124,7 +124,7 @@ class TxPanel(QFrame):
 
     def _retranslate(self, *_args) -> None:
         state = self._state
-        self._title.setText(tr("tx.title"))
+        self._title.setText(tr("tx.title").upper())
         self._transmit.setText(tr("tx.transmit"))
         self._cancel.setText(tr("tx.cancel"))
         self._retry.setText(tr("tx.retry"))

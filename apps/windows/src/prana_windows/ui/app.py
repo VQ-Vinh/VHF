@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 import qasync
+from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import QApplication
 
 from prana_core.backend.client import BackendClient
@@ -14,8 +15,9 @@ from prana_windows.credential_store import WindowsCredentialStore
 from prana_windows.settings import load_settings, save_settings
 from prana_windows.ui.account import AccountController
 from prana_windows.ui.main_window import MainWindow
-from prana_windows.ui.icons import phosphor_icon
+from prana_windows.ui.brand import app_icon, resource
 from prana_windows.ui.i18n import language
+from prana_windows.ui.theme import load_qss, theme
 from prana_windows.ui.tray import TrayManager
 from prana_core.common.logger import get_logger, setup_logger
 
@@ -48,15 +50,32 @@ def _find_config() -> Path:
     raise FileNotFoundError(f"Config not found (tried {[str(c) for c in candidates]})")
 
 
-def _load_styles(app: QApplication) -> None:
+def _load_fonts() -> None:
+    """Register the brand faces shared with the Flutter app.
+
+    Archivo carries console captions and headings, Roboto Mono carries states
+    and numerals -- the same split `console_palette.dart` makes. Every QSS font
+    list ends in a system face, so a missing file degrades instead of breaking.
+    """
+    for path in sorted(resource("fonts").glob("*.ttf")):
+        if QFontDatabase.addApplicationFont(str(path)) == -1:
+            logger.warning("Could not load font %s", path.name)
+
+
+def _load_styles(app: QApplication, initial_theme: str = "light") -> None:
+    """Bind the stylesheet template to the theme manager.
+
+    The stylesheet is a `string.Template`; the theme supplies the tokens and
+    re-applies it whenever the theme changes. Re-applying to a live
+    QApplication restyles widgets already on screen, so nothing is rebuilt.
+    """
     root = _bundle_root()
     qss_path = root / "src" / "prana_windows" / "ui" / "resources" / "styles.qss"
     if not qss_path.exists():
         prefix = "" if _is_frozen() else "src"
         qss_path = root / prefix / "prana_windows" / "ui" / "resources" / "styles.qss"
     if qss_path.exists():
-        with open(qss_path, encoding="utf-8") as f:
-            app.setStyleSheet(f.read())
+        theme.bind(app, load_qss(qss_path), initial_theme)
     else:
         logger.warning("Stylesheet not found at %s", qss_path)
 
@@ -73,19 +92,13 @@ def run_app() -> None:
     app = QApplication([])
     app.setApplicationName("PRANA ELEX")
     app.setOrganizationName("PRANA")
-    app.setWindowIcon(
-        phosphor_icon(
-            "ph.radio",
-            color="#087F8C",
-            active_color="#087F8C",
-            scale_factor=0.9,
-        )
-    )
-    _load_styles(app)
-
+    app.setWindowIcon(app_icon())
     settings = load_settings()
     language.set_locale(settings.get("ui_locale", "en"))
     language.changed.connect(lambda locale: save_settings(ui_locale=locale))
+    theme.changed.connect(lambda name: save_settings(ui_theme=name))
+    _load_fonts()
+    _load_styles(app, settings.get("ui_theme", "light"))
 
     setup_logger(level=config.general.log_level, console_level="WARNING")
 
