@@ -1,118 +1,103 @@
-import sys
 import threading
-from pathlib import Path
-from typing import Callable
+from datetime import datetime, timezone
 
-from PySide6.QtCore import QTimer, QUrl, Signal
+from PySide6.QtCore import QEvent, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QMainWindow, QMessageBox, QStackedWidget
 
-from prana_windows.ui.dialogs.settings import SettingsDialog
 from prana_windows.ui.i18n import language, tr
 from prana_windows.ui.account import AccountController, AccountState
+from prana_windows.ui.console import FleetController, StationController, TxController
 from prana_windows.ui.pages.account import (
     AuthPage,
-    ConfigErrorPage,
-    DataSetupPage,
     LoadingPage,
     OfflinePage,
 )
 from prana_windows.ui.pages.account_center import AccountCenterPage
+from prana_windows.ui.pages.fleet import FleetPage
+from prana_windows.ui.pages.not_operator import NotOperatorPage
 from prana_windows.ui.pages.plans import PlansPage
-from prana_windows.ui.pages.translation import TranslationPage
-from prana_core.pipeline.orchestrator import PipelineState
-from prana_core.pipeline.orchestrator import PipelineOrchestrator
-from prana_core.audio.base import AudioBackend
-from prana_windows.audio.wasapi import WASAPIBackend
-from prana_core.storage.account import prepare_data_root
-from prana_windows.settings import save_settings
+from prana_windows.ui.pages.station_workspace import StationWorkspacePage
+from prana_core.backend.client import BackendApiError
+from prana_core.console.station_client import OperatorStationClient
+from prana_core.console.tx_phase import StationReadiness, TxPhase
 from prana_core.common.logger import get_logger
 
 logger = get_logger(__name__)
 
 
 class MainWindow(QMainWindow):
+    """Fleet operator console.
+
+    This app used to capture audio locally and translate it. It now drives
+    remote Stations and owns no pipeline of its own; everything on screen is
+    polled from the API, because Firestore rules deny a client any read outside
+    its own `users/{uid}` subtree.
+    """
+
     account_active_changed = Signal(bool)
     _sign_out_ready = Signal()
 
     def __init__(
         self,
         config,
-        orchestrator=None,
         account_controller: AccountController | None = None,
-        data_root: str = "",
-        require_installer_data: bool = False,
-        audio_backend_factory: Callable[[], AudioBackend] = WASAPIBackend,
+        station_client: OperatorStationClient | None = None,
     ):
         super().__init__()
-        self._base_config = config
         self._config = config
-        self._orchestrator = orchestrator
         self._account = account_controller
-        self._data_root = data_root
-        self._active_uid = ""
-        self._audio_backend_factory = audio_backend_factory
+        self._client = station_client
+        self._fleet: FleetController | None = None
+        self._station: StationController | None = None
+        self._tx: TxController | None = None
+        self._tx_confirmed_once = False
         self._signing_out = False
         self._account_center_open = False
         self._plans_open = False
+        self._operator_uid = ""
 
         self.setWindowTitle("PRANA ELEX")
-        self.setMinimumSize(720, 600)
-        self.resize(920, 760)
+        self.setMinimumSize(900, 620)
+        self.resize(1180, 820)
 
         self._stack = QStackedWidget()
         self.setCentralWidget(self._stack)
-        self._translation_page = TranslationPage(self._config.translation.target_language)
-        self._stack.addWidget(self._translation_page)
-        self._header = self._translation_page.header
-        self._header.settings_requested.connect(self.open_settings)
-        self._header.account_requested.connect(self.open_account_center)
-        self._header.toggle_requested.connect(self._on_toggle_pipeline)
-        self._lang_block = self._translation_page.language_block
-        self._lang_block.language_changed.connect(self._on_lang_changed)
-        self._chat = self._translation_page.chat
-        self._console_output = self._translation_page.console_output
-        self._console_toggle = self._translation_page.console_toggle
-        self._retry_button = self._translation_page.retry_button
-        self._retry_button.clicked.connect(self._retry_failed_audio)
-        self._log_handler = self._translation_page.log_handler
-
-        self._poll_timer = QTimer(self)
-        self._poll_timer.timeout.connect(self._poll_status)
-        self._poll_timer.start(2000)
-
-        self._account_refresh_timer = QTimer(self)
-        self._account_refresh_timer.setInterval(30_000)
-        self._account_refresh_timer.timeout.connect(self._refresh_visible_account_page)
 
         self._loading_page = LoadingPage()
-        google_enabled = bool(
-            self._account and self._account.backend.auth.google_enabled
-        )
+        google_enabled = bool(self._account and self._account.backend.auth.google_enabled)
         self._auth_page = AuthPage(google_enabled=google_enabled)
         self._account_center = AccountCenterPage(google_enabled=google_enabled)
         self._plans_page = PlansPage()
         self._offline_page = OfflinePage()
+        self._not_operator_page = NotOperatorPage()
+        self._fleet_page = FleetPage()
+        self._workspace_page = StationWorkspacePage()
         for page in (
             self._loading_page,
             self._auth_page,
             self._account_center,
             self._plans_page,
             self._offline_page,
+            self._not_operator_page,
+            self._fleet_page,
+            self._workspace_page,
         ):
             self._stack.addWidget(page)
 
-        self._data_setup_page = None
-        self._config_error_page = None
-        if not self._data_root:
-            if require_installer_data:
-                self._config_error_page = ConfigErrorPage()
-                self._stack.addWidget(self._config_error_page)
-            else:
-                self._data_setup_page = DataSetupPage(str(Path.home() / "PRANA_ELEX_Data"))
-                self._data_setup_page.saved.connect(self._on_data_saved)
-                self._stack.addWidget(self._data_setup_page)
+        self._wire_account_pages()
+        self._wire_console_pages()
+        language.changed.connect(self._retranslate)
+        self._stack.currentChanged.connect(self._on_page_changed)
 
+        if self._account:
+            self._stack.setCurrentWidget(self._loading_page)
+        else:
+            self._stack.setCurrentWidget(self._fleet_page)
+
+    # -- wiring -----------------------------------------------------------
+
+    def _wire_account_pages(self) -> None:
         self._auth_page.sign_in_requested.connect(self._on_sign_in)
         self._auth_page.sign_up_requested.connect(self._on_sign_up)
         self._auth_page.reset_requested.connect(self._on_password_reset)
@@ -148,60 +133,81 @@ class MainWindow(QMainWindow):
         self._plans_page.select_requested.connect(
             lambda plan_id: self._account and self._account.select_plan(plan_id)
         )
-        self._offline_page.retry_requested.connect(lambda: self._account and self._account.refresh(True))
+        self._offline_page.retry_requested.connect(
+            lambda: self._account and self._account.refresh(True)
+        )
         self._offline_page.sign_out_requested.connect(self._request_sign_out)
+        self._not_operator_page.sign_out_requested.connect(self._request_sign_out)
+        self._not_operator_page.retry_requested.connect(
+            lambda: self._account and self._account.refresh(True)
+        )
         self._sign_out_ready.connect(self._finish_sign_out)
-        language.changed.connect(self._retranslate)
 
-        if self._account:
-            self._account.state_changed.connect(self._on_account_state)
-            self._account.busy_changed.connect(self._auth_page.set_busy)
-            self._account.notice.connect(self._on_account_notice)
-            self._account.details_changed.connect(self._on_account_details)
-            self._account.details_error.connect(
-                lambda message: self._account_center.set_message(message, True)
-            )
-            self._account.details_loading.connect(self._account_center.set_loading)
-            self._account.google_browser_requested.connect(
-                self._open_google_authorization
-            )
-            self._account.google_flow_changed.connect(
-                self._auth_page.set_google_waiting
-            )
-            self._account.google_flow_changed.connect(
-                self._account_center.set_google_waiting
-            )
-            self._account.plans_changed.connect(self._on_plans_changed)
-            self._account.plans_error.connect(
-                lambda message: self._plans_page.set_message(message, True)
-            )
-            self._account.plans_loading.connect(self._plans_page.set_loading)
+        if not self._account:
+            return
+        self._account.state_changed.connect(self._on_account_state)
+        self._account.busy_changed.connect(self._auth_page.set_busy)
+        self._account.notice.connect(self._on_account_notice)
+        self._account.details_changed.connect(self._on_account_details)
+        self._account.details_error.connect(
+            lambda message: self._account_center.set_message(message, True)
+        )
+        self._account.details_loading.connect(self._account_center.set_loading)
+        self._account.google_browser_requested.connect(self._open_google_authorization)
+        self._account.google_flow_changed.connect(self._auth_page.set_google_waiting)
+        self._account.google_flow_changed.connect(self._account_center.set_google_waiting)
+        self._account.plans_changed.connect(self._on_plans_changed)
+        self._account.plans_error.connect(
+            lambda message: self._plans_page.set_message(message, True)
+        )
+        self._account.plans_loading.connect(self._plans_page.set_loading)
 
-        if self._config_error_page:
-            self._stack.setCurrentWidget(self._config_error_page)
-        elif self._data_setup_page:
-            self._stack.setCurrentWidget(self._data_setup_page)
-        elif self._account:
-            self._stack.setCurrentWidget(self._loading_page)
-        else:
-            self._stack.setCurrentWidget(self._translation_page)
+    def _wire_console_pages(self) -> None:
+        self._fleet_page.attach_requested.connect(self.attach_station)
+        self._fleet_page.refresh_requested.connect(self._refresh_fleet)
+        self._fleet_page.filter_changed.connect(self._on_fleet_filter)
+        self._fleet_page.account_requested.connect(self.open_account_center)
+        self._workspace_page.back_requested.connect(self.detach_station)
+        self._workspace_page.take_control_requested.connect(
+            lambda: self._station and self._station.acquire_control(force=False)
+        )
+        self._workspace_page.force_control_requested.connect(self._confirm_force_takeover)
+        self._workspace_page.release_control_requested.connect(
+            lambda: self._station and self._station.release_control()
+        )
+        self._workspace_page.control_bar.toggle_requested.connect(
+            lambda running: self._station and self._station.set_running(running)
+        )
+        self._workspace_page.control_bar.language_changed.connect(
+            lambda code: self._station and self._station.set_target_language(code)
+        )
+        self._workspace_page.control_bar.capture_changed.connect(
+            lambda mode, device: self._station and self._station.set_capture(mode, device)
+        )
+        self._workspace_page.control_bar.rescan_requested.connect(
+            lambda: self._station and self._station.refresh_capabilities()
+        )
+        self._workspace_page.control_bar.retry_requested.connect(
+            lambda: self._station and self._station.retry()
+        )
+        panel = self._workspace_page.tx_panel
+        panel.record_pressed.connect(lambda: self._tx and self._tx.start_recording())
+        panel.record_released.connect(lambda: self._tx and self._tx.stop_recording())
+        panel.confirm_requested.connect(self._confirm_transmit)
+        panel.cancel_requested.connect(lambda: self._tx and self._tx.cancel())
+        panel.retry_requested.connect(lambda: self._tx and self._tx.retry())
 
     def _retranslate(self, *_args) -> None:
-        self._translation_page.retranslate()
         if self._account_center_open and self._account and self._account.profile:
             message = self._account_status_message(self._account.profile, "")
             if message:
                 self._account_center.set_message(message, True)
 
-    def start_account_flow(self) -> None:
-        if self._account and self._data_root:
-            self._account.initialize()
+    # -- account ----------------------------------------------------------
 
-    def _on_data_saved(self, path: str) -> None:
-        save_settings(path)
-        self._data_root = path
-        self._stack.setCurrentWidget(self._loading_page)
-        self.start_account_flow()
+    def start_account_flow(self) -> None:
+        if self._account:
+            self._account.initialize()
 
     def _on_sign_in(self, email: str, password: str) -> None:
         if self._account:
@@ -252,7 +258,10 @@ class MainWindow(QMainWindow):
             self._account_center.set_message(message, error)
         elif self._account and self._account.state == AccountState.SIGNED_OUT:
             self._auth_page.set_message(message, error)
-        elif self._account and self._account.state in (AccountState.RESTRICTED, AccountState.OFFLINE):
+        elif self._account and self._account.state in (
+            AccountState.RESTRICTED,
+            AccountState.OFFLINE,
+        ):
             self._account_center.set_profile(self._account.profile or {})
             self._account_center.set_message(message, error)
         else:
@@ -267,92 +276,245 @@ class MainWindow(QMainWindow):
                 "The system browser could not be opened",
             )
             return
-        self._auth_page.set_message(
-            tr("account.google_browser_failed"),
-            True,
-        )
+        self._auth_page.set_message(tr("account.google_browser_failed"), True)
 
     def _on_account_state(self, state: AccountState, profile: dict, message: str) -> None:
         if state == AccountState.LOADING:
             self._stack.setCurrentWidget(self._loading_page)
             return
         if state == AccountState.SIGNED_OUT:
-            self._account_refresh_timer.stop()
+            self._teardown_console()
             self._account_center_open = False
             self._plans_open = False
             self.account_active_changed.emit(False)
-            self._auth_page.set_email(self._account.backend.auth.email if self._account else "")
+            self._auth_page.set_email(
+                self._account.backend.auth.email if self._account else ""
+            )
             if message:
                 self._auth_page.set_message(message, True)
             self._stack.setCurrentWidget(self._auth_page)
             return
         if state == AccountState.OFFLINE:
-            self._account_refresh_timer.start()
             self.account_active_changed.emit(False)
             self._offline_page.set_message(message)
             self._stack.setCurrentWidget(self._offline_page)
             return
         if state == AccountState.RESTRICTED:
-            self._account_refresh_timer.start()
             self.account_active_changed.emit(False)
-            if self._orchestrator:
-                # Keep the stopped instance attached so Sign out can wait for
-                # its workers and an Admin reactivation can safely reuse it.
-                self._orchestrator.stop()
+            self._teardown_console()
             first_open = not self._account_center_open
             self._account_center_open = True
             self._plans_open = False
             self._account_center.set_profile(profile)
-            self._account_center.set_message(self._account_status_message(profile, message), True)
+            self._account_center.set_message(
+                self._account_status_message(profile, message), True
+            )
             self._stack.setCurrentWidget(self._account_center)
             if first_open and self._account:
                 self._account.load_account_center()
             return
         if state == AccountState.ACTIVE:
-            keep_account_page = self._account_center_open or self._plans_open
-            if keep_account_page:
-                self._account_refresh_timer.start()
-            else:
-                self._account_refresh_timer.stop()
-            self._activate_account(profile, show_translation=not keep_account_page)
+            self._activate(profile)
 
-    def _activate_account(self, profile: dict, show_translation: bool = True) -> None:
+    def _activate(self, profile: dict) -> None:
         uid = str(profile.get("uid") or "")
-        if not uid or not self._data_root:
-            self._account_center.set_profile(profile)
-            self._account_center.set_message("Account identity or Data folder is unavailable.", True)
+        self._operator_uid = uid
+        if self._client is not None:
+            self._client.operator_uid = uid
+        self.account_active_changed.emit(True)
+
+        if not profile.get("fleet_operator"):
+            # A perfectly valid account that simply is not an operator.
+            self._teardown_console()
+            self._stack.setCurrentWidget(self._not_operator_page)
+            return
+
+        if self._account_center_open:
             self._stack.setCurrentWidget(self._account_center)
             return
-        if self._orchestrator is None or self._active_uid != uid:
-            data_root = prepare_data_root(self._data_root, uid)
-            config = self._base_config.model_copy(deep=True)
-            config.general.data_dir = data_root
-            config.resolve_paths()
-            self._config = config
-            self._orchestrator = PipelineOrchestrator(
-                config,
-                self._account.backend,
-                self._audio_backend_factory,
-            )
-            self._active_uid = uid
-            self._reset_translation_ui()
-        self.account_active_changed.emit(True)
-        if show_translation:
-            self._stack.setCurrentWidget(self._translation_page)
-        else:
-            if self._plans_open:
-                self._plans_page.set_profile(profile)
-                self._stack.setCurrentWidget(self._plans_page)
-            else:
-                self._account_center.set_profile(
-                    profile,
-                    current_device_id=self._account.backend.local_device_id if self._account else "",
-                )
-                self._account_center.set_message("")
-                self._stack.setCurrentWidget(self._account_center)
+        if self._plans_open:
+            self._plans_page.set_profile(profile)
+            self._stack.setCurrentWidget(self._plans_page)
+            return
 
-    def _reset_translation_ui(self) -> None:
-        self._translation_page.reset()
+        self._ensure_fleet()
+        self._stack.setCurrentWidget(self._fleet_page)
+
+    # -- console ----------------------------------------------------------
+
+    def _ensure_fleet(self) -> None:
+        if self._fleet is not None or self._client is None:
+            return
+        self._fleet = FleetController(self._client, self)
+        self._fleet.stations_changed.connect(
+            lambda stations, _cursor: self._fleet_page.set_stations(stations)
+        )
+        self._fleet.loading.connect(self._fleet_page.set_loading)
+        self._fleet.error.connect(lambda key: self._fleet_page.set_message(tr(key)))
+        self._fleet.start()
+
+    def _refresh_fleet(self) -> None:
+        if self._fleet is not None:
+            self._fleet.refresh()
+
+    def _on_fleet_filter(self, query: str, online_only: bool) -> None:
+        if self._fleet is not None:
+            self._fleet.set_filter(query, online_only)
+
+    def attach_station(self, station_id: str) -> None:
+        if self._client is None:
+            return
+        self.detach_station(return_to_fleet=False)
+        self._workspace_page.reset()
+        self._station = StationController(self._client, station_id, self)
+        self._station.station_changed.connect(self._workspace_page.set_station)
+        self._station.results_changed.connect(self._workspace_page.set_results)
+        self._station.phase_changed.connect(self._workspace_page.set_state)
+        self._station.lease_changed.connect(
+            lambda lease: self._workspace_page.set_lease(lease, self._operator_uid)
+        )
+        self._station.error.connect(
+            lambda key: self._workspace_page.set_message(tr(key))
+        )
+        self._station.notice.connect(
+            lambda key: self._workspace_page.set_message(tr(key))
+        )
+        self._station.station_changed.connect(self._sync_tx_readiness)
+        self._station.lease_changed.connect(lambda _lease: self._sync_tx_readiness())
+
+        from prana_windows.audio.tx_recorder import TxRecorder
+
+        self._tx = TxController(self._client, station_id, TxRecorder(), self)
+        self._tx.state_changed.connect(self._on_tx_state)
+        self._tx.error.connect(lambda key: self._workspace_page.set_message(tr(key)))
+        self._tx_confirmed_once = False
+
+        self._station.attach()
+        self._workspace_page.set_lease(None, self._operator_uid)
+        self._on_tx_state(self._tx.state)
+        if self._fleet is not None:
+            self._fleet.pause()
+        self._stack.setCurrentWidget(self._workspace_page)
+
+    def detach_station(self, return_to_fleet: bool = True) -> None:
+        if self._tx is not None:
+            self._tx.shutdown()
+            self._tx.deleteLater()
+            self._tx = None
+        if self._station is not None:
+            self._station.detach()
+            self._station.deleteLater()
+            self._station = None
+        if return_to_fleet:
+            if self._fleet is not None:
+                self._fleet.start()
+                self._fleet.refresh()
+            self._stack.setCurrentWidget(self._fleet_page)
+
+    def _confirm_force_takeover(self) -> None:
+        """Preemption always asks. Seizing a running radio is not a click."""
+        if self._station is None:
+            return
+        answer = QMessageBox.question(
+            self,
+            tr("control.force_title"),
+            tr(
+                "control.force_body",
+                holder=self._workspace_page.holder_label(),
+                name=self._workspace_page.station_name(),
+            ),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer == QMessageBox.Yes:
+            self._station.acquire_control(force=True)
+
+
+    # -- TX ---------------------------------------------------------------
+
+    def _sync_tx_readiness(self, *_args) -> None:
+        if self._tx is None or self._station is None:
+            return
+        station = self._station.station
+        if station is None:
+            return
+        self._tx.set_epoch(self._station.lease.epoch if self._station.lease else 0)
+        self._tx.set_readiness(
+            StationReadiness(
+                online=station.is_online_at(datetime.now(timezone.utc)),
+                running=station.desired.running,
+                ptt_ready=station.ptt_ready,
+                command_pending=station.command_pending,
+                holds_control=self._station.holds_control,
+            )
+        )
+        self._on_tx_state(self._tx.state)
+
+    def _on_tx_state(self, state) -> None:
+        if self._tx is None:
+            return
+        self._workspace_page.tx_panel.set_state(
+            state, self._tx.can_record, self._tx.can_retry
+        )
+
+    def _confirm_transmit(self, translation: str) -> None:
+        """Keying somebody else's transmitter asks once per attachment.
+
+        Not once per transmission: an operator working a channel would click
+        through a per-message dialog without reading it, which is worse than no
+        dialog at all. Once, naming the Station and its owner, is the point
+        where the consequence is actually considered.
+        """
+        if self._tx is None:
+            return
+        if not self._tx_confirmed_once:
+            answer = QMessageBox.question(
+                self,
+                tr("tx.confirm_title"),
+                tr(
+                    "tx.confirm_body",
+                    name=self._workspace_page.station_name(),
+                    owner=self._workspace_page.owner_email(),
+                ),
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if answer != QMessageBox.Yes:
+                return
+            self._tx_confirmed_once = True
+        self._tx.confirm(translation)
+
+    def _teardown_console(self) -> None:
+        self.detach_station(return_to_fleet=False)
+        if self._fleet is not None:
+            self._fleet.stop()
+            self._fleet.deleteLater()
+            self._fleet = None
+
+    def _on_page_changed(self, _index: int) -> None:
+        if self._station is None:
+            return
+        if self._stack.currentWidget() is self._workspace_page:
+            self._station.resume_content()
+        else:
+            self._station.pause_content()
+
+    def changeEvent(self, event) -> None:  # noqa: N802 - Qt override
+        # Minimising pauses the content polls but never lease renewal; losing
+        # control because a window was tucked away would be worse than an
+        # explicit release.
+        if event.type() == QEvent.WindowStateChange and self._station is not None:
+            if self.isMinimized():
+                self._station.pause_content()
+            elif self._stack.currentWidget() is self._workspace_page:
+                self._station.resume_content()
+        super().changeEvent(event)
+
+    def closeEvent(self, event) -> None:  # noqa: N802 - Qt override
+        self._teardown_console()
+        super().closeEvent(event)
+
+    # -- sign out ---------------------------------------------------------
 
     def _request_sign_out(self) -> None:
         if self._signing_out:
@@ -368,152 +530,50 @@ class MainWindow(QMainWindow):
             return
         self._begin_sign_out()
 
-    def _begin_sign_out(self, confirm: bool = False) -> None:
-        del confirm
+    def _begin_sign_out(self) -> None:
         if self._signing_out:
             return
         self._signing_out = True
         self._stack.setCurrentWidget(self._loading_page)
-        orchestrator = self._orchestrator
+        station = self._station
 
         def worker() -> None:
-            if orchestrator:
-                orchestrator.shutdown()
+            # Release the lease before dropping the session, so the Station is
+            # not left pinned to an operator who has gone away.
+            if station is not None:
+                try:
+                    station.detach()
+                except Exception:  # noqa: BLE001
+                    logger.debug("Detaching during sign out failed", exc_info=True)
             self._sign_out_ready.emit()
 
-        threading.Thread(target=worker, daemon=True).start()
+        threading.Thread(target=worker, daemon=True, name="sign-out").start()
 
     def _finish_sign_out(self) -> None:
-        self._orchestrator = None
-        self._active_uid = ""
+        self._station = None
+        self._teardown_console()
         self._signing_out = False
         self._account_center_open = False
         self._plans_open = False
-        self._reset_translation_ui()
+        self._workspace_page.reset()
+        self._operator_uid = ""
         if self._account:
             self._account.sign_out_local()
 
     def on_access_denied(self, code: str, message: str) -> None:
+        del message
         if not self._account:
             return
         if code == "AUTH_REQUIRED":
             self._begin_sign_out()
-            return
-        if self._orchestrator:
-            self._orchestrator.stop()
-        self._account.restrict(code, message)
 
-    def on_quota_exhausted(self, _code: str, message: str, resets_at: str) -> None:
-        if self._orchestrator:
-            self._orchestrator.stop()
-        self._translation_page.show_quota_exhausted(resets_at)
-        self._retry_button.setVisible(True)
-        self._on_error(message)
-
-    def _on_result(self, result):
-        if result.error:
-            detail = result.processing_notes[0] if result.processing_notes else result.error
-            self._on_error(f"{result.error}: {detail}")
-        else:
-            self._translation_page.clear_quota_exhausted()
-        self._chat.add_message(
-            source=result.detected_language,
-            transcript=result.transcript_restored,
-            translation=result.translation,
-            timestamp=result.timestamp,
-            confidence=result.confidence,
-        )
-        self._history_dialog().add_result(result)
-        self._log_console(result)
-        self._retry_button.setVisible(bool(result.error))
-
-    def _on_detected_language(self, code: str):
-        self._lang_block.set_detected_language(code)
-
-    def _on_state_changed(self, state: PipelineState, message: str):
-        if state == PipelineState.IDLE:
-            self._header.set_pipeline_running(False)
-            self._header.set_rx_mode("off")
-            self._chat.set_state("stopped")
-        elif state == PipelineState.STARTING:
-            self._header.set_pipeline_transitioning(True, tr("header.starting"))
-            self._header.set_rx_mode("starting")
-            self._chat.set_state("starting", message)
-        elif state == PipelineState.RUNNING:
-            self._header.set_pipeline_running(True)
-            self._header.set_rx_mode("active")
-            self._chat.set_state("listening")
-        elif state == PipelineState.STOPPING:
-            self._header.set_pipeline_transitioning(True, tr("header.stopping"))
-            self._chat.set_state("stopping")
-        elif state == PipelineState.ERROR:
-            self._header.set_pipeline_running(False)
-            self._header.set_rx_mode("error", message)
-            self._chat.set_state("error", message)
-
-    def _on_error(self, message: str):
-        self._header.set_rx_mode("error", message)
-        self._chat.set_state("error", message)
-
-    def _retry_failed_audio(self) -> None:
-        if self._orchestrator and self._orchestrator.retry_last_failed():
-            self._retry_button.setEnabled(False)
-            QTimer.singleShot(3000, lambda: self._retry_button.setEnabled(True))
-
-    def _on_lang_changed(self, code: str) -> None:
-        if code == self._config.translation.target_language:
-            return
-        self._config.translation.target_language = code
-
-    def _on_toggle_pipeline(self) -> None:
-        if self._orchestrator is None:
-            return
-        if self._orchestrator.state == PipelineState.RUNNING:
-            self._orchestrator.stop()
-        elif self._orchestrator.state in (PipelineState.IDLE, PipelineState.ERROR):
-            self._orchestrator.start()
-
-    def _log_console(self, result) -> None:
-        self._translation_page.log_result(result)
-
-    def _toggle_console(self) -> None:
-        self._translation_page.toggle_console()
-
-    def _poll_status(self) -> None:
-        if self._orchestrator is None:
-            return
-        try:
-            status = self._orchestrator.get_status()
-        except Exception:
-            logger.warning("Status poll failed", exc_info=True)
-            return
-        running = status.get("running", False)
-        recording = status.get("recording", False)
-        self._header.set_rx_state(recording, running)
-
-        chat_state = self._chat.get_state()
-        if running and recording and chat_state != "recording":
-            self._chat.set_state("recording")
-        elif running and not recording and chat_state == "recording":
-            self._chat.set_state("listening")
-
-        self._chat.set_gcs_status(
-            enabled=status.get("backend_enabled", False),
-            ready=status.get("backend_ready", False),
-            error=status.get("backend_error"),
-            retry_queue=0,
-            last_upload_ok=status.get("backend_last_request_ok"),
-        )
-
-    def _history_dialog(self):
-        return self._translation_page.history_dialog()
-
-    def show_history(self):
-        self._history_dialog().show()
-        self._history_dialog().raise_()
+    # -- account pages ----------------------------------------------------
 
     def open_account_center(self) -> None:
-        if not self._account or self._account.state not in (AccountState.ACTIVE, AccountState.RESTRICTED):
+        if not self._account or self._account.state not in (
+            AccountState.ACTIVE,
+            AccountState.RESTRICTED,
+        ):
             return
         self._account_center_open = True
         self._plans_open = False
@@ -523,7 +583,6 @@ class MainWindow(QMainWindow):
         )
         self._account_center.set_message("")
         self._stack.setCurrentWidget(self._account_center)
-        self._account_refresh_timer.start()
         self._account.load_account_center()
 
     def _close_account_center(self) -> None:
@@ -531,28 +590,23 @@ class MainWindow(QMainWindow):
             return
         self._account_center_open = False
         self._plans_open = False
-        self._account_refresh_timer.stop()
-        self._stack.setCurrentWidget(self._translation_page)
-
-    def _refresh_visible_account_page(self) -> None:
-        if not self._account:
-            return
-        if self._stack.currentWidget() is self._account_center:
-            self._account.load_account_center()
-        elif self._stack.currentWidget() is self._plans_page:
-            self._account.load_plans()
+        if self._station is not None:
+            self._stack.setCurrentWidget(self._workspace_page)
         else:
-            self._account.refresh()
+            self._ensure_fleet()
+            self._stack.setCurrentWidget(self._fleet_page)
 
     def open_plans(self) -> None:
-        if not self._account or self._account.state not in (AccountState.ACTIVE, AccountState.RESTRICTED):
+        if not self._account or self._account.state not in (
+            AccountState.ACTIVE,
+            AccountState.RESTRICTED,
+        ):
             return
         self._account_center_open = False
         self._plans_open = True
         self._plans_page.set_profile(self._account.profile or {})
         self._plans_page.set_message("")
         self._stack.setCurrentWidget(self._plans_page)
-        self._account_refresh_timer.start()
         self._account.load_plans()
 
     def _back_to_account_center(self) -> None:
@@ -561,27 +615,17 @@ class MainWindow(QMainWindow):
         self._plans_open = False
         self.open_account_center()
 
-    def _on_plans_changed(self, profile: dict, plans: list[dict]) -> None:
+    def _on_plans_changed(self, profile: dict, plans: list) -> None:
         self._plans_page.set_data(profile, plans)
         self._plans_page.set_message("")
         if self._plans_open:
             self._stack.setCurrentWidget(self._plans_page)
 
-    def _on_account_details(
-        self,
-        profile: dict,
-        devices: list[dict],
-        providers: list[str],
-    ) -> None:
+    def _on_account_details(self, profile: dict, devices: list, providers: list) -> None:
         current_device_id = ""
         if self._account and profile.get("email_verified"):
             current_device_id = self._account.backend.local_device_id
-        self._account_center.set_profile(
-            profile,
-            devices,
-            current_device_id,
-            providers,
-        )
+        self._account_center.set_profile(profile, devices, current_device_id, providers)
         message = self._account_status_message(profile, "")
         self._account_center.set_message(message, bool(message))
 
@@ -612,37 +656,5 @@ class MainWindow(QMainWindow):
         if answer == QMessageBox.Yes:
             self._account.revoke_account_device(device_id)
 
-    def open_settings(self):
-        try:
-            devices = self._audio_backend_factory().list_devices()
-        except Exception as e:
-            logger.warning("Failed to list devices", exc_info=e)
-            devices = []
-        try:
-            loopbacks = WASAPIBackend.list_loopback_devices()
-        except Exception:
-            loopbacks = []
-        dialog = SettingsDialog(
-            current_device=self._config.audio.device_index,
-            current_mode=self._config.audio.capture_mode,
-            devices=devices,
-            loopback_devices=loopbacks,
-            autostart_enabled=None,
-            parent=self,
-        )
-        if dialog.exec():
-            mode, device = dialog.get_values()
-            changed = (
-                mode != self._config.audio.capture_mode or
-                device != self._config.audio.device_index
-            )
-            if not changed:
-                return
-            self._config.audio.capture_mode = mode
-            self._config.audio.device_index = device
 
-            if self._orchestrator.is_running:
-                self._orchestrator.restart()
-
-    def _set_status(self, state: str, message: str = ""):
-        self._chat.set_state(state, message)
+__all__ = ["MainWindow"]

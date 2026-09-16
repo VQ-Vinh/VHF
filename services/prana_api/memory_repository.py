@@ -9,7 +9,9 @@ from datetime import datetime, timedelta, timezone
 from services.prana_api.errors import api_error
 from services.prana_api.storage_paths import station_storage_folder
 from services.prana_api.models import (
+    ControlLease,
     Device,
+    OperatorStation,
     Plan,
     Reservation,
     Station,
@@ -21,7 +23,14 @@ from services.prana_api.models import (
     Usage,
     UserAccount,
 )
-from services.prana_api.repository import identity_updates, usage_period, usage_reset_at
+from services.prana_api.repository import (
+    ControlActor,
+    assert_control,
+    identity_updates,
+    lease_from_registry,
+    usage_period,
+    usage_reset_at,
+)
 
 
 def _result_timestamp(value: dict) -> datetime:
@@ -56,6 +65,7 @@ class MemoryRepository:
         self.station_pairing_attempts: dict[tuple[str, str, int], int] = {}
         self.station_activation_index: dict[str, str] = {}
         self.station_activation_attempts: dict[tuple[str, str, int], int] = {}
+        self.operator_audit: list[dict] = []
 
     def sync_identity(self, uid: str, email: str, email_verified: bool) -> UserAccount:
         with self.lock:
@@ -234,6 +244,7 @@ class MemoryRepository:
             ptt_ready=data.get("ptt_ready", True),
             ptt_error=data.get("ptt_error"),
             active_timezone=data.get("active_timezone") or "",
+            control_lease=lease_from_registry(data),
         )
 
     def claim_station(self, uid: str, pairing_id: str, secret_hash: str, max_stations: int) -> Station:
@@ -394,6 +405,9 @@ class MemoryRepository:
             if value.get("active", True)
         ]
 
+    def station_from_registry(self, station_id: str, data: dict) -> Station:
+        return self._station(station_id, data)
+
     def get_station_registry(self, station_id: str) -> dict | None:
         return self.station_registry.get(station_id)
 
@@ -440,13 +454,21 @@ class MemoryRepository:
                 }
             )
 
-    def update_station_desired_state(self, uid: str, station_id: str, updates: dict) -> StationDesiredState:
+    def update_station_desired_state(
+        self,
+        uid: str,
+        station_id: str,
+        updates: dict,
+        actor: ControlActor | None = None,
+    ) -> StationDesiredState:
+        actor = actor or ControlActor(uid=uid, kind="owner")
         with self.lock:
             registry = self.station_registry.get(station_id)
             if not registry or registry.get("owner_uid") != uid:
                 raise api_error(404, "STATION_NOT_FOUND", "Station was not found")
             if not registry.get("active", True):
                 raise api_error(403, "STATION_REVOKED", "Station access has been revoked")
+            assert_control(registry, actor, datetime.now(timezone.utc))
             desired = StationDesiredState.model_validate(registry.get("desired_state") or {})
             capabilities = registry.get("capabilities")
             requested_mode = updates.get("capture_mode")
@@ -492,6 +514,154 @@ class MemoryRepository:
             projection["desired_state"] = value.model_dump()
             projection.pop("boot_id", None)
             return value
+
+    def list_all_stations(
+        self,
+        limit: int,
+        cursor: str | None = None,
+        query: str = "",
+        online_only: bool = False,
+    ) -> tuple[list[OperatorStation], str | None]:
+        with self.lock:
+            term = (query or "").strip().lower()
+            now = datetime.now(timezone.utc)
+            rows = sorted(self.station_registry.items())
+            if term:
+                rows = [
+                    (station_id, data)
+                    for station_id, data in rows
+                    if station_id == term
+                    or str(data.get("name") or "").lower().startswith(term)
+                    or self._owner_email(data.get("owner_uid")).lower() == term
+                ]
+            if online_only:
+                rows = [row for row in rows if self._online(row[1], now)]
+            if cursor:
+                rows = [row for row in rows if row[0] > cursor]
+            page = rows[:limit]
+            next_cursor = page[-1][0] if len(rows) > limit else None
+            return (
+                [
+                    OperatorStation(
+                        **self._station(station_id, data).model_dump(),
+                        owner_uid=str(data.get("owner_uid") or ""),
+                        owner_email=self._owner_email(data.get("owner_uid")),
+                    )
+                    for station_id, data in page
+                ],
+                next_cursor,
+            )
+
+    def _owner_email(self, uid) -> str:
+        account = self.users.get(str(uid or ""))
+        return account.email if account else ""
+
+    @staticmethod
+    def _online(data: dict, now: datetime) -> bool:
+        last_seen = data.get("last_seen_at")
+        if not data.get("active", True) or last_seen is None:
+            return False
+        if last_seen.tzinfo is None:
+            last_seen = last_seen.replace(tzinfo=timezone.utc)
+        return (now - last_seen).total_seconds() <= 15
+
+    def acquire_station_control(
+        self,
+        station_id: str,
+        holder_uid: str,
+        holder_kind: str,
+        holder_label: str,
+        ttl_seconds: int,
+        force: bool = False,
+    ) -> ControlLease:
+        with self.lock:
+            registry = self.station_registry.get(station_id)
+            if not registry or not registry.get("owner_uid"):
+                raise api_error(404, "STATION_NOT_FOUND", "Station was not found")
+            if not registry.get("active", True):
+                raise api_error(403, "STATION_REVOKED", "Station access has been revoked")
+            now = datetime.now(timezone.utc)
+            current = lease_from_registry(registry)
+            held_by_other = (
+                current is not None
+                and current.is_active_at(now)
+                and current.holder_uid != holder_uid
+            )
+            if held_by_other and not force:
+                raise api_error(
+                    409,
+                    "CONTROL_HELD",
+                    "Another client currently controls this Station",
+                    holder_kind=current.holder_kind,
+                    holder_label=current.holder_label,
+                    expires_at=current.expires_at.isoformat() if current.expires_at else None,
+                )
+            lease = ControlLease(
+                holder_uid=holder_uid,
+                holder_kind=holder_kind,
+                holder_label=holder_label,
+                acquired_at=now,
+                expires_at=now + timedelta(seconds=ttl_seconds),
+                epoch=(current.epoch if current else 0) + 1,
+                preempted_from_uid=current.holder_uid if held_by_other else "",
+                preempted_at=now if held_by_other else None,
+            )
+            self._store_lease(station_id, registry, lease.model_dump())
+            return lease
+
+    def renew_station_control(
+        self,
+        station_id: str,
+        holder_uid: str,
+        epoch: int,
+        ttl_seconds: int,
+    ) -> ControlLease:
+        with self.lock:
+            registry = self.station_registry.get(station_id)
+            if not registry:
+                raise api_error(404, "STATION_NOT_FOUND", "Station was not found")
+            now = datetime.now(timezone.utc)
+            current = lease_from_registry(registry)
+            if (
+                current is None
+                or not current.held_by(holder_uid, now)
+                or current.epoch != epoch
+            ):
+                raise api_error(409, "CONTROL_LOST", "The control lease is no longer held")
+            lease = current.model_copy(
+                update={"expires_at": now + timedelta(seconds=ttl_seconds)}
+            )
+            self._store_lease(station_id, registry, lease.model_dump())
+            return lease
+
+    def release_station_control(self, station_id: str, holder_uid: str, epoch: int) -> None:
+        with self.lock:
+            registry = self.station_registry.get(station_id)
+            if not registry:
+                return
+            current = lease_from_registry(registry)
+            if current is None or current.holder_uid != holder_uid or current.epoch != epoch:
+                return
+            self._store_lease(station_id, registry, None)
+
+    def _store_lease(self, station_id: str, registry: dict, lease: dict | None) -> None:
+        if lease is None:
+            registry.pop("control_lease", None)
+        else:
+            registry["control_lease"] = lease
+        owner_uid = registry.get("owner_uid")
+        if not owner_uid:
+            return
+        projection = self.station_projections.setdefault(owner_uid, {}).get(station_id)
+        if projection is None:
+            return
+        if lease is None:
+            projection.pop("control_lease", None)
+        else:
+            projection["control_lease"] = lease
+
+    def record_operator_event(self, event: dict) -> None:
+        self.operator_audit.append({**event, "created_at": datetime.now(timezone.utc)})
 
     def heartbeat_station(self, station_id: str, heartbeat: StationHeartbeat) -> None:
         with self.lock:

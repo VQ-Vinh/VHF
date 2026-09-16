@@ -7,7 +7,7 @@ phát hành đầy đủ, iOS mới ở mức build và chạy Simulator trên C
 ## Ranh giới mã nguồn
 
 ```text
-apps/windows      Qt Desktop + Windows Station + WASAPI + Credential Manager
+apps/windows      Qt Operator Console + Windows Station + WASAPI + Credential Manager
 apps/linux        Raspberry Pi Station headless + ALSA/arecord + GPIO17 PTT
 apps/android      Flutter UI, Firebase Auth và Firestore realtime
                   (android/ và ios/ là hai thư mục nền tảng của cùng app)
@@ -16,18 +16,26 @@ apps/android      Flutter UI, Firebase Auth và Firestore realtime
                      pipeline, VAD, API client, station protocol, storage
 
 services/prana_api       Firebase-authenticated/station-signed public API
+                         (+ router /v1/operator/* cho Console)
 services/prana_admin     IAP-protected operator application
+                         (sở hữu/billing; cố ý mù với transcript)
 infra                    Firebase Rules và Terraform
 ```
 
 `prana_core` không import app nền tảng, GUI toolkit hoặc audio implementation.
+`prana_core/console/` là tầng client của Operator Console (models, transport,
+polling, máy trạng thái lệnh và TX) và cũng tuân thủ ranh giới đó: không Qt.
 Core nhận `AudioBackend` và `CredentialStore` qua composition root của Windows
 hoặc Linux. Windows chứa toàn bộ Qt UI; Linux không cài hoặc đóng gói PySide6,
 qasync hay qtawesome.
 
 ## Runtime
 
-- Windows Desktop dùng Firebase user session và Ed25519 device identity.
+- Windows Desktop là Operator Console: Firebase user session cộng cờ
+  `fleet_operator` trên `users/{uid}`. Nó không còn chạy pipeline RX cục bộ;
+  micro chỉ dùng cho TX. Console **chỉ dùng REST** và không bao giờ đọc
+  Firestore trực tiếp, vì rules từ chối mọi read ngoài `users/{uid}` của chính
+  nó — xem [operator-console.md](operator-console.md).
 - Windows Station và Linux Station không giữ Firebase user session; chúng dùng
   Ed25519 station identity, poll desired state và gửi heartbeat/audio tới API.
 - Android dùng REST cho mutation, Live/History/TX và Firestore projection cho

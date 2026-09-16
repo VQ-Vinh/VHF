@@ -1,5 +1,23 @@
 # Android: Control và cấu hình theo module
 
+## Chế độ chỉ-xem khi bị chiếm quyền (control lease)
+
+Một Operator Console trên Desktop có thể giành quyền điều khiển Station của
+người dùng. Lease đến điện thoại qua **chính Firestore doc stream đang có**
+(`users/{uid}/stations/{id}.control_lease`) — không thêm endpoint, không đổi
+cách poll.
+
+- `StationModel.controlHeldByOther(now)` quyết định; ticker 1 Hz sẵn có lo việc
+  lease hết hạn, nên quyền tự quay về mà không cần round trip.
+- `StationRuntimeState.viewOnly` lan xuống `LiveUxController`
+  (`LiveCommandPhase.viewOnly`, **ưu tiên cao hơn mọi nhánh khác**) và
+  `TxController` (`canStartRecording`, `canRetryTransmission`).
+- Live VHF vẫn đọc được đầy đủ; chỉ nút Start/Stop, chọn ngôn ngữ và TX bị khoá,
+  kèm banner nêu tên người đang điều khiển.
+- Mã lỗi `CONTROL_TAKEN` map sang `rx_control_taken`.
+
+Chi tiết phía server: [operator-console.md](operator-console.md).
+
 ## Tinh chỉnh Control ngày 2026-09-13
 
 Source hiện tại gộp instrument vào Control, workspace còn Control và Live VHF.

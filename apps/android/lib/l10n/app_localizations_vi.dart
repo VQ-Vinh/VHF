@@ -136,6 +136,15 @@ class AppLocalizationsVi extends AppLocalizations {
   String get rxStartFailed => 'Station không thể khởi động RX.';
 
   @override
+  String get rxControlTaken =>
+      'Một người vận hành từ xa đã chiếm quyền điều khiển Station này.';
+
+  @override
+  String stationRemotelyControlled(Object controller) {
+    return '$controller đang điều khiển Station này. Các nút điều khiển bị khoá cho tới khi họ nhả quyền.';
+  }
+
+  @override
   String get offline => 'Offline quá 15 giây';
 
   @override

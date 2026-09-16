@@ -42,6 +42,15 @@
   "retry": "Thử lại",
   "rxAudioInputNotFound": "Không tìm thấy USB SoundCard đầu vào. Hãy kết nối thiết bị rồi thử lại.",
   "rxStartFailed": "Station không thể khởi động RX.",
+  "rxControlTaken": "Một người vận hành từ xa đã chiếm quyền điều khiển Station này.",
+  "stationRemotelyControlled": "{controller} đang điều khiển Station này. Các nút điều khiển bị khoá cho tới khi họ nhả quyền.",
+  "@stationRemotelyControlled": {
+    "placeholders": {
+      "controller": {
+        "type": "Object"
+      }
+    }
+  },
   "offline": "Offline quá 15 giây",
   "apiReady": "API READY",
   "apiError": "API ERROR",

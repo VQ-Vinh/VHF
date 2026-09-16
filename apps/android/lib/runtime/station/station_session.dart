@@ -12,17 +12,24 @@ class StationRuntimeState {
     this.online = false,
     this.apiOnline = false,
     this.telemetry,
+    this.viewOnly = false,
   });
   final StationModel? station;
   final bool online;
   final bool apiOnline;
   final TelemetrySnapshot? telemetry;
+
+  /// A remote operator holds the control lease. Everything stays readable;
+  /// only the controls are withdrawn.
+  final bool viewOnly;
+
   StationRuntimeState withTelemetry(TelemetrySnapshot? sample) =>
       StationRuntimeState(
         station: station,
         online: online,
         apiOnline: apiOnline,
         telemetry: sample,
+        viewOnly: viewOnly,
       );
 }
 
@@ -54,17 +61,22 @@ class StationSession extends ChangeNotifier {
   ) {
     if (_disposed) return;
     final online = station.isOnlineAt(now);
+    // The 1 Hz clock that already drives this call is what expires the lease:
+    // when it lapses, the next tick simply reports viewOnly false again.
+    final viewOnly = station.controlHeldByOther(now);
     state = StationRuntimeState(
       station: station,
       online: online,
       apiOnline: apiOnline,
+      viewOnly: viewOnly,
     );
-    rx.synchronize(station, online: online);
+    rx.synchronize(station, online: online, viewOnly: viewOnly);
     tx.setStationAvailability(
       online: online,
       running: station.desired.running,
       commandPending: station.commandPending || rx.state.busy,
       pttReady: station.pttReady,
+      viewOnly: viewOnly,
     );
     tx.setMaximumDuration(
       Duration(seconds: entitlements.txMaxRecordingSeconds),
