@@ -2,7 +2,9 @@
 
 PRANA ELEX dùng kiến trúc Cloud-first. Windows Laptop và Raspberry Pi chạy cùng
 Station Runtime; Android điều khiển RX, thu HTT cho TX, review kết quả và xem
-History. Raspberry Pi Station điều khiển GPIO17 cho PTT; Laptop Station giữ chế
+History. Windows Desktop là Operator Console: nó không chạy Station Runtime mà
+gắn vào Station từ xa qua `/v1/operator/*`, giữ control lease độc quyền và xem
+Live VHF bằng REST polling — xem [operator-console.md](operator-console.md). Raspberry Pi Station điều khiển GPIO17 cho PTT; Laptop Station giữ chế
 độ PTT thủ công. Hệ thống chưa có channel-busy sensing.
 
 ```mermaid
