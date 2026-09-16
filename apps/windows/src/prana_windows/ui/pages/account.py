@@ -6,7 +6,6 @@ from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QComboBox,
-    QFileDialog,
     QFormLayout,
     QFrame,
     QHBoxLayout,
@@ -352,57 +351,3 @@ class OfflinePage(_CenteredPage):
 
     def set_message(self, message: str) -> None:
         self._message.setText(message)
-
-
-class DataSetupPage(_CenteredPage):
-    saved = Signal(str)
-
-    def __init__(self, default_path: str, parent=None):
-        super().__init__(parent)
-        self.add_title(tr("account.data_title"), tr("account.data_body"))
-        row = QHBoxLayout()
-        self._path = QLineEdit(default_path)
-        self._browse_button = QPushButton(tr("account.browse"))
-        self._browse_button.clicked.connect(self._browse)
-        row.addWidget(self._path)
-        row.addWidget(self._browse_button)
-        self.content.addLayout(row)
-        self._save_button = QPushButton(tr("common.save"))
-        self._save_button.setObjectName("PrimaryButton")
-        self._save_button.clicked.connect(self._save)
-        self.content.addWidget(self._save_button, alignment=Qt.AlignRight)
-        self._message = QLabel()
-        self.content.addWidget(self._message)
-        language.changed.connect(self._retranslate)
-
-    def _retranslate(self, *_args) -> None:
-        self._page_title.setText(tr("account.data_title"))
-        self._page_subtitle.setText(tr("account.data_body"))
-        self._browse_button.setText(tr("account.browse"))
-        self._save_button.setText(tr("common.save"))
-
-    def _browse(self) -> None:
-        selected = QFileDialog.getExistingDirectory(self, "Select data folder", self._path.text())
-        if selected:
-            self._path.setText(selected)
-
-    def _save(self) -> None:
-        try:
-            path = Path(self._path.text().strip()).expanduser().resolve()
-            path.mkdir(parents=True, exist_ok=True)
-            probe = path / ".prana-write-test"
-            probe.write_text("ok", encoding="utf-8")
-            probe.unlink()
-        except OSError as exc:
-            self._message.setText(f"Cannot use this folder: {exc}")
-            return
-        self.saved.emit(str(path))
-
-
-class ConfigErrorPage(_CenteredPage):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.add_title(
-            "Installation configuration missing",
-            "Run the PRANA ELEX installer again and choose a Data folder.",
-        )

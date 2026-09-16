@@ -5,16 +5,13 @@ import sys
 from pathlib import Path
 
 import qasync
-from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QApplication
 
 from prana_core.backend.client import BackendClient
-from prana_windows.audio.wasapi import WASAPIBackend
-from prana_windows.credential_store import WindowsCredentialStore
 from prana_core.config.schema import AppConfig
+from prana_core.console.station_client import OperatorStationClient
+from prana_windows.credential_store import WindowsCredentialStore
 from prana_windows.settings import load_settings, save_settings
-from prana_core.pipeline.events import event_bus
-from prana_core.pipeline.orchestrator import PipelineState
 from prana_windows.ui.account import AccountController
 from prana_windows.ui.main_window import MainWindow
 from prana_windows.ui.icons import phosphor_icon
@@ -23,26 +20,6 @@ from prana_windows.ui.tray import TrayManager
 from prana_core.common.logger import get_logger, setup_logger
 
 logger = get_logger(__name__)
-
-
-class _EventBusBridge(QObject):
-    result_ready = Signal(object)
-    language_detected = Signal(str)
-    state_changed = Signal(object, str)
-    error_occurred = Signal(str)
-    access_denied = Signal(str, str)
-    quota_exhausted = Signal(str, str, str)
-    pipeline_started = Signal()
-
-    def __init__(self):
-        super().__init__()
-        event_bus.on("result_ready", self.result_ready.emit)
-        event_bus.on("language_detected", self.language_detected.emit)
-        event_bus.on("state_changed", self.state_changed.emit)
-        event_bus.on("error_occurred", self.error_occurred.emit)
-        event_bus.on("access_denied", self.access_denied.emit)
-        event_bus.on("quota_exhausted", self.quota_exhausted.emit)
-        event_bus.on("pipeline_started", self.pipeline_started.emit)
 
 
 def _is_frozen() -> bool:
@@ -84,15 +61,16 @@ def _load_styles(app: QApplication) -> None:
         logger.warning("Stylesheet not found at %s", qss_path)
 
 
-def run_app(
-    capture_mode: str = "device",
-    device_index: int = -1,
-    target_language: str = "en",
-) -> None:
+def run_app() -> None:
+    """Start the fleet operator console.
+
+    The desktop app no longer captures or translates audio on this machine; it
+    drives remote Stations over the API. Local capture lives on in the headless
+    Windows Station (`prana_windows.station`) and the CLI.
+    """
     config = AppConfig.from_toml(_find_config())
 
     app = QApplication([])
-
     app.setApplicationName("PRANA ELEX")
     app.setOrganizationName("PRANA")
     app.setWindowIcon(
@@ -108,11 +86,6 @@ def run_app(
     settings = load_settings()
     language.set_locale(settings.get("ui_locale", "en"))
     language.changed.connect(lambda locale: save_settings(ui_locale=locale))
-    data_value = settings.get("data_dir", "").strip()
-    config.audio.capture_mode = capture_mode
-    if device_index >= 0:
-        config.audio.device_index = device_index
-    config.translation.target_language = target_language
 
     setup_logger(level=config.general.log_level, console_level="WARNING")
 
@@ -123,24 +96,14 @@ def run_app(
         config.backend.google_oauth_client_id,
         credential_store=WindowsCredentialStore(),
     )
+    station_client = OperatorStationClient(backend)
     account = AccountController(backend)
-    bridge = _EventBusBridge()
     window = MainWindow(
         config,
         account_controller=account,
-        data_root=data_value,
-        require_installer_data=_is_frozen() and sys.platform == "win32",
-        audio_backend_factory=WASAPIBackend,
+        station_client=station_client,
     )
     tray = TrayManager(window)
-
-    bridge.result_ready.connect(window._on_result)
-    bridge.language_detected.connect(window._on_detected_language)
-    bridge.state_changed.connect(window._on_state_changed)
-    bridge.state_changed.connect(tray._on_state_changed)
-    bridge.error_occurred.connect(window._on_error)
-    bridge.access_denied.connect(window.on_access_denied)
-    bridge.quota_exhausted.connect(window.on_quota_exhausted)
     window.account_active_changed.connect(tray.set_authenticated)
 
     loop = qasync.QEventLoop(app)
@@ -152,6 +115,7 @@ def run_app(
         with loop:
             loop.run_forever()
     finally:
-        if window._orchestrator:
-            window._orchestrator.shutdown()
+        # Releases any control lease before the process goes away, so a Station
+        # is not pinned to a console that has exited.
+        window._teardown_console()
         backend.close()
