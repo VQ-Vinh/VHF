@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     output_cost_per_million_tokens: float = 0.0
     # Used for storage date folders until a user picks a country.
     default_timezone: str = "UTC"
+    # Fleet operator console. Preemption stays off until the owner-side clients
+    # can explain a seized Station to their user; without that an owner pressing
+    # Stop on their own radio would just see an untranslated error.
+    control_lease_enabled: bool = False
+    control_lease_ttl_seconds: int = 120
 
 
 @lru_cache

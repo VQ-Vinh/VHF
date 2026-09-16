@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import hmac
 import hashlib
+import re
+from dataclasses import dataclass
 from typing import Protocol
 
 from google.cloud import firestore
@@ -11,7 +13,9 @@ from google.cloud.firestore_v1.base_query import FieldFilter
 from services.prana_api.errors import api_error
 from services.prana_api.storage_paths import station_storage_folder
 from services.prana_api.models import (
+    ControlLease,
     Device,
+    OperatorStation,
     Plan,
     Reservation,
     Station,
@@ -89,6 +93,76 @@ def identity_updates(
     return updates
 
 
+_STATION_ID_PATTERN = re.compile(r"^[a-f0-9]{32}$")
+
+# Matches the Android client and Web Admin. The TX gates in main.py deliberately
+# stay at 20s; tightening those would change behaviour for existing TX users.
+STATION_ONLINE_SECONDS = 15
+
+
+def _station_is_online(data: dict, now: datetime) -> bool:
+    last_seen = data.get("last_seen_at")
+    if not data.get("active", True) or last_seen is None:
+        return False
+    if last_seen.tzinfo is None:
+        last_seen = last_seen.replace(tzinfo=timezone.utc)
+    return (now - last_seen).total_seconds() <= STATION_ONLINE_SECONDS
+
+
+@dataclass(frozen=True)
+class ControlActor:
+    """Who is driving a desired-state change.
+
+    For an operator call `uid` (the data owner) and `actor.uid` (the operator)
+    are different people. Every projection write still belongs under the owner.
+    """
+
+    uid: str
+    kind: str = "owner"
+    epoch: int | None = None
+    # Owner-side demotion stays off until the owner's own clients can explain a
+    # seized Station. Operators are always held to their lease so that two
+    # consoles cannot fight over the same radio.
+    enforce_owner_lease: bool = True
+
+
+def lease_from_registry(registry: dict) -> ControlLease | None:
+    raw = registry.get("control_lease")
+    if not raw:
+        return None
+    try:
+        return ControlLease.model_validate(raw)
+    except ValueError:
+        # A malformed lease must not lock a radio out of reach of its owner.
+        return None
+
+
+def assert_control(registry: dict, actor: ControlActor, now: datetime) -> None:
+    """Raise unless `actor` is allowed to change this Station's desired state."""
+    lease = lease_from_registry(registry)
+    if actor.kind == "operator":
+        if lease is None or not lease.held_by(actor.uid, now):
+            raise api_error(409, "CONTROL_LOST", "The control lease is no longer held")
+        if actor.epoch is not None and lease.epoch != actor.epoch:
+            raise api_error(409, "CONTROL_LOST", "The control lease was taken over")
+        return
+    # Owner path: an absent or expired lease means the owner holds control.
+    if (
+        actor.enforce_owner_lease
+        and lease is not None
+        and lease.is_active_at(now)
+        and lease.holder_kind != "owner"
+    ):
+        raise api_error(
+            409,
+            "CONTROL_TAKEN",
+            "Another operator currently controls this Station",
+            holder_kind=lease.holder_kind,
+            holder_label=lease.holder_label,
+            expires_at=lease.expires_at.isoformat() if lease.expires_at else None,
+        )
+
+
 class Repository(Protocol):
     def sync_identity(self, uid: str, email: str, email_verified: bool) -> UserAccount: ...
     def get_account(self, uid: str) -> UserAccount | None: ...
@@ -109,8 +183,40 @@ class Repository(Protocol):
     def check_activation_claim_rate(self, uid: str, setup_id: str, client_ip: str, limit: int = 5) -> None: ...
     def list_stations(self, uid: str) -> list[Station]: ...
     def get_station_registry(self, station_id: str) -> dict | None: ...
+    def station_from_registry(self, station_id: str, data: dict) -> Station: ...
     def release_station(self, uid: str, station_id: str) -> None: ...
-    def update_station_desired_state(self, uid: str, station_id: str, updates: dict) -> StationDesiredState: ...
+    def update_station_desired_state(
+        self,
+        uid: str,
+        station_id: str,
+        updates: dict,
+        actor: ControlActor | None = None,
+    ) -> StationDesiredState: ...
+    def list_all_stations(
+        self,
+        limit: int,
+        cursor: str | None = None,
+        query: str = "",
+        online_only: bool = False,
+    ) -> tuple[list[OperatorStation], str | None]: ...
+    def acquire_station_control(
+        self,
+        station_id: str,
+        holder_uid: str,
+        holder_kind: str,
+        holder_label: str,
+        ttl_seconds: int,
+        force: bool = False,
+    ) -> ControlLease: ...
+    def renew_station_control(
+        self,
+        station_id: str,
+        holder_uid: str,
+        epoch: int,
+        ttl_seconds: int,
+    ) -> ControlLease: ...
+    def release_station_control(self, station_id: str, holder_uid: str, epoch: int) -> None: ...
+    def record_operator_event(self, event: dict) -> None: ...
     def heartbeat_station(self, station_id: str, heartbeat: StationHeartbeat) -> None: ...
     def update_station_capabilities(self, station_id: str, capabilities: StationCapabilities) -> None: ...
     def list_station_results(
@@ -427,6 +533,7 @@ class FirestoreRepository:
             ptt_ready=bool(data.get("ptt_ready", True)),
             ptt_error=data.get("ptt_error"),
             active_timezone=data.get("active_timezone") or "",
+            control_lease=lease_from_registry(data),
         )
 
     def claim_station(
@@ -687,11 +794,221 @@ class FirestoreRepository:
         )
         return [self._station_from_projection(doc.id, doc.to_dict()) for doc in docs]
 
+    def station_from_registry(self, station_id: str, data: dict) -> Station:
+        return self._station_from_projection(station_id, data)
+
     def get_station_registry(self, station_id: str) -> dict | None:
         snap = self.db.collection("station_registry").document(station_id).get()
         if not snap.exists:
             return None
         return {"station_id": station_id, **snap.to_dict()}
+
+    def list_all_stations(
+        self,
+        limit: int,
+        cursor: str | None = None,
+        query: str = "",
+        online_only: bool = False,
+    ) -> tuple[list[OperatorStation], str | None]:
+        """Fleet-wide station listing for an operator console.
+
+        Firestore has no substring search, so `query` matches an exact station id,
+        an exact owner email, or a `name_lower` prefix. Filtering one fetched page
+        in Python would silently omit matches on later pages, so we do not.
+        """
+        collection = self.db.collection("station_registry")
+        term = (query or "").strip().lower()
+        docs: list = []
+        if term and _STATION_ID_PATTERN.match(term):
+            snap = collection.document(term).get()
+            docs = [snap] if snap.exists else []
+        elif term and "@" in term:
+            owners = list(
+                self.db.collection("users")
+                .where(filter=FieldFilter("email_lower", "==", term))
+                .limit(1)
+                .stream()
+            )
+            if owners:
+                docs = list(
+                    collection.where(
+                        filter=FieldFilter("owner_uid", "==", owners[0].id)
+                    )
+                    .limit(limit + 1)
+                    .stream()
+                )
+        elif term:
+            docs = list(
+                collection.order_by("name_lower")
+                .start_at({"name_lower": term})
+                .end_at({"name_lower": term + "\uf8ff"})
+                .limit(limit + 1)
+                .stream()
+            )
+        else:
+            request = collection.order_by("__name__")
+            if cursor:
+                request = request.start_after({"__name__": collection.document(cursor)})
+            docs = list(request.limit(limit + 1).stream())
+
+        next_cursor = None
+        if len(docs) > limit:
+            docs = docs[:limit]
+            next_cursor = docs[-1].id
+
+        now = datetime.now(timezone.utc)
+        rows = [(doc.id, doc.to_dict() or {}) for doc in docs]
+        if online_only:
+            rows = [row for row in rows if _station_is_online(row[1], now)]
+        emails = self._owner_emails([data.get("owner_uid") for _, data in rows])
+        stations = [
+            OperatorStation(
+                **self._station_from_projection(station_id, data).model_dump(),
+                owner_uid=str(data.get("owner_uid") or ""),
+                owner_email=emails.get(str(data.get("owner_uid") or ""), ""),
+            )
+            for station_id, data in rows
+        ]
+        return stations, next_cursor
+
+    def _owner_emails(self, uids: list) -> dict[str, str]:
+        """One batched read for a whole page instead of a lookup per station."""
+        unique = sorted({str(uid) for uid in uids if uid})
+        if not unique:
+            return {}
+        refs = [self._user_ref(uid) for uid in unique]
+        found: dict[str, str] = {}
+        for snap in self.db.get_all(refs):
+            if snap.exists:
+                found[snap.id] = str((snap.to_dict() or {}).get("email") or "")
+        return found
+
+    def acquire_station_control(
+        self,
+        station_id: str,
+        holder_uid: str,
+        holder_kind: str,
+        holder_label: str,
+        ttl_seconds: int,
+        force: bool = False,
+    ) -> ControlLease:
+        registry_ref = self.db.collection("station_registry").document(station_id)
+
+        @firestore.transactional
+        def run(tx):
+            snap = registry_ref.get(transaction=tx)
+            if not snap.exists or not snap.to_dict().get("owner_uid"):
+                raise api_error(404, "STATION_NOT_FOUND", "Station was not found")
+            registry = snap.to_dict()
+            if not registry.get("active", True):
+                raise api_error(403, "STATION_REVOKED", "Station access has been revoked")
+            now = datetime.now(timezone.utc)
+            current = lease_from_registry(registry)
+            held_by_other = (
+                current is not None
+                and current.is_active_at(now)
+                and current.holder_uid != holder_uid
+            )
+            if held_by_other and not force:
+                raise api_error(
+                    409,
+                    "CONTROL_HELD",
+                    "Another client currently controls this Station",
+                    holder_kind=current.holder_kind,
+                    holder_label=current.holder_label,
+                    expires_at=current.expires_at.isoformat() if current.expires_at else None,
+                )
+            lease = ControlLease(
+                holder_uid=holder_uid,
+                holder_kind=holder_kind,
+                holder_label=holder_label,
+                acquired_at=now,
+                expires_at=now + timedelta(seconds=ttl_seconds),
+                # Monotonic across every takeover; it is the fencing token that a
+                # preempted holder fails to present when it tries to carry on.
+                epoch=(current.epoch if current else 0) + 1,
+                preempted_from_uid=current.holder_uid if held_by_other else "",
+                preempted_at=now if held_by_other else None,
+            )
+            self._write_lease(tx, registry_ref, registry, lease.model_dump())
+            return lease
+
+        return run(self.db.transaction())
+
+    def renew_station_control(
+        self,
+        station_id: str,
+        holder_uid: str,
+        epoch: int,
+        ttl_seconds: int,
+    ) -> ControlLease:
+        registry_ref = self.db.collection("station_registry").document(station_id)
+
+        @firestore.transactional
+        def run(tx):
+            snap = registry_ref.get(transaction=tx)
+            if not snap.exists:
+                raise api_error(404, "STATION_NOT_FOUND", "Station was not found")
+            registry = snap.to_dict()
+            now = datetime.now(timezone.utc)
+            current = lease_from_registry(registry)
+            if (
+                current is None
+                or not current.held_by(holder_uid, now)
+                or current.epoch != epoch
+            ):
+                raise api_error(409, "CONTROL_LOST", "The control lease is no longer held")
+            lease = current.model_copy(
+                update={"expires_at": now + timedelta(seconds=ttl_seconds)}
+            )
+            self._write_lease(tx, registry_ref, registry, lease.model_dump())
+            return lease
+
+        return run(self.db.transaction())
+
+    def release_station_control(self, station_id: str, holder_uid: str, epoch: int) -> None:
+        registry_ref = self.db.collection("station_registry").document(station_id)
+
+        @firestore.transactional
+        def run(tx):
+            snap = registry_ref.get(transaction=tx)
+            if not snap.exists:
+                return
+            registry = snap.to_dict()
+            current = lease_from_registry(registry)
+            # Releasing a lease somebody else already took is a no-op, not an error:
+            # the caller's intent (stop holding control) is already satisfied.
+            if current is None or current.holder_uid != holder_uid or current.epoch != epoch:
+                return
+            self._write_lease(tx, registry_ref, registry, None)
+
+        run(self.db.transaction())
+
+    def _write_lease(self, tx, registry_ref, registry: dict, lease: dict | None) -> None:
+        """Mirror the lease into the owner projection in the same transaction.
+
+        Firestore rules only let a client read `users/{uid}/stations/{id}`, so the
+        projection copy is the only way the owner's phone learns it was preempted.
+        """
+        update = {
+            "control_lease": lease if lease is not None else firestore.DELETE_FIELD,
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        }
+        tx.update(registry_ref, update)
+        owner_uid = registry.get("owner_uid")
+        if owner_uid:
+            tx.set(
+                self._user_ref(owner_uid)
+                .collection("stations")
+                .document(registry_ref.id),
+                update,
+                merge=True,
+            )
+
+    def record_operator_event(self, event: dict) -> None:
+        self.db.collection("operator_audit").document().set(
+            {**event, "created_at": firestore.SERVER_TIMESTAMP}
+        )
 
     def release_station(self, uid: str, station_id: str) -> None:
         registry_ref = self.db.collection("station_registry").document(station_id)
@@ -747,8 +1064,15 @@ class FirestoreRepository:
         run(self.db.transaction())
 
     def update_station_desired_state(
-        self, uid: str, station_id: str, updates: dict
+        self,
+        uid: str,
+        station_id: str,
+        updates: dict,
+        actor: ControlActor | None = None,
     ) -> StationDesiredState:
+        # `uid` is always the data owner. For an operator call the caller is
+        # `actor.uid` instead, and the projection still belongs to the owner.
+        actor = actor or ControlActor(uid=uid, kind="owner")
         registry_ref = self.db.collection("station_registry").document(station_id)
         projection_ref = self._user_ref(uid).collection("stations").document(station_id)
 
@@ -760,6 +1084,7 @@ class FirestoreRepository:
             registry = snap.to_dict()
             if not registry.get("active", True):
                 raise api_error(403, "STATION_REVOKED", "Station access has been revoked")
+            assert_control(registry, actor, datetime.now(timezone.utc))
             desired = StationDesiredState.model_validate(registry.get("desired_state") or {})
             capabilities = registry.get("capabilities")
             requested_mode = updates.get("capture_mode")
