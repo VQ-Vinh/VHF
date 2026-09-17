@@ -242,6 +242,73 @@ QFrame#LeaseBanner[lease="other"] #LeaseLabel { color: ${warn_text}; }
 QFrame#LeaseBanner[lease="none"] { background: ${console_panel}; }
 QFrame#LeaseBanner[lease="none"] #LeaseLabel { color: ${console_muted}; }
 
+/* Workspace tabs: an underline strip like the phone's, full width, equal tabs */
+#LivePage { background: ${console_bg}; }
+#WorkspaceTabs { background: ${console_panel}; border: none; border-bottom: 1px solid ${hairline}; }
+QPushButton#WorkspaceTab {
+    min-height: 44px; padding: 0 22px; border: none; border-radius: 0;
+    border-bottom: 3px solid transparent; background: transparent;
+    color: ${console_muted}; font-size: 13px; font-weight: 500;
+}
+QPushButton#WorkspaceTab:hover { background: ${button_hover}; color: ${console_ink}; border-color: transparent; }
+QPushButton#WorkspaceTab[current="true"] {
+    color: ${console_ink}; font-weight: 800; border-bottom: 3px solid ${accent};
+}
+
+/* Control tab. Product surface, as on the phone: bordered cards with radii.
+   The tab paints the page; everything inside is transparent unless a rule
+   below gives it a surface. Rules carry the tab id so they outrank that. */
+#ControlTab { background: ${console_bg}; }
+#ControlTab QWidget { background: transparent; }
+#ControlTab QFrame#ControlPanel, #ControlTab QFrame#InstrumentCell {
+    background: ${surface}; border: 1px solid ${border}; border-radius: 16px;
+}
+#ControlTab #ControlCaption { font-size: 11px; font-weight: 700; letter-spacing: .4px; color: ${text_secondary}; }
+#ControlTab #PanelLabel { font-size: 13px; font-weight: 700; letter-spacing: .6px; color: ${text_secondary}; padding-left: 4px; }
+#ControlTab #InstrumentLabel { font-size: 10px; font-weight: 700; letter-spacing: .6px; color: ${text_secondary}; }
+#ControlTab #InstrumentValue { font-size: 28px; font-weight: 700; color: ${text}; }
+#ControlTab #InstrumentUnit { font-size: 12px; font-weight: 600; color: ${text_secondary}; }
+#ControlTab #GpsCoordinate { font-size: 14px; font-weight: 700; color: ${text}; }
+#ControlTab #FieldLabel { font-size: 10px; font-weight: 700; letter-spacing: .8px; color: ${text_secondary}; }
+#ControlTab #FieldValue { font-size: 14px; font-weight: 700; color: ${text}; }
+#ControlTab QFrame#SimNotice {
+    background: ${warn_bg}; border: none; border-left: 3px solid ${warn_icon};
+    border-top-right-radius: 10px; border-bottom-right-radius: 10px;
+}
+#ControlTab #SimNoticeText { font-size: 12px; color: ${text_secondary}; }
+#ControlTab QPushButton#ModeButton {
+    min-height: 46px; padding: 0 14px; border-radius: 12px;
+    background: ${surface}; color: ${text_secondary}; border: 1px solid ${border};
+    font-size: 13px; font-weight: 700;
+}
+#ControlTab QPushButton#ModeButton:hover { background: ${button_hover}; border-color: ${border_strong}; }
+#ControlTab QPushButton#ModeButton[selected="true"] { background: ${accent}; color: ${on_accent}; border-color: ${accent}; }
+#ControlTab QLabel#SteeringStateChip { padding: 4px 9px; border-radius: 6px; font-size: 10px; font-weight: 800; letter-spacing: .6px; }
+#ControlTab QLabel#SteeringStateChip[manual="true"] { background: ${accent_soft}; color: ${accent}; }
+#ControlTab QLabel#SteeringStateChip[manual="false"] { background: ${surface_sunken}; color: ${text_secondary}; }
+#ControlTab #SteeringAngle { font-size: 40px; font-weight: 700; color: ${text}; }
+#ControlTab #SteeringAngle:disabled { color: ${text_secondary}; }
+#ControlTab #DirectionPill {
+    padding: 5px 10px; border-radius: 13px; background: ${surface_sunken};
+    color: ${text_secondary}; font-size: 12px; font-weight: 700;
+}
+#ControlTab #RudderLabel { font-size: 10px; font-weight: 700; letter-spacing: .6px; color: ${text_secondary}; }
+#ControlTab #SteeringAutoNote { font-size: 12px; color: ${text_secondary}; }
+#ControlTab QPushButton#NudgeButton {
+    min-width: 46px; max-width: 46px; min-height: 46px; max-height: 46px; padding: 0;
+    border: none; border-radius: 12px; background: ${surface_sunken};
+}
+#ControlTab QPushButton#NudgeButton:hover { background: ${button_pressed}; }
+#ControlTab QPushButton#NudgeButton:disabled { background: ${button_disabled_bg}; }
+#ControlTab QPushButton#CenterButton {
+    min-height: 46px; border-radius: 12px; background: transparent;
+    color: ${accent}; border: 1px solid ${border_strong}; font-size: 13px; font-weight: 700;
+}
+#ControlTab QPushButton#CenterButton:hover { background: ${accent_soft}; }
+#ControlTab QPushButton#CenterButton:disabled { color: ${text_disabled}; border-color: ${border}; }
+#ControlTab QFrame#TelemetryFooter { border: none; border-top: 1px solid ${border}; }
+#ControlTab #FooterText { font-size: 11px; letter-spacing: .5px; color: ${text_secondary}; }
+
 /* Transmit */
 #TxPanel { background: ${console_panel}; border-top: 1px solid ${hairline}; }
 #TxTitle { font-size: 10px; font-weight: 750; letter-spacing: .8px; color: ${console_muted}; }

@@ -23,6 +23,7 @@ from pathlib import Path
 
 import qtawesome
 from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import QLabel
 from qtawesome.iconic_font import IconicFont
 
 from prana_windows.ui.theme import theme
@@ -94,4 +95,21 @@ def _rebake(*_args) -> None:
 theme.changed.connect(_rebake)
 
 
-__all__ = ["bind_icon", "themed_icon"]
+class GlyphLabel(QLabel):
+    """A standalone glyph beside a label, re-baked when the theme changes.
+
+    `bind_icon` needs a widget with `setIcon`; a QLabel only has a pixmap.
+    """
+
+    def __init__(self, name: str, *, role: str, size: int = 16, parent=None):
+        super().__init__(parent)
+        self._name, self._role, self._size = name, role, size
+        self.setFixedSize(size, size)
+        theme.changed.connect(self._repaint)
+        self._repaint()
+
+    def _repaint(self, *_args) -> None:
+        self.setPixmap(themed_icon(self._name, role=self._role).pixmap(self._size, self._size))
+
+
+__all__ = ["GlyphLabel", "bind_icon", "themed_icon"]
