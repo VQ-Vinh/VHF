@@ -75,7 +75,7 @@ class GpsPositionCard extends StatelessWidget {
                           color: palette.surface.withValues(alpha: .86),
                           shape: BoxShape.circle,
                         ),
-                        child: CompassRose(degrees: heading, size: 48),
+                        child: CompassRose(degrees: heading, size: 64),
                       ),
                     ),
                 ],

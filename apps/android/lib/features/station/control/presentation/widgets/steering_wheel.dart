@@ -1,5 +1,6 @@
 import 'package:prana_mobile/l10n/app_localizations.dart';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:prana_mobile/core/surfaces.dart';
 import '../../application/steering_state.dart';
@@ -209,16 +210,18 @@ class _SteeringWheelState extends State<SteeringWheel> {
                           painter: _WheelPainter(
                             angle,
                             enabled,
-                            // The wheel is furniture, not a readout, so it
-                            // takes the muted ink. onSurface made it the
-                            // brightest thing on a dark bridge at night.
-                            foreground: colors.onSurfaceVariant,
-                            disabled: colors.onSurfaceVariant.withValues(
-                              alpha: 0.45,
-                            ),
+                            // The wheel is furniture, not a readout: wood and
+                            // brass, held a stop darker in the dark theme so
+                            // it is never the brightest thing on the bridge.
+                            materials:
+                                theme.brightness == Brightness.dark
+                                    ? _WheelMaterials.dark
+                                    : _WheelMaterials.light,
+                            muted: colors.onSurfaceVariant,
                             accent: colors.primary,
                             face: colors.surfaceContainerHighest,
                             rim: colors.outlineVariant,
+                            shadow: colors.shadow,
                           ),
                         ),
                       ),
@@ -336,26 +339,147 @@ class _StateChip extends StatelessWidget {
   }
 }
 
+/// Wood and brass for the wheel, the same values as the desktop's `wheel_*`
+/// theme tokens.
+class _WheelMaterials {
+  const _WheelMaterials({
+    required this.wood,
+    required this.woodLight,
+    required this.woodShade,
+    required this.brass,
+    required this.brassLight,
+    required this.brassShade,
+  });
+  final Color wood, woodLight, woodShade, brass, brassLight, brassShade;
+
+  static const light = _WheelMaterials(
+    wood: Color(0xFF8B5A2B),
+    woodLight: Color(0xFFB98352),
+    woodShade: Color(0xFF5C3A1A),
+    brass: Color(0xFFC49A3A),
+    brassLight: Color(0xFFF0D78C),
+    brassShade: Color(0xFF7A5C1E),
+  );
+
+  static const dark = _WheelMaterials(
+    wood: Color(0xFF6E4724),
+    woodLight: Color(0xFF946640),
+    woodShade: Color(0xFF3A2510),
+    brass: Color(0xFFA5823A),
+    brassLight: Color(0xFFD2BA78),
+    brassShade: Color(0xFF5E4719),
+  );
+}
+
+// Wheel proportions, as fractions of the wheel radius.
+const _rimInner = 0.86;
+const _rimOuter = 1.0;
+const _hub = 0.29;
+
+/// A spoke's half-width along its length: the taper out from the hub with a
+/// bead near it, then the handle's collar, neck and grip beyond the rim.
+const _armProfile = <List<double>>[
+  [0.20, 0.056],
+  [0.30, 0.046],
+  [0.345, 0.060],
+  [0.39, 0.044],
+  [0.86, 0.030],
+  [1.00, 0.032],
+  [1.035, 0.052],
+  [1.065, 0.030],
+  [1.10, 0.036],
+  [1.16, 0.058],
+  [1.205, 0.046],
+  [1.235, 0.026],
+  [1.248, 0.0],
+];
+
+/// One spoke and its handle lying along +x, eased between profile stations.
+Path _armPath(double radius) {
+  final edge = <Offset>[];
+  for (var i = 0; i < _armProfile.length - 1; i++) {
+    final [x0, w0] = _armProfile[i];
+    final [x1, w1] = _armProfile[i + 1];
+    for (var step = 0; step < 6; step++) {
+      final t = step / 6;
+      edge.add(
+        Offset(x0 + (x1 - x0) * t, w0 + (w1 - w0) * t * t * (3 - 2 * t)),
+      );
+    }
+  }
+  edge.add(Offset(_armProfile.last[0], _armProfile.last[1]));
+  final path = Path()..moveTo(edge.first.dx * radius, -edge.first.dy * radius);
+  for (final point in edge.skip(1)) {
+    path.lineTo(point.dx * radius, -point.dy * radius);
+  }
+  for (final point in edge.reversed) {
+    path.lineTo(point.dx * radius, point.dy * radius);
+  }
+  return path..close();
+}
+
 class _WheelPainter extends CustomPainter {
   const _WheelPainter(
     this.angle,
     this.enabled, {
-    required this.foreground,
-    required this.disabled,
+    required this.materials,
+    required this.muted,
     required this.accent,
     required this.face,
     required this.rim,
+    required this.shadow,
   });
   final double angle;
   final bool enabled;
-  final Color foreground, disabled, accent, face, rim;
+  final _WheelMaterials materials;
+  final Color muted, accent, face, rim, shadow;
+
+  /// Wood or brass, washed toward the muted ink while the helm is locked.
+  Color _material(Color colour, [double alpha = 1]) =>
+      enabled
+          ? colour.withValues(alpha: alpha)
+          : Color.lerp(colour, muted, .7)!.withValues(alpha: alpha * .5);
+
+  /// A domed brass disc lit from the upper left, however far the wheel is
+  /// turned.
+  void _brassDisc(Canvas canvas, Offset at, double size) {
+    // The canvas turns with the wheel; turn the light back so it stays put.
+    final light = (-135 - angle) * math.pi / 180;
+    final focus = at + Offset(math.cos(light), math.sin(light)) * (size * .45);
+    canvas.drawCircle(
+      at,
+      size,
+      Paint()
+        ..shader = ui.Gradient.radial(
+          at,
+          size,
+          [
+            _material(materials.brassLight),
+            _material(materials.brass),
+            _material(materials.brassShade),
+          ],
+          const [0, .55, 1],
+          TileMode.clamp,
+          null,
+          focus,
+        ),
+    );
+    canvas.drawCircle(
+      at,
+      size,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = math.max(.6, size * .08)
+        ..color = _material(materials.brassShade),
+    );
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
     final center = size.center(Offset.zero);
     final radius = size.shortestSide * .38;
-    final ink = enabled ? foreground : disabled;
-    final live = enabled ? accent : disabled;
+    final live = enabled ? accent : muted.withValues(alpha: 0.45);
+    final set = materials;
 
     canvas.save();
     canvas.translate(center.dx, center.dy);
@@ -392,7 +516,7 @@ class _WheelPainter extends CustomPainter {
         angle * math.pi / 180,
         false,
         Paint()
-          ..color = live.withValues(alpha: 0.75)
+          ..color = live.withValues(alpha: enabled ? 0.75 : 0.34)
           ..strokeWidth = 3
           ..strokeCap = StrokeCap.round
           ..style = PaintingStyle.stroke,
@@ -408,49 +532,196 @@ class _WheelPainter extends CustomPainter {
           ..close();
     canvas.drawPath(index, Paint()..color = live);
 
+    final arm = _armPath(radius);
+    final rimPath =
+        Path()
+          ..fillType = PathFillType.evenOdd
+          ..addOval(
+            Rect.fromCircle(center: Offset.zero, radius: radius * _rimOuter),
+          )
+          ..addOval(
+            Rect.fromCircle(center: Offset.zero, radius: radius * _rimInner),
+          );
+
+    // Cast shadow, down and right of a light above the console.
+    final cast = Paint()..color = shadow.withValues(alpha: enabled ? .22 : .08);
+    canvas.save();
+    canvas.translate(radius * .03, radius * .05);
     canvas.rotate(angle * math.pi / 180);
-
-    final spoke =
-        Paint()
-          ..color = ink
-          ..strokeWidth = radius * .075
-          ..strokeCap = StrokeCap.round
-          ..style = PaintingStyle.stroke;
     for (var i = 0; i < 8; i++) {
-      final radians = i * math.pi / 4;
-      canvas.drawLine(
-        Offset.zero,
-        Offset(math.cos(radians), math.sin(radians)) * radius,
-        spoke,
-      );
+      canvas.save();
+      canvas.rotate((i * 45 - 90) * math.pi / 180);
+      canvas.drawPath(arm, cast);
+      canvas.restore();
     }
-    canvas.drawCircle(
-      Offset.zero,
-      radius,
-      Paint()
-        ..color = ink
-        ..strokeWidth = radius * .11
-        ..style = PaintingStyle.stroke,
-    );
+    canvas.drawPath(rimPath, cast);
+    canvas.drawCircle(Offset.zero, radius * _hub, cast);
+    canvas.restore();
 
-    // Handles, and a longer one on the king spoke so the wheel reads as turned
-    // even at a glance.
+    canvas.rotate(angle * math.pi / 180);
+    final hairline = math.max(.8, radius * .006);
+    final edge =
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = hairline
+          ..color = _material(set.woodShade);
+
+    // Turned spokes, each running out through the rim into a handle. The
+    // gradient runs across the spoke, so it reads as round and not flat.
+    final across =
+        Paint()
+          ..shader = ui.Gradient.linear(
+            Offset(0, -radius * .06),
+            Offset(0, radius * .06),
+            [
+              _material(set.woodShade),
+              _material(set.woodLight),
+              _material(set.wood),
+              _material(set.woodShade),
+            ],
+            const [0, .32, .55, 1],
+          );
     for (var i = 0; i < 8; i++) {
-      final radians = (i * math.pi / 4) - math.pi / 2;
-      final king = i == 0;
+      canvas.save();
+      canvas.rotate((i * 45 - 90) * math.pi / 180);
+      canvas.drawPath(arm, across);
+      canvas.drawPath(arm, edge);
+      if (i == 0) {
+        // The king spoke wears a turk's head, so amidships is found by eye as
+        // it is by hand on a real helm.
+        final band = RRect.fromRectAndRadius(
+          Rect.fromLTWH(
+            radius * 1.055,
+            -radius * .045,
+            radius * .05,
+            radius * .09,
+          ),
+          Radius.circular(radius * .012),
+        );
+        canvas.drawRRect(band, Paint()..color = live);
+        canvas.drawRRect(
+          band,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = hairline
+            ..color = shadow.withValues(alpha: .35),
+        );
+      }
+      canvas.restore();
+    }
+
+    // The rim: lit along its crown and dark at both edges.
+    const inner = _rimInner / _rimOuter;
+    canvas.drawPath(
+      rimPath,
+      Paint()
+        ..shader = ui.Gradient.radial(
+          Offset.zero,
+          radius * _rimOuter,
+          [
+            _material(set.woodShade),
+            _material(set.woodShade),
+            _material(set.wood),
+            _material(set.woodLight),
+            _material(set.wood),
+            _material(set.woodShade),
+          ],
+          const [
+            0,
+            inner,
+            inner + (1 - inner) * .30,
+            inner + (1 - inner) * .55,
+            inner + (1 - inner) * .80,
+            1,
+          ],
+        ),
+    );
+    canvas.drawPath(rimPath, edge);
+
+    // Grain, and the joints between the rim's eight sections. Both turn with
+    // the wheel, which is what makes a small turn visible.
+    final grain =
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round
+          ..strokeWidth = math.max(.6, radius * .005)
+          ..color = _material(set.woodShade, .45);
+    const lanes = [.895, .955];
+    const sweeps = [26, 18];
+    for (var section = 0; section < 8; section++) {
+      for (var lane = 0; lane < lanes.length; lane++) {
+        final begin = section * 45 + 8 + lane * 14;
+        // Mirrors Qt's anticlockwise arcs, so both apps grain the same way.
+        canvas.drawArc(
+          Rect.fromCircle(center: Offset.zero, radius: radius * lanes[lane]),
+          -(begin + sweeps[lane]) * math.pi / 180,
+          sweeps[lane] * math.pi / 180,
+          false,
+          grain,
+        );
+      }
+    }
+    final joint =
+        Paint()
+          ..strokeWidth = math.max(.8, radius * .008)
+          ..color = _material(set.woodShade, .85);
+    for (var section = 0; section < 8; section++) {
+      final radians = (section * 45 + 22.5) * math.pi / 180;
       final unit = Offset(math.cos(radians), math.sin(radians));
       canvas.drawLine(
-        unit * radius,
-        unit * (radius * (king ? 1.16 : 1.10)),
-        Paint()
-          ..color = king ? live : ink
-          ..strokeWidth = radius * (king ? .11 : .08)
-          ..strokeCap = StrokeCap.round,
+        unit * (radius * _rimInner),
+        unit * (radius * _rimOuter),
+        joint,
       );
     }
 
-    canvas.drawCircle(Offset.zero, radius * .22, Paint()..color = live);
-    canvas.drawCircle(Offset.zero, radius * .10, Paint()..color = face);
+    // Brass studs where each spoke passes through the rim.
+    final middle = radius * (_rimInner + _rimOuter) / 2;
+    for (var i = 0; i < 8; i++) {
+      final radians = i * math.pi / 4;
+      _brassDisc(
+        canvas,
+        Offset(math.cos(radians), math.sin(radians)) * middle,
+        radius * .03,
+      );
+    }
+
+    // Hub: a wooden boss under a brass plate held by eight bolts.
+    canvas.drawCircle(
+      Offset.zero,
+      radius * _hub,
+      Paint()
+        ..shader = ui.Gradient.radial(
+          Offset.zero,
+          radius * _hub,
+          [
+            _material(set.woodLight),
+            _material(set.wood),
+            _material(set.woodShade),
+          ],
+          const [0, .75, 1],
+        ),
+    );
+    canvas.drawCircle(Offset.zero, radius * _hub, edge);
+    _brassDisc(canvas, Offset.zero, radius * .21);
+    final bolt = Paint()..color = _material(set.brassShade);
+    for (var i = 0; i < 8; i++) {
+      final radians = (i * 45 + 22.5) * math.pi / 180;
+      canvas.drawCircle(
+        Offset(math.cos(radians), math.sin(radians)) * (radius * .155),
+        radius * .02,
+        bolt,
+      );
+    }
+    canvas.drawCircle(Offset.zero, radius * .075, Paint()..color = live);
+    canvas.drawCircle(
+      Offset.zero,
+      radius * .075,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = math.max(.8, radius * .008)
+        ..color = _material(set.brassShade),
+    );
     canvas.restore();
   }
 
@@ -458,9 +729,10 @@ class _WheelPainter extends CustomPainter {
   bool shouldRepaint(covariant _WheelPainter old) =>
       angle != old.angle ||
       enabled != old.enabled ||
-      foreground != old.foreground ||
-      disabled != old.disabled ||
+      materials != old.materials ||
+      muted != old.muted ||
       accent != old.accent ||
       face != old.face ||
-      rim != old.rim;
+      rim != old.rim ||
+      shadow != old.shadow;
 }

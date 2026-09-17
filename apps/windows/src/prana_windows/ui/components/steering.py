@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QPainter, QPainterPath, QPen
+from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPainterPath, QPen, QRadialGradient
 from PySide6.QtWidgets import (
     QButtonGroup,
     QFrame,
@@ -223,9 +223,9 @@ class SteeringWheel(QWidget):
         radius = self.diameter() * 0.38
         enabled = self.isEnabled()
         angle = self.state.angle
-        # The wheel is furniture, not a readout, so it takes the muted ink;
-        # full-strength text made it the brightest thing on a dark bridge.
-        wheel_ink = ink("text_muted") if enabled else ink("text_muted", 0.45)
+        # The wheel is furniture, not a readout. Wood and brass are its own
+        # tokens, and the dark theme holds them a stop down, so it never becomes
+        # the brightest thing on a dark bridge.
         live = ink("accent") if enabled else ink("text_muted", 0.45)
 
         painter.translate(self.width() / 2, self.height() / 2)
@@ -260,32 +260,174 @@ class SteeringWheel(QWidget):
         painter.setBrush(live)
         painter.drawPath(index)
 
+        arm = _arm_path(radius)
+        rim = QPainterPath()
+        rim.setFillRule(Qt.OddEvenFill)
+        rim.addEllipse(QPointF(0, 0), radius * _RIM_OUTER, radius * _RIM_OUTER)
+        rim.addEllipse(QPointF(0, 0), radius * _RIM_INNER, radius * _RIM_INNER)
+
+        # Cast shadow, down and right of a light above the console.
+        painter.save()
+        painter.translate(radius * 0.03, radius * 0.05)
         painter.rotate(angle)
-        spoke = QPen(wheel_ink, radius * 0.075)
-        spoke.setCapStyle(Qt.RoundCap)
-        painter.setPen(spoke)
+        painter.setBrush(ink("navy", 0.22 if enabled else 0.08))
         for i in range(8):
-            radians = i * math.pi / 4
-            painter.drawLine(QPointF(0, 0), QPointF(math.cos(radians), math.sin(radians)) * radius)
-        painter.setPen(QPen(wheel_ink, radius * 0.11))
+            painter.save()
+            painter.rotate(i * 45 - 90)
+            painter.drawPath(arm)
+            painter.restore()
+        painter.drawPath(rim)
+        painter.drawEllipse(QPointF(0, 0), radius * _HUB, radius * _HUB)
+        painter.restore()
+
+        painter.rotate(angle)
+        edge = QPen(self._material("wheel_wood_shade"), max(0.8, radius * 0.006))
+
+        # Turned spokes, each running out through the rim into a handle. The
+        # gradient runs across the spoke, so it reads as round and not flat.
+        across = QLinearGradient(0, -radius * 0.06, 0, radius * 0.06)
+        across.setColorAt(0.0, self._material("wheel_wood_shade"))
+        across.setColorAt(0.32, self._material("wheel_wood_light"))
+        across.setColorAt(0.55, self._material("wheel_wood"))
+        across.setColorAt(1.0, self._material("wheel_wood_shade"))
+        for i in range(8):
+            painter.save()
+            painter.rotate(i * 45 - 90)
+            painter.setPen(edge)
+            painter.setBrush(across)
+            painter.drawPath(arm)
+            if i == 0:
+                # The king spoke wears a turk's head, so amidships is found by
+                # eye as it is by hand on a real helm.
+                painter.setPen(QPen(ink("navy", 0.35), max(0.8, radius * 0.006)))
+                painter.setBrush(live)
+                band = QRectF(radius * 1.055, -radius * 0.045, radius * 0.05, radius * 0.09)
+                painter.drawRoundedRect(band, radius * 0.012, radius * 0.012)
+            painter.restore()
+
+        # The rim: lit along its crown and dark at both edges.
+        inner = _RIM_INNER / _RIM_OUTER
+        crown = QRadialGradient(QPointF(0, 0), radius * _RIM_OUTER)
+        for at, name in (
+            (0.0, "wheel_wood_shade"),
+            (inner, "wheel_wood_shade"),
+            (inner + (1 - inner) * 0.30, "wheel_wood"),
+            (inner + (1 - inner) * 0.55, "wheel_wood_light"),
+            (inner + (1 - inner) * 0.80, "wheel_wood"),
+            (1.0, "wheel_wood_shade"),
+        ):
+            crown.setColorAt(at, self._material(name))
+        painter.setPen(edge)
+        painter.setBrush(crown)
+        painter.drawPath(rim)
+
+        # Grain, and the joints between the rim's eight sections. Both turn
+        # with the wheel, which is what makes a small turn visible.
         painter.setBrush(Qt.NoBrush)
-        painter.drawEllipse(QPointF(0, 0), radius, radius)
-
-        # Handles, with a longer king spoke so the wheel reads as turned.
-        for i in range(8):
-            radians = i * math.pi / 4 - math.pi / 2
-            king = i == 0
+        grain = QPen(self._material("wheel_wood_shade", 0.45), max(0.6, radius * 0.005))
+        grain.setCapStyle(Qt.RoundCap)
+        painter.setPen(grain)
+        for section in range(8):
+            for lane, (at, sweep) in enumerate(((0.895, 26), (0.955, 18))):
+                r = radius * at
+                begin = section * 45 + 8 + lane * 14
+                painter.drawArc(QRectF(-r, -r, 2 * r, 2 * r), begin * 16, sweep * 16)
+        painter.setPen(QPen(self._material("wheel_wood_shade", 0.85), max(0.8, radius * 0.008)))
+        for section in range(8):
+            radians = math.radians(section * 45 + 22.5)
             unit = QPointF(math.cos(radians), math.sin(radians))
-            handle = QPen(live if king else wheel_ink, radius * (0.11 if king else 0.08))
-            handle.setCapStyle(Qt.RoundCap)
-            painter.setPen(handle)
-            painter.drawLine(unit * radius, unit * (radius * (1.16 if king else 1.10)))
+            painter.drawLine(unit * (radius * _RIM_INNER), unit * (radius * _RIM_OUTER))
 
+        # Brass studs where each spoke passes through the rim.
+        middle = radius * (_RIM_INNER + _RIM_OUTER) / 2
+        for i in range(8):
+            radians = math.radians(i * 45)
+            self._brass_disc(painter, QPointF(math.cos(radians), math.sin(radians)) * middle, radius * 0.03, angle)
+
+        # Hub: a wooden boss under a brass plate held by eight bolts.
+        boss = QRadialGradient(QPointF(0, 0), radius * _HUB)
+        boss.setColorAt(0.0, self._material("wheel_wood_light"))
+        boss.setColorAt(0.75, self._material("wheel_wood"))
+        boss.setColorAt(1.0, self._material("wheel_wood_shade"))
+        painter.setPen(edge)
+        painter.setBrush(boss)
+        painter.drawEllipse(QPointF(0, 0), radius * _HUB, radius * _HUB)
+        self._brass_disc(painter, QPointF(0, 0), radius * 0.21, angle)
         painter.setPen(Qt.NoPen)
+        painter.setBrush(self._material("wheel_brass_shade"))
+        for i in range(8):
+            radians = math.radians(i * 45 + 22.5)
+            painter.drawEllipse(QPointF(math.cos(radians), math.sin(radians)) * (radius * 0.155), radius * 0.02, radius * 0.02)
+        painter.setPen(QPen(self._material("wheel_brass_shade"), max(0.8, radius * 0.008)))
         painter.setBrush(live)
-        painter.drawEllipse(QPointF(0, 0), radius * 0.22, radius * 0.22)
-        painter.setBrush(ink("surface_sunken"))
-        painter.drawEllipse(QPointF(0, 0), radius * 0.10, radius * 0.10)
+        painter.drawEllipse(QPointF(0, 0), radius * 0.075, radius * 0.075)
+
+    def _material(self, name: str, alpha: float = 1.0) -> QColor:
+        """Wood or brass, washed toward the muted ink while the helm is locked."""
+        colour = ink(name, alpha)
+        if self.isEnabled():
+            return colour
+        muted = ink("text_muted")
+        washed = QColor.fromRgbF(
+            colour.redF() * 0.3 + muted.redF() * 0.7,
+            colour.greenF() * 0.3 + muted.greenF() * 0.7,
+            colour.blueF() * 0.3 + muted.blueF() * 0.7,
+        )
+        washed.setAlphaF(alpha * 0.5)
+        return washed
+
+    def _brass_disc(self, painter: QPainter, at: QPointF, size: float, angle: float) -> None:
+        """A domed brass disc lit from the upper left, however far the wheel is turned."""
+        # The painter turns with the wheel; turn the light back so it stays put.
+        light = math.radians(-135 - angle)
+        focus = at + QPointF(math.cos(light), math.sin(light)) * (size * 0.45)
+        dome = QRadialGradient(at, size, focus)
+        dome.setColorAt(0.0, self._material("wheel_brass_light"))
+        dome.setColorAt(0.55, self._material("wheel_brass"))
+        dome.setColorAt(1.0, self._material("wheel_brass_shade"))
+        painter.setPen(QPen(self._material("wheel_brass_shade"), max(0.6, size * 0.08)))
+        painter.setBrush(dome)
+        painter.drawEllipse(at, size, size)
+
+
+# Wheel proportions, as fractions of the wheel radius.
+_RIM_INNER = 0.86
+_RIM_OUTER = 1.0
+_HUB = 0.29
+# A spoke's half-width along its length: the taper out from the hub with a bead
+# near it, then the handle's collar, neck and grip beyond the rim.
+_ARM_PROFILE = (
+    (0.20, 0.056),
+    (0.30, 0.046),
+    (0.345, 0.060),
+    (0.39, 0.044),
+    (0.86, 0.030),
+    (1.00, 0.032),
+    (1.035, 0.052),
+    (1.065, 0.030),
+    (1.10, 0.036),
+    (1.16, 0.058),
+    (1.205, 0.046),
+    (1.235, 0.026),
+    (1.248, 0.0),
+)
+
+
+def _arm_path(radius: float) -> QPainterPath:
+    """One spoke and its handle lying along +x, eased between profile stations."""
+    edge: list[tuple[float, float]] = []
+    for (x0, w0), (x1, w1) in zip(_ARM_PROFILE, _ARM_PROFILE[1:]):
+        for step in range(6):
+            t = step / 6
+            edge.append((x0 + (x1 - x0) * t, w0 + (w1 - w0) * t * t * (3 - 2 * t)))
+    edge.append(_ARM_PROFILE[-1])
+    path = QPainterPath(QPointF(edge[0][0] * radius, -edge[0][1] * radius))
+    for x, w in edge[1:]:
+        path.lineTo(x * radius, -w * radius)
+    for x, w in reversed(edge):
+        path.lineTo(x * radius, w * radius)
+    path.closeSubpath()
+    return path
 
 
 class SteeringPanel(QWidget):

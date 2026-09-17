@@ -47,7 +47,7 @@ class ChartView(QWidget):
         self.setMinimumHeight(120)
         self.sample: TelemetrySnapshot | None = None
         self.track: list[tuple[float, float]] = []
-        self.compass = CompassRose(48, self)
+        self.compass = CompassRose(72, self)
         theme.changed.connect(self.update)
 
     def hasHeightForWidth(self) -> bool:  # noqa: N802 - Qt override

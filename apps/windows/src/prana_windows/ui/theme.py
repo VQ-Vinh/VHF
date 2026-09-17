@@ -101,6 +101,17 @@ LIGHT: dict[str, str] = {
     "gridline": "#DCE7F1",
     "tooltip_bg": "#0D2B4F",
     "tooltip_text": "#FFFFFF",
+    # Instruments. A helm is wood and brass in either theme; the dark set is
+    # the same materials a stop darker so the wheel does not glare at night.
+    # North is red on any compass, and is kept off the `transmit` token so the
+    # two can move apart.
+    "wheel_wood": "#8B5A2B",
+    "wheel_wood_light": "#B98352",
+    "wheel_wood_shade": "#5C3A1A",
+    "wheel_brass": "#C49A3A",
+    "wheel_brass_light": "#F0D78C",
+    "wheel_brass_shade": "#7A5C1E",
+    "compass_north": "#C62F3A",
 }
 
 DARK: dict[str, str] = {
@@ -163,6 +174,14 @@ DARK: dict[str, str] = {
     "gridline": "#345064",
     "tooltip_bg": "#E0EEF7",
     "tooltip_text": "#0D2B4F",
+    # Instruments; see the note in LIGHT.
+    "wheel_wood": "#6E4724",
+    "wheel_wood_light": "#946640",
+    "wheel_wood_shade": "#3A2510",
+    "wheel_brass": "#A5823A",
+    "wheel_brass_light": "#D2BA78",
+    "wheel_brass_shade": "#5E4719",
+    "compass_north": "#F0616B",
 }
 THEMES = {"light": LIGHT, "dark": DARK}
 DEFAULT_THEME = "light"
