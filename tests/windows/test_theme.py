@@ -52,6 +52,11 @@ TEXT_PAIRS = [
     ("error_text", "error_bg"),
     ("ok", "surface"),
     ("tooltip_text", "tooltip_bg"),
+    # Control tab: captions on the page, pills and notices, the selected chip.
+    ("text_secondary", "console_bg"),
+    ("text_secondary", "surface_sunken"),
+    ("text_secondary", "warn_bg"),
+    ("accent", "accent_soft"),
 ]
 
 

@@ -4,9 +4,12 @@ from datetime import datetime, timezone
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QButtonGroup,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -18,10 +21,17 @@ from prana_windows.ui.components.control_bar import ControlBar
 from prana_windows.ui.components.lease_banner import LeaseBanner
 from prana_windows.ui.components.tx_panel import TxPanel
 from prana_windows.ui.i18n import language, tr
+from prana_windows.ui.pages.control_tab import ControlTab
+
+# Tab order follows the phone (Control, then Live VHF). The console opens on
+# Live VHF: an operator attaches to a Station to work its radio, while the
+# phone's default of Control suits the skipper at the helm.
+TABS = ("control", "live")
+DEFAULT_TAB = "live"
 
 
 class StationWorkspacePage(QWidget):
-    """Live VHF plus controls for the one attached Station."""
+    """The attached Station: a Control tab and a Live VHF tab under one header."""
 
     back_requested = Signal()
     take_control_requested = Signal()
@@ -62,27 +72,79 @@ class StationWorkspacePage(QWidget):
         self.lease_banner.release_requested.connect(self.release_control_requested)
         root.addWidget(self.lease_banner)
 
-        self.control_bar = ControlBar()
-        root.addWidget(self.control_bar)
-
+        # Above the tabs: control loss and command errors matter on either.
         self._message = QLabel()
         self._message.setObjectName("WorkspaceMessage")
         self._message.setWordWrap(True)
         self._message.setVisible(False)
         root.addWidget(self._message)
 
-        self.chat = ChatFeed()
-        root.addWidget(self.chat, stretch=1)
+        strip = QFrame()
+        strip.setObjectName("WorkspaceTabs")
+        tabs = QHBoxLayout(strip)
+        tabs.setContentsMargins(0, 0, 0, 0)
+        tabs.setSpacing(0)
+        self._tab_group = QButtonGroup(self)
+        self.tab_buttons: dict[str, QPushButton] = {}
+        for name in TABS:
+            button = QPushButton()
+            button.setObjectName("WorkspaceTab")
+            button.setCheckable(True)
+            button.setCursor(Qt.PointingHandCursor)
+            button.clicked.connect(lambda _checked=False, n=name: self.show_tab(n))
+            self._tab_group.addButton(button)
+            self.tab_buttons[name] = button
+            tabs.addWidget(button, 1)
+        root.addWidget(strip)
 
+        self._pages = QStackedWidget()
+        self.control_tab = ControlTab()
+        self._pages.addWidget(self.control_tab)
+
+        live = QWidget()
+        live.setObjectName("LivePage")
+        live_layout = QVBoxLayout(live)
+        live_layout.setContentsMargins(0, 0, 0, 0)
+        live_layout.setSpacing(0)
+        self.control_bar = ControlBar()
+        live_layout.addWidget(self.control_bar)
+        self.chat = ChatFeed()
+        live_layout.addWidget(self.chat, stretch=1)
         self.tx_panel = TxPanel()
-        root.addWidget(self.tx_panel)
+        live_layout.addWidget(self.tx_panel)
+        self._live_page = live
+        self._pages.addWidget(live)
+        root.addWidget(self._pages, stretch=1)
+        self._tab = ""
+        self.show_tab(DEFAULT_TAB)
 
         language.changed.connect(self._retranslate)
         self._retranslate()
 
+    # -- tabs -------------------------------------------------------------
+
+    def show_tab(self, name: str) -> None:
+        """Switch tabs without rebuilding either one; the feed keeps its scroll."""
+        if name not in TABS:
+            name = DEFAULT_TAB
+        self._tab = name
+        self._pages.setCurrentWidget(self.control_tab if name == "control" else self._live_page)
+        for value, button in self.tab_buttons.items():
+            current = value == name
+            button.setChecked(current)
+            if button.property("current") != ("true" if current else "false"):
+                button.setProperty("current", "true" if current else "false")
+                button.style().unpolish(button)
+                button.style().polish(button)
+
+    def current_tab(self) -> str:
+        return self._tab
+
     # -- state ------------------------------------------------------------
 
     def reset(self) -> None:
+        self.show_tab(DEFAULT_TAB)
+        self.control_tab.reset()
         self.chat.clear()
         self.chat.set_state("stopped")
         self._shown_request_ids.clear()
@@ -155,6 +217,8 @@ class StationWorkspacePage(QWidget):
 
     def _retranslate(self, *_args) -> None:
         self._back.setText(tr("station.back"))
+        self.tab_buttons["control"].setText(tr("tab.control"))
+        self.tab_buttons["live"].setText(tr("tab.live"))
         station = self._station
         if station is None:
             self._title.setText("")
