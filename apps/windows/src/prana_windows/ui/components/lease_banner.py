@@ -23,7 +23,7 @@ class LeaseBanner(QFrame):
         self._operator_uid = ""
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(20, 10, 20, 10)
+        layout.setContentsMargins(28, 10, 28, 10)
         layout.setSpacing(10)
 
         self._label = QLabel()

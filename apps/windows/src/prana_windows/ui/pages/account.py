@@ -65,14 +65,19 @@ class _CenteredPage(QWidget):
             self._locale.blockSignals(False)
 
     def add_title(self, title: str, subtitle: str = "") -> None:
+        block = QVBoxLayout()
+        block.setSpacing(6)
         self._page_title = QLabel(title)
         self._page_title.setObjectName("AccountTitle")
-        self.content.addWidget(self._page_title)
+        self._page_title.setWordWrap(True)
+        block.addWidget(self._page_title)
         if subtitle:
             self._page_subtitle = QLabel(subtitle)
             self._page_subtitle.setObjectName("AccountSubtitle")
             self._page_subtitle.setWordWrap(True)
-            self.content.addWidget(self._page_subtitle)
+            block.addWidget(self._page_subtitle)
+        self.content.addLayout(block)
+        self.content.addSpacing(6)
 
 
 class LoadingPage(_CenteredPage):
@@ -146,9 +151,9 @@ class AuthPage(_CenteredPage):
         self._login_email.setPlaceholderText("name@example.com")
         self._login_password = QLineEdit()
         self._login_password.setEchoMode(QLineEdit.Password)
-        self._login_password.setPlaceholderText("Password")
         self._login_email_label = QLabel()
         self._login_password_label = QLabel()
+        self._fit_captions(self._login_email_label, self._login_password_label)
         login_form.addRow(self._login_email_label, self._login_email)
         login_form.addRow(self._login_password_label, self._login_password)
         self._show_login = QPushButton()
@@ -180,6 +185,7 @@ class AuthPage(_CenteredPage):
         self._register_password.setPlaceholderText(tr("account.password_placeholder"))
         self._register_email_label = QLabel()
         self._register_password_label = QLabel()
+        self._fit_captions(self._register_email_label, self._register_password_label)
         register_form.addRow(self._register_email_label, self._register_email)
         register_form.addRow(self._register_password_label, self._register_password)
         self._password_requirements = QLabel()
@@ -207,6 +213,17 @@ class AuthPage(_CenteredPage):
         self.content.addWidget(self._message)
         language.changed.connect(self._retranslate)
         self._retranslate()
+
+    @staticmethod
+    def _fit_captions(*captions: QLabel) -> None:
+        """Centre each caption on its 40px field.
+
+        QFormLayout pins a caption to the top of its row, which left "Email"
+        and "Password" riding high against the fields beside them.
+        """
+        for caption in captions:
+            caption.setMinimumHeight(40)
+            caption.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
     @staticmethod
     def _configure_password_toggle(toggle: QPushButton, field: QLineEdit) -> None:
@@ -243,6 +260,7 @@ class AuthPage(_CenteredPage):
         self._page_subtitle.setText(tr("account.subtitle"))
         self._login_email_label.setText(tr("account.email"))
         self._login_password_label.setText(tr("account.password"))
+        self._login_password.setPlaceholderText(tr("account.password"))
         self._register_email_label.setText(tr("account.email"))
         self._register_password_label.setText(tr("account.password"))
         self._register_password.setPlaceholderText(tr("account.password_placeholder"))
@@ -349,6 +367,7 @@ class OfflinePage(_CenteredPage):
         self.add_title(tr("account.offline"), tr("account.offline_body"))
         self._message = QLabel()
         self._message.setWordWrap(True)
+        self._message.setVisible(False)
         self.content.addWidget(self._message)
         row = QHBoxLayout()
         self._sign_out = QPushButton(tr("common.sign_out"))
@@ -370,3 +389,4 @@ class OfflinePage(_CenteredPage):
 
     def set_message(self, message: str) -> None:
         self._message.setText(message)
+        self._message.setVisible(bool(message))

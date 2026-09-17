@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton
+from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
 
 from prana_core.common.languages import LANGUAGE_NAMES
 from prana_core.console.command_phase import CommandPhase, CommandState, can_toggle
@@ -39,7 +39,7 @@ class ControlBar(QFrame):
         self._suppress = False
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(28, 12, 28, 12)
+        layout.setContentsMargins(28, 10, 28, 12)
         layout.setSpacing(12)
 
         self._toggle = QPushButton()
@@ -48,53 +48,63 @@ class ControlBar(QFrame):
         self._toggle.setIconSize(QSize(14, 14))
         self._toggle.setCursor(Qt.PointingHandCursor)
         self._toggle.clicked.connect(self._on_toggle)
-        layout.addWidget(self._toggle)
+        layout.addWidget(self._toggle, 0, Qt.AlignBottom)
 
-        self._language_label = QLabel()
-        self._language_label.setObjectName("LangLabel")
-        layout.addWidget(self._language_label)
+        # Each caption sits above its field rather than beside it: beside, the
+        # three captions took a third of the row and the fields slid under one
+        # another once a Vietnamese caption no longer fitted.
         self._language = QComboBox()
-        self._language.setFixedHeight(36)
         for code, name in LANGUAGE_NAMES.items():
             self._language.addItem(name, code)
+        self._language.setMinimumWidth(140)
         self._language.currentIndexChanged.connect(self._on_language)
-        layout.addWidget(self._language)
+        self._language_label = self._field(layout, self._language)
 
-        self._mode_label = QLabel()
-        self._mode_label.setObjectName("LangLabel")
-        layout.addWidget(self._mode_label)
         self._mode = QComboBox()
-        self._mode.setFixedHeight(36)
+        self._mode.setMinimumWidth(110)
         self._mode.currentIndexChanged.connect(self._on_capture)
-        layout.addWidget(self._mode)
+        self._mode_label = self._field(layout, self._mode)
 
-        self._device_label = QLabel()
-        self._device_label.setObjectName("LangLabel")
-        layout.addWidget(self._device_label)
         self._device = QComboBox()
-        self._device.setFixedHeight(36)
-        self._device.setMinimumWidth(220)
+        self._device.setMinimumWidth(180)
         self._device.currentIndexChanged.connect(self._on_capture)
-        layout.addWidget(self._device, stretch=1)
+        self._device_label = self._field(layout, self._device, stretch=1)
 
         self._rescan = QPushButton()
+        self._rescan.setFixedHeight(36)
         self._rescan.setCursor(Qt.PointingHandCursor)
         self._rescan.clicked.connect(self.rescan_requested)
-        layout.addWidget(self._rescan)
+        layout.addWidget(self._rescan, 0, Qt.AlignBottom)
 
         self._phase = QLabel()
         self._phase.setObjectName("PhaseLabel")
-        layout.addWidget(self._phase)
+        self._phase.setFixedHeight(36)
+        layout.addWidget(self._phase, 0, Qt.AlignBottom)
 
         self._retry = QPushButton()
         self._retry.setCursor(Qt.PointingHandCursor)
         self._retry.clicked.connect(self.retry_requested)
+        self._retry.setFixedHeight(36)
         self._retry.setVisible(False)
-        layout.addWidget(self._retry)
+        layout.addWidget(self._retry, 0, Qt.AlignBottom)
 
         language.changed.connect(self._retranslate)
         theme.changed.connect(self._retranslate)
         self._retranslate()
+
+    @staticmethod
+    def _field(layout: QHBoxLayout, field: QComboBox, stretch: int = 0) -> QLabel:
+        """A combo box with its caption above it; returns the caption."""
+        column = QVBoxLayout()
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(4)
+        caption = QLabel()
+        caption.setObjectName("LangLabel")
+        column.addWidget(caption)
+        field.setFixedHeight(36)
+        column.addWidget(field)
+        layout.addLayout(column, stretch)
+        return caption
 
     # -- input ------------------------------------------------------------
 

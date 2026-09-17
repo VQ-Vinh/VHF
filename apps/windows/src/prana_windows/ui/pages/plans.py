@@ -49,8 +49,11 @@ class PlansPage(QWidget):
         self._subtitle = QLabel()
         self._subtitle.setObjectName("PlansSubtitle")
         self._subtitle.setWordWrap(True)
-        root.addWidget(self._title)
-        root.addWidget(self._subtitle)
+        titles = QVBoxLayout()
+        titles.setSpacing(4)
+        titles.addWidget(self._title)
+        titles.addWidget(self._subtitle)
+        root.addLayout(titles)
 
         self._message = QLabel()
         self._message.setObjectName("PlansMessage")
@@ -159,13 +162,14 @@ class PlansPage(QWidget):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(12)
 
+        # Badges sit side by side on the name's line. Stacked, the current
+        # plan's two badges pushed its name and quota below every other card's.
         heading = QHBoxLayout()
+        heading.setSpacing(6)
         name = QLabel(str(plan.get("name") or plan_id.title()))
         name.setObjectName("PlanName")
-        heading.addWidget(name)
+        heading.addWidget(name, 0, Qt.AlignVCenter)
         heading.addStretch()
-        badges = QVBoxLayout()
-        badges.setSpacing(5)
         availability_badge = QLabel(
             tr("plans.available") if available else tr("plans.coming_soon")
         )
@@ -174,13 +178,12 @@ class PlansPage(QWidget):
             "availability", "available" if available else "coming_soon"
         )
         availability_badge.setAlignment(Qt.AlignCenter)
-        badges.addWidget(availability_badge, 0, Qt.AlignRight)
+        heading.addWidget(availability_badge, 0, Qt.AlignVCenter)
         if current:
             badge = QLabel(tr("plans.current"))
             badge.setObjectName("PlanBadge")
             badge.setAlignment(Qt.AlignCenter)
-            badges.addWidget(badge, 0, Qt.AlignRight)
-        heading.addLayout(badges)
+            heading.addWidget(badge, 0, Qt.AlignVCenter)
         layout.addLayout(heading)
 
         seconds = int(plan.get("audio_seconds_limit") or plan.get("monthly_audio_seconds") or 0)
