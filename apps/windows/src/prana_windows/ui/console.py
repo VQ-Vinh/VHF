@@ -414,6 +414,7 @@ class TxController(QObject):
     # -- inputs -----------------------------------------------------------
 
     def set_epoch(self, epoch: int) -> None:
+        """The control epoch every TX call must present; 0 when not holding it."""
         self._epoch = epoch
 
     def set_readiness(self, readiness: StationReadiness) -> None:
@@ -479,6 +480,13 @@ class TxController(QObject):
         if duration < MIN_TX_DURATION_SECONDS:
             self._set(cancelled(self.state))
             return
+        epoch = self._epoch
+        if not epoch:
+            # The lease went while the operator was still talking. Nothing has
+            # been uploaded, so there is nothing to recover: drop the take.
+            self._set(cancelled(self.state))
+            self.error.emit("error.CONTROL_LOST")
+            return
         self._set(uploading(self.state))
         request_id = self.state.request_id
 
@@ -486,6 +494,7 @@ class TxController(QObject):
             try:
                 draft, _ = self._client.create_tx_draft(
                     self._station_id,
+                    epoch,
                     audio,
                     self.state.target_language,
                     request_id=request_id,
@@ -506,7 +515,7 @@ class TxController(QObject):
 
     def _recover_draft(self, request_id: str) -> None:
         try:
-            draft = self._client.get_tx_draft(self._station_id, request_id)
+            draft = self._client.get_tx_draft(self._station_id, self._epoch, request_id)
         except BackendApiError:
             self._set(failed(self.state, TxFailure.TRANSMISSION_FAILED))
             self.error.emit("error.NETWORK_ERROR")
@@ -523,7 +532,7 @@ class TxController(QObject):
         if self._draft_poll is not None:
             self._draft_poll.stop()
         self._draft_poll = ResilientPoller(
-            lambda: self._client.get_tx_draft(self._station_id, draft_id),
+            lambda: self._client.get_tx_draft(self._station_id, self._epoch, draft_id),
             self._on_draft,
             interval=TX_POLL_SECONDS,
             name="tx-draft",
@@ -545,10 +554,14 @@ class TxController(QObject):
             self.error.emit("tx.blocked")
             return
         draft_id = self.state.draft_id
+        epoch = self._epoch
+        if not epoch:
+            self.error.emit("error.CONTROL_LOST")
+            return
 
         def work() -> None:
             draft = self._client.confirm_tx_draft(
-                self._station_id, draft_id, translation.strip()
+                self._station_id, epoch, draft_id, translation.strip()
             )
             self._set(apply_draft(self.state, draft))
             if self._draft_poll is not None:
@@ -569,12 +582,15 @@ class TxController(QObject):
         if self.state.phase == TxPhase.RECORDING:
             self._recorder.cancel()
         self._set(cancelled(self.state))
-        if not draft_id:
+        epoch = self._epoch
+        if not draft_id or not epoch:
+            # Without the lease the server would refuse the cancel; an
+            # unconfirmed draft is never transmitted, so leaving it is safe.
             return
 
         def work() -> None:
             try:
-                self._client.cancel_tx_draft(self._station_id, draft_id)
+                self._client.cancel_tx_draft(self._station_id, epoch, draft_id)
             except BackendApiError:
                 logger.debug("Cancelling TX draft failed", exc_info=True)
 
@@ -584,9 +600,13 @@ class TxController(QObject):
         if not self.can_retry:
             return
         draft_id = self.state.draft_id
+        epoch = self._epoch
+        if not epoch:
+            self.error.emit("error.CONTROL_LOST")
+            return
 
         def work() -> None:
-            draft = self._client.retry_tx_draft(self._station_id, draft_id)
+            draft = self._client.retry_tx_draft(self._station_id, epoch, draft_id)
             self._set(apply_draft(self.state, draft))
             self._watch_draft()
 

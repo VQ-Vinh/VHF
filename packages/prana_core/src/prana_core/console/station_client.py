@@ -232,6 +232,7 @@ class OperatorStationClient:
     def create_tx_draft(
         self,
         station_id: str,
+        epoch: int,
         audio: bytes,
         target_language: str,
         request_id: str | None = None,
@@ -241,6 +242,10 @@ class OperatorStationClient:
         `request_id` is the idempotency key. Callers keep it so that a timeout can
         be resolved by fetching the draft rather than re-uploading, which would
         risk transmitting the same audio twice.
+
+        Every TX call carries the control epoch: the server refuses to key a
+        radio for anyone not holding the current lease, and the epoch is what
+        proves it.
         """
         request_id = request_id or str(uuid.uuid4())
         payload = self._request(
@@ -248,28 +253,41 @@ class OperatorStationClient:
             f"/stations/{station_id}/tx/drafts",
             files={"audio": ("tx.wav", audio, "audio/wav")},
             data={"target_language": target_language},
-            headers={"X-Request-ID": request_id},
+            headers={"X-Request-ID": request_id, "X-Control-Epoch": str(epoch)},
             timeout=180,
         ).json()
         return payload, request_id
 
-    def get_tx_draft(self, station_id: str, draft_id: str) -> dict:
-        return self._request("GET", f"/stations/{station_id}/tx/drafts/{draft_id}").json()
+    def get_tx_draft(self, station_id: str, epoch: int, draft_id: str) -> dict:
+        return self._request(
+            "GET",
+            f"/stations/{station_id}/tx/drafts/{draft_id}",
+            headers={"X-Control-Epoch": str(epoch)},
+        ).json()
 
-    def confirm_tx_draft(self, station_id: str, draft_id: str, translation: str) -> dict:
+    def confirm_tx_draft(
+        self, station_id: str, epoch: int, draft_id: str, translation: str
+    ) -> dict:
         return self._request(
             "POST",
             f"/stations/{station_id}/tx/drafts/{draft_id}/confirm",
             json={"translation": translation},
+            headers={"X-Control-Epoch": str(epoch)},
             timeout=120,
         ).json()
 
-    def cancel_tx_draft(self, station_id: str, draft_id: str) -> None:
-        self._request("DELETE", f"/stations/{station_id}/tx/drafts/{draft_id}")
+    def cancel_tx_draft(self, station_id: str, epoch: int, draft_id: str) -> None:
+        self._request(
+            "DELETE",
+            f"/stations/{station_id}/tx/drafts/{draft_id}",
+            headers={"X-Control-Epoch": str(epoch)},
+        )
 
-    def retry_tx_draft(self, station_id: str, draft_id: str) -> dict:
+    def retry_tx_draft(self, station_id: str, epoch: int, draft_id: str) -> dict:
         return self._request(
-            "POST", f"/stations/{station_id}/tx/drafts/{draft_id}/retry"
+            "POST",
+            f"/stations/{station_id}/tx/drafts/{draft_id}/retry",
+            headers={"X-Control-Epoch": str(epoch)},
         ).json()
 
 

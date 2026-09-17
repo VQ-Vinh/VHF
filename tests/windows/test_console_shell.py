@@ -279,6 +279,112 @@ class ConsoleShellTests(unittest.TestCase):
         self.assertTrue(panel._transmit.isEnabled())
         panel.close()
 
+    def test_every_tx_call_presents_the_current_control_epoch(self) -> None:
+        """The API refuses TX without the epoch; the fake client must not hide that."""
+        import threading
+
+        from prana_core.console.tx_phase import (
+            StationReadiness,
+            TxFailure,
+            TxPhase,
+            TxState,
+        )
+        from prana_windows.ui.console import TxController
+
+        class _TxClient:
+            def __init__(self):
+                self.calls: list[tuple[str, int]] = []
+                self.changed = threading.Condition()
+
+            def _record(self, name, epoch, result=None):
+                with self.changed:
+                    self.calls.append((name, epoch))
+                    self.changed.notify_all()
+                return result
+
+            def wait_for(self, name) -> bool:
+                with self.changed:
+                    return self.changed.wait_for(
+                        lambda: any(n == name for n, _ in self.calls), timeout=2
+                    )
+
+            def create_tx_draft(self, _sid, epoch, _audio, _lang, request_id=None):
+                draft = {"id": "d1", "status": "processing"}
+                return self._record("create", epoch, (draft, request_id))
+
+            def get_tx_draft(self, _sid, epoch, _draft_id):
+                return self._record("get", epoch, {"id": "d1", "status": "processing"})
+
+            def confirm_tx_draft(self, _sid, epoch, _draft_id, _translation):
+                return self._record("confirm", epoch, {"id": "d1", "status": "queued"})
+
+            def retry_tx_draft(self, _sid, epoch, _draft_id):
+                return self._record("retry", epoch, {"id": "d1", "status": "processing"})
+
+            def cancel_tx_draft(self, _sid, epoch, _draft_id):
+                self._record("cancel", epoch)
+
+        class _Recorder:
+            is_recording = False
+
+            def stop(self):
+                return bytes(1) * 32000  # one second of 16 kHz mono PCM
+
+            def cancel(self):
+                pass
+
+        client = _TxClient()
+        tx = TxController(client, "a" * 32, _Recorder())
+        tx.readiness = StationReadiness(
+            online=True, running=True, ptt_ready=True,
+            command_pending=False, holds_control=True,
+        )
+        errors: list[str] = []
+        tx.error.connect(errors.append)
+        review = TxState(phase=TxPhase.REVIEW_READY, draft={"id": "d1", "status": "review_ready"})
+        failed = TxState(
+            phase=TxPhase.FAILED,
+            failure=TxFailure.TRANSMISSION_FAILED,
+            draft={"id": "d1", "status": "failed"},
+        )
+
+        def run(action, state, *expected) -> None:
+            # Each step waits for the draft poll it starts, so shutting that
+            # poll down never races the worker thread that is creating it.
+            client.calls.clear()
+            tx.state = state
+            action()
+            for name in expected:
+                self.assertTrue(client.wait_for(name), f"no {name} call was made")
+            tx.shutdown()
+            with client.changed:
+                seen.extend(client.calls)
+
+        seen: list[tuple[str, int]] = []
+        tx.set_epoch(7)
+        run(tx.stop_recording, TxState(phase=TxPhase.RECORDING, request_id="r1"), "create", "get")
+        run(lambda: tx.confirm("hello"), review, "confirm", "get")
+        run(tx.retry, failed, "retry", "get")
+        run(tx.cancel, review, "cancel")
+        self.assertEqual({epoch for _name, epoch in seen}, {7})
+        self.assertEqual({n for n, _ in seen}, {"create", "get", "confirm", "retry", "cancel"})
+
+        # Without the lease nothing reaches the network, and a finished take is
+        # dropped rather than left looking retryable.
+        client.calls.clear()
+        tx.set_epoch(0)
+        tx.state = TxState(phase=TxPhase.RECORDING, request_id="r2")
+        tx.stop_recording()
+        self.assertEqual(tx.state.phase, TxPhase.IDLE)
+        tx.state = review
+        tx.confirm("hello")
+        tx.state = failed
+        tx.retry()
+        tx.state = review
+        tx.cancel()
+        self.assertEqual(client.calls, [])
+        self.assertEqual(errors.count("error.CONTROL_LOST"), 3)
+
 
 if __name__ == "__main__":
     unittest.main()
