@@ -116,7 +116,7 @@ class FleetPage(QWidget):
         content = QWidget()
         content.setObjectName("FleetScrollContent")
         self._list = QVBoxLayout(content)
-        self._list.setContentsMargins(0, 0, 8, 0)
+        self._list.setContentsMargins(0, 0, 0, 0)
         self._list.setSpacing(8)
         self._empty = QLabel()
         self._empty.setObjectName("FleetEmpty")

@@ -54,7 +54,7 @@ class AccountCenterPage(QWidget):
         self._message_error = False
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(24, 18, 24, 18)
+        root.setContentsMargins(28, 22, 28, 22)
         root.setSpacing(14)
 
         top = QHBoxLayout()
@@ -85,12 +85,16 @@ class AccountCenterPage(QWidget):
         self._content.setContentsMargins(0, 0, 0, 8)
         self._content.setSpacing(14)
 
+        titles = QVBoxLayout()
+        titles.setSpacing(4)
         self._title = QLabel()
         self._title.setObjectName("AccountCenterTitle")
         self._subtitle = QLabel()
         self._subtitle.setObjectName("AccountCenterSubtitle")
-        self._content.addWidget(self._title)
-        self._content.addWidget(self._subtitle)
+        self._subtitle.setWordWrap(True)
+        titles.addWidget(self._title)
+        titles.addWidget(self._subtitle)
+        self._content.addLayout(titles)
 
         self._message = QLabel()
         self._message.setObjectName("AccountCenterMessage")
@@ -188,6 +192,7 @@ class AccountCenterPage(QWidget):
         root.addWidget(scroll, stretch=1)
 
         actions = QHBoxLayout()
+        actions.setSpacing(10)
         self._reset_password = QPushButton()
         self._reset_password.clicked.connect(self._request_password_reset)
         self._resend = QPushButton()
@@ -337,8 +342,10 @@ class AccountCenterPage(QWidget):
         self._usage_reset.setText(
             tr("account.usage_resets", time=_format_datetime(reset_value))
             if reset_value
-            else "—"
+            else ""
         )
+        # A lone dash under the summary read as a stray line, not as "unknown".
+        self._usage_reset.setVisible(bool(reset_value))
         self._rebuild_devices()
 
     def _rebuild_devices(self) -> None:

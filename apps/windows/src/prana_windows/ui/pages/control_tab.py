@@ -74,7 +74,7 @@ class ControlTab(QWidget):
         instruments.addWidget(self.strip)
 
         self._pinned_slot = QVBoxLayout()
-        self._pinned_slot.setContentsMargins(16, 12, 16, 0)
+        self._pinned_slot.setContentsMargins(28, 14, 28, 0)
         root.addLayout(self._pinned_slot)
 
         self.scroll = QScrollArea()
@@ -84,7 +84,7 @@ class ControlTab(QWidget):
         content = QWidget()
         content.setObjectName("ControlContent")
         self._content = QVBoxLayout(content)
-        self._content.setContentsMargins(16, 12, 16, 20)
+        self._content.setContentsMargins(28, 14, 28, 20)
         self._content.setSpacing(20)
         self._scroll_slot = QVBoxLayout()
         self._content.addLayout(self._scroll_slot)
@@ -121,6 +121,7 @@ class ControlTab(QWidget):
         self._content.addStretch(1)
 
         self.scroll.setWidget(content)
+        self.scroll.verticalScrollBar().rangeChanged.connect(self._match_gutter)
         root.addWidget(self.scroll, 1)
 
         self._wide: bool | None = None
@@ -139,7 +140,7 @@ class ControlTab(QWidget):
         return bool(self._pinned)
 
     def _apply_layout(self, width: int, height: int) -> None:
-        available = width - 32
+        available = width - 56  # less the 28px gutter either side
         wide = width >= WIDE_WIDTH
         pinned = InstrumentStrip.fits_one_row(available) and height >= PINNED_MIN_HEIGHT
         self.strip.set_one_row(InstrumentStrip.fits_one_row(available))
@@ -165,6 +166,16 @@ class ControlTab(QWidget):
                 self._main.addWidget(self.controls, 1, 0, Qt.AlignTop)
                 self._main.setColumnStretch(0, 1)
                 self._main.setColumnStretch(1, 0)
+
+    def _match_gutter(self, *_args) -> None:
+        """End the pinned strip where the scrolling cards end.
+
+        A visible scrollbar narrows only the scrolling column, which left the
+        strip overhanging the chart and helm below it by the bar's width.
+        """
+        bar = self.scroll.verticalScrollBar()
+        extra = bar.sizeHint().width() if bar.maximum() > 0 else 0
+        self._pinned_slot.setContentsMargins(28, 14, 28 + extra, 0)
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - Qt override
         self._apply_layout(event.size().width(), event.size().height())

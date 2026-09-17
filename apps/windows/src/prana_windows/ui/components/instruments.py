@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import math
 
-from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPen, QRadialGradient
+from PySide6.QtCore import QEvent, QPointF, QRectF, Qt
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QLinearGradient, QPainter, QPainterPath, QPen, QRadialGradient
 from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from prana_windows.ui.i18n import language, tr
@@ -43,17 +43,35 @@ class InstrumentCell(QFrame):
         caption.addWidget(self._label, 1)
         layout.addLayout(caption)
 
+        # The unit sits on the number's baseline, as on the phone. QHBoxLayout
+        # ignores Qt.AlignBaseline, so both labels are bottom-aligned and the
+        # unit is lifted by the difference in descent; see _align_baselines.
         reading = QHBoxLayout()
         reading.setSpacing(4)
         self._value = QLabel("—")
         self._value.setObjectName("InstrumentValue")
-        reading.addWidget(self._value, 0, Qt.AlignBaseline)
+        self._value.setAlignment(Qt.AlignLeft | Qt.AlignBottom)
+        reading.addWidget(self._value, 0, Qt.AlignBottom)
         self._unit = QLabel()
         self._unit.setObjectName("InstrumentUnit")
-        reading.addWidget(self._unit, 0, Qt.AlignBaseline)
+        self._unit.setAlignment(Qt.AlignLeft | Qt.AlignBottom)
+        reading.addWidget(self._unit, 0, Qt.AlignBottom)
         reading.addStretch(1)
         layout.addLayout(reading)
         layout.addStretch(1)
+        self._align_baselines()
+
+    def _align_baselines(self) -> None:
+        self._value.ensurePolished()
+        self._unit.ensurePolished()
+        lift = QFontMetrics(self._value.font()).descent() - QFontMetrics(self._unit.font()).descent()
+        self._unit.setContentsMargins(0, 0, 0, max(0, lift))
+
+    def event(self, event) -> bool:  # noqa: A003 - Qt override
+        # The stylesheet sets both fonts, and a theme or style change re-sets them.
+        if event.type() in (QEvent.StyleChange, QEvent.FontChange, QEvent.Polish) and hasattr(self, "_unit"):
+            self._align_baselines()
+        return super().event(event)
 
     def set_label(self, text: str) -> None:
         self._label.setText(text.upper())
