@@ -408,6 +408,10 @@ class TxController(QObject):
         self._epoch = 0
         self._lock = threading.Lock()
         self._busy = False
+        # Guards the draft poll against shutdown: an upload thread may reach
+        # `_watch_draft` just as the operator detaches.
+        self._poll_lock = threading.Lock()
+        self._closed = False
         self._tick: ResilientPoller | None = None
         self._draft_poll: ResilientPoller | None = None
 
@@ -529,15 +533,21 @@ class TxController(QObject):
         draft_id = self.state.draft_id
         if not draft_id:
             return
-        if self._draft_poll is not None:
-            self._draft_poll.stop()
-        self._draft_poll = ResilientPoller(
-            lambda: self._client.get_tx_draft(self._station_id, self._epoch, draft_id),
-            self._on_draft,
-            interval=TX_POLL_SECONDS,
-            name="tx-draft",
-        )
-        self._draft_poll.start()
+        with self._poll_lock:
+            if self._closed:
+                # Detached while this draft was being created; a poll started
+                # now would outlive the controller and never be stopped.
+                return
+            previous = self._draft_poll
+            self._draft_poll = ResilientPoller(
+                lambda: self._client.get_tx_draft(self._station_id, self._epoch, draft_id),
+                self._on_draft,
+                interval=TX_POLL_SECONDS,
+                name="tx-draft",
+            )
+            self._draft_poll.start()
+        if previous is not None:
+            previous.stop()
 
     def _on_draft(self, value, error: Exception | None, _failures: int) -> None:
         if error is not None or not isinstance(value, dict):
@@ -613,10 +623,13 @@ class TxController(QObject):
         self._run(work)
 
     def shutdown(self) -> None:
-        for poller in (self._tick, self._draft_poll):
+        with self._poll_lock:
+            self._closed = True
+            pollers = (self._tick, self._draft_poll)
+            self._tick = self._draft_poll = None
+        for poller in pollers:
             if poller is not None:
                 poller.stop()
-        self._tick = self._draft_poll = None
         if self._recorder.is_recording:
             self._recorder.cancel()
 

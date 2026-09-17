@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import threading
 import unittest
+from unittest import mock
 
+from prana_core.console import polling
 from prana_core.console.polling import MAX_BACKOFF, MIN_BACKOFF, ResilientPoller
 
 
@@ -88,6 +90,62 @@ class ResilientPollerTests(unittest.TestCase):
         threading.Event().wait(0.2)
         poller.stop()
         self.assertGreater(calls["n"], 1)
+
+    def test_stop_during_start_from_another_thread_is_safe(self):
+        """Detach on the Qt thread can land while a worker is starting a poll.
+
+        The old start() published its thread before starting it, and stop()
+        joining that unstarted thread raised. Start is held open here so the
+        interleaving happens every run, not by luck.
+        """
+        entered, release = threading.Event(), threading.Event()
+        poller = ResilientPoller(lambda: None, lambda *_: None, interval=0.01)
+        errors: list[BaseException] = []
+
+        def guarded(action):
+            def run():
+                try:
+                    action()
+                except BaseException as exc:  # noqa: BLE001 - reported below
+                    errors.append(exc)
+            return run
+
+        # Created before the patch, so only the poller's own thread is slowed.
+        starter = threading.Thread(target=guarded(poller.start))
+        stopper = threading.Thread(target=guarded(poller.stop))
+        real_thread = threading.Thread
+
+        class SlowStartThread(real_thread):
+            def start(self):
+                entered.set()
+                release.wait(2)
+                super().start()
+
+        with mock.patch.object(polling.threading, "Thread", SlowStartThread):
+            starter.start()
+            self.assertTrue(entered.wait(2))
+            stopper.start()
+            stopper.join(0.2)  # give a racing stop() its chance to fail
+            release.set()
+            starter.join(2)
+            stopper.join(2)
+
+        self.assertEqual(errors, [])
+        self.assertFalse(poller.running)
+
+    def test_a_stopped_poller_never_starts_again(self):
+        """Stop is final, so a late start from a worker cannot revive a poll."""
+        calls = {"n": 0}
+
+        def fetch():
+            calls["n"] += 1
+
+        poller = ResilientPoller(fetch, lambda *_: None, interval=0.01)
+        poller.stop()
+        poller.start()
+        threading.Event().wait(0.1)
+        self.assertFalse(poller.running)
+        self.assertEqual(calls["n"], 0)
 
 
 if __name__ == "__main__":

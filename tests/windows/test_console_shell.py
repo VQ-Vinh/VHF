@@ -334,13 +334,17 @@ class ConsoleShellTests(unittest.TestCase):
                 pass
 
         client = _TxClient()
-        tx = TxController(client, "a" * 32, _Recorder())
-        tx.readiness = StationReadiness(
-            online=True, running=True, ptt_ready=True,
-            command_pending=False, holds_control=True,
-        )
         errors: list[str] = []
-        tx.error.connect(errors.append)
+
+        def controller(epoch: int) -> TxController:
+            tx = TxController(client, "a" * 32, _Recorder())
+            tx.readiness = StationReadiness(
+                online=True, running=True, ptt_ready=True,
+                command_pending=False, holds_control=True,
+            )
+            tx.error.connect(errors.append)
+            tx.set_epoch(epoch)
+            return tx
         review = TxState(phase=TxPhase.REVIEW_READY, draft={"id": "d1", "status": "review_ready"})
         failed = TxState(
             phase=TxPhase.FAILED,
@@ -349,11 +353,11 @@ class ConsoleShellTests(unittest.TestCase):
         )
 
         def run(action, state, *expected) -> None:
-            # Each step waits for the draft poll it starts, so shutting that
-            # poll down never races the worker thread that is creating it.
+            # A controller per step: shutdown is final, as it is on detach.
             client.calls.clear()
+            tx = controller(7)
             tx.state = state
-            action()
+            action(tx)
             for name in expected:
                 self.assertTrue(client.wait_for(name), f"no {name} call was made")
             tx.shutdown()
@@ -361,18 +365,17 @@ class ConsoleShellTests(unittest.TestCase):
                 seen.extend(client.calls)
 
         seen: list[tuple[str, int]] = []
-        tx.set_epoch(7)
-        run(tx.stop_recording, TxState(phase=TxPhase.RECORDING, request_id="r1"), "create", "get")
-        run(lambda: tx.confirm("hello"), review, "confirm", "get")
-        run(tx.retry, failed, "retry", "get")
-        run(tx.cancel, review, "cancel")
+        run(TxController.stop_recording, TxState(phase=TxPhase.RECORDING, request_id="r1"), "create", "get")
+        run(lambda tx: tx.confirm("hello"), review, "confirm", "get")
+        run(TxController.retry, failed, "retry", "get")
+        run(TxController.cancel, review, "cancel")
         self.assertEqual({epoch for _name, epoch in seen}, {7})
         self.assertEqual({n for n, _ in seen}, {"create", "get", "confirm", "retry", "cancel"})
 
         # Without the lease nothing reaches the network, and a finished take is
         # dropped rather than left looking retryable.
         client.calls.clear()
-        tx.set_epoch(0)
+        tx = controller(0)
         tx.state = TxState(phase=TxPhase.RECORDING, request_id="r2")
         tx.stop_recording()
         self.assertEqual(tx.state.phase, TxPhase.IDLE)
@@ -384,6 +387,36 @@ class ConsoleShellTests(unittest.TestCase):
         tx.cancel()
         self.assertEqual(client.calls, [])
         self.assertEqual(errors.count("error.CONTROL_LOST"), 3)
+        tx.shutdown()
+
+    def test_a_draft_poll_cannot_start_after_shutdown(self) -> None:
+        """Detach can land while an upload thread is about to watch its draft.
+
+        A poll started after shutdown would never be stopped and would go on
+        polling a Station the operator has left.
+        """
+        from prana_core.console.tx_phase import TxPhase, TxState
+        from prana_windows.ui.console import TxController
+
+        class _Client:
+            def get_tx_draft(self, *_args):
+                return {"id": "d1", "status": "processing"}
+
+        tx = TxController(_Client(), "a" * 32, recorder=None)
+        tx.set_epoch(7)
+        tx.state = TxState(phase=TxPhase.PROCESSING, draft={"id": "d1", "status": "processing"})
+        tx._watch_draft()
+        first = tx._draft_poll
+        self.assertTrue(first.running)
+
+        class _Recorder:
+            is_recording = False
+
+        tx._recorder = _Recorder()
+        tx.shutdown()
+        self.assertFalse(first.running)
+        tx._watch_draft()  # the late worker thread
+        self.assertIsNone(tx._draft_poll)
 
 
 if __name__ == "__main__":

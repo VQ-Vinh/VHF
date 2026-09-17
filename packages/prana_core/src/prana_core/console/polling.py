@@ -42,6 +42,10 @@ class ResilientPoller:
         self._wake = threading.Event()
         self._paused = False
         self._lock = threading.Lock()
+        # Serialises start and stop, which arrive from different threads: the
+        # Qt thread detaches while a worker thread may be starting a poll.
+        self._lifecycle = threading.Lock()
+        self._stopped = False
         self._thread: threading.Thread | None = None
         self._last_value: object = None
         self._failures = 0
@@ -55,13 +59,17 @@ class ResilientPoller:
         return self._thread is not None and self._thread.is_alive()
 
     def start(self) -> None:
-        if self.running:
-            return
-        self._stop.clear()
-        self._thread = threading.Thread(
-            target=self._run, name=self._name, daemon=True
-        )
-        self._thread.start()
+        """Begin polling. A no-op once `stop` has been called.
+
+        The thread is started before it is published, so `stop` can never
+        find a thread it cannot join.
+        """
+        with self._lifecycle:
+            if self._stopped or self.running:
+                return
+            thread = threading.Thread(target=self._run, name=self._name, daemon=True)
+            thread.start()
+            self._thread = thread
 
     def pause(self) -> None:
         with self._lock:
@@ -77,12 +85,15 @@ class ResilientPoller:
             self._wake.set()
 
     def stop(self, timeout: float = 2.0) -> None:
-        self._stop.set()
-        self._wake.set()
-        thread = self._thread
+        """Stop for good. Callers discard a stopped poller rather than restart it."""
+        with self._lifecycle:
+            self._stopped = True
+            self._stop.set()
+            self._wake.set()
+            thread, self._thread = self._thread, None
+        # Joined outside the lock: the poll thread may be mid-fetch.
         if thread is not None and thread is not threading.current_thread():
             thread.join(timeout=timeout)
-        self._thread = None
 
     def _delay(self) -> float:
         if self._failures == 0:
