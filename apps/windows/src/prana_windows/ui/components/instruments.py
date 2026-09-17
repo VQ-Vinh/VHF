@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPen, QRadialGradient
 from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from prana_windows.ui.i18n import language, tr
@@ -148,58 +148,125 @@ class CompassRose(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         centre = QPointF(self.width() / 2, self.height() / 2)
-        radius = min(self.width(), self.height()) / 2 - 1
+        radius = min(self.width(), self.height()) / 2 - 3
         if radius <= 0:
             return
 
-        # The backdrop keeps the card legible over the chart grid.
+        # A soft drop and an opaque bezel lift the instrument off the chart grid.
         painter.setPen(Qt.NoPen)
-        painter.setBrush(ink("surface", 0.86))
-        painter.drawEllipse(centre, radius + 1, radius + 1)
-        painter.setBrush(ink("surface_sunken", 0.45))
-        painter.setPen(QPen(ink("border"), 1))
+        painter.setBrush(ink("navy", 0.22))
+        painter.drawEllipse(centre + QPointF(0, radius * 0.05), radius + 1, radius + 1)
+        bezel = QLinearGradient(0, centre.y() - radius, 0, centre.y() + radius)
+        bezel.setColorAt(0.0, ink("surface"))
+        bezel.setColorAt(1.0, ink("border_strong"))
+        painter.setBrush(bezel)
+        painter.setPen(QPen(ink("border_strong"), 1))
         painter.drawEllipse(centre, radius, radius)
 
-        for angle in range(0, 360, 15):
-            principal = angle % 45 == 0
-            length = radius * (0.16 if principal else 0.09)
+        card = radius * 0.84
+        face = QRadialGradient(centre, card)
+        face.setColorAt(0.0, ink("surface"))
+        face.setColorAt(1.0, ink("surface_sunken"))
+        painter.setBrush(face)
+        painter.setPen(QPen(ink("border"), 1))
+        painter.drawEllipse(centre, card, card)
+
+        # North is the fixed red mark on the bezel that the card is read from.
+        mark = QPainterPath(centre + QPointF(0, -card + 1))
+        mark.lineTo(centre + QPointF(-radius * 0.1, -radius + 1))
+        mark.lineTo(centre + QPointF(radius * 0.1, -radius + 1))
+        mark.closeSubpath()
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(ink("compass_north"))
+        painter.drawPath(mark)
+
+        # Graduations: every 5 degrees when there is room for them, longer at
+        # 10 and 30, longest at the four cardinal points.
+        step = 5 if card >= 24 else 10
+        for angle in range(0, 360, step):
+            if angle % 90 == 0:
+                length, width, colour = 0.20, 1.6, ink("text_secondary")
+            elif angle % 30 == 0:
+                length, width, colour = 0.14, 1.2, ink("text_muted")
+            elif angle % 10 == 0:
+                length, width, colour = 0.09, 1.0, ink("text_muted", 0.75)
+            else:
+                length, width, colour = 0.05, 0.8, ink("text_muted", 0.5)
+            if angle == 0:
+                colour = ink("compass_north")
             radians = math.radians(angle)
             unit = QPointF(math.sin(radians), -math.cos(radians))
-            painter.setPen(QPen(ink("text_muted", 0.55), 1.6 if principal else 1))
-            painter.drawLine(centre + unit * (radius - length), centre + unit * (radius - 2))
+            painter.setPen(QPen(colour, width))
+            painter.drawLine(centre + unit * (card * (1 - length)), centre + unit * (card - 1.5))
 
-        font = QFont(self.font())
-        font.setPixelSize(max(6, round(radius * 0.24)))
-        font.setWeight(QFont.Bold)
-        painter.setFont(font)
-        painter.setPen(ink("text_secondary"))
-        for angle, letter in ((0, "N"), (90, "E"), (180, "S"), (270, "W")):
-            radians = math.radians(angle)
-            at = centre + QPointF(math.sin(radians), -math.cos(radians)) * (radius * 0.68)
-            painter.drawText(QRectF(at.x() - 8, at.y() - 8, 16, 16), Qt.AlignCenter, letter)
-
-        if self.degrees is None:
-            return
+        # An eight-point rose under everything that moves, faceted light and
+        # dark so it reads as relief. Faint, so the needle stays the reading.
         painter.save()
         painter.translate(centre)
-        painter.rotate(self.degrees)
-        painter.setPen(Qt.NoPen)
-        reach = radius * 0.58
-        head = QPainterPath(QPointF(0, -reach))
-        head.lineTo(radius * 0.09, 0)
-        head.lineTo(-radius * 0.09, 0)
-        head.closeSubpath()
-        painter.setBrush(ink("accent"))
-        painter.drawPath(head)
-        tail = QPainterPath(QPointF(0, reach * 0.62))
-        tail.lineTo(radius * 0.07, 0)
-        tail.lineTo(-radius * 0.07, 0)
-        tail.closeSubpath()
-        painter.setBrush(ink("text_muted", 0.35))
-        painter.drawPath(tail)
+        for angle in range(0, 360, 45):
+            cardinal = angle % 90 == 0
+            reach = card * (0.50 if cardinal else 0.34)
+            half = card * (0.12 if cardinal else 0.08)
+            painter.save()
+            painter.rotate(angle)
+            left = QPainterPath(QPointF(0, -reach))
+            left.lineTo(-half, -half)
+            left.lineTo(0, 0)
+            left.closeSubpath()
+            right = QPainterPath(QPointF(0, -reach))
+            right.lineTo(half, -half)
+            right.lineTo(0, 0)
+            right.closeSubpath()
+            painter.setBrush(ink("border_strong", 0.55 if cardinal else 0.4))
+            painter.drawPath(left)
+            painter.setBrush(ink("text_muted", 0.45 if cardinal else 0.3))
+            painter.drawPath(right)
+            painter.restore()
         painter.restore()
+
+        font = QFont(self.font())
+        font.setPixelSize(max(7, round(card * 0.3)))
+        font.setWeight(QFont.Black)
+        painter.setFont(font)
+        box = card * 0.4
+        for angle, letter in ((0, "N"), (90, "E"), (180, "S"), (270, "W")):
+            radians = math.radians(angle)
+            at = centre + QPointF(math.sin(radians), -math.cos(radians)) * (card * 0.62)
+            painter.setPen(ink("compass_north") if letter == "N" else ink("text_secondary"))
+            painter.drawText(QRectF(at.x() - box / 2, at.y() - box / 2, box, box), Qt.AlignCenter, letter)
+
+        if self.degrees is not None:
+            # A faceted lozenge: the lit half and the shaded half meet on the
+            # centreline, so the needle reads as a solid pointer at a glance.
+            painter.save()
+            painter.translate(centre)
+            painter.rotate(self.degrees)
+            reach = card * 0.80
+            tail = card * 0.52
+            half = card * 0.13
+            outline = QPen(ink("surface", 0.8), 0.8)
+            for points, brush in (
+                (((0, -reach), (-half, 0), (0, 0)), ink("accent")),
+                (((0, -reach), (half, 0), (0, 0)), ink("accent_hover")),
+                (((0, tail), (-half, 0), (0, 0)), ink("text_muted", 0.55)),
+                (((0, tail), (half, 0), (0, 0)), ink("text_muted", 0.8)),
+            ):
+                path = QPainterPath(QPointF(*points[0]))
+                for point in points[1:]:
+                    path.lineTo(QPointF(*point))
+                path.closeSubpath()
+                painter.setPen(outline)
+                painter.setBrush(brush)
+                painter.drawPath(path)
+            painter.restore()
+
+        pivot = card * 0.11
+        painter.setPen(QPen(ink("accent"), max(1.0, pivot * 0.35)))
+        painter.setBrush(ink("surface"))
+        painter.drawEllipse(centre, pivot, pivot)
+        painter.setPen(Qt.NoPen)
         painter.setBrush(ink("accent"))
-        painter.drawEllipse(centre, radius * 0.06, radius * 0.06)
+        painter.drawEllipse(centre, pivot * 0.4, pivot * 0.4)
 
 
 __all__ = ["CompassRose", "InstrumentCell", "InstrumentStrip", "ink"]
