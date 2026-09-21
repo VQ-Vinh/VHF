@@ -23,22 +23,22 @@ provider "registry.terraform.io/hashicorp/google" {
 }
 
 provider "registry.terraform.io/hashicorp/google-beta" {
-  version     = "8.2.0"
+  version     = "8.3.0"
   constraints = ">= 8.1.0, < 9.0.0"
   hashes = [
-    "h1:6tEo5OEQMAjS/zib5MY85Egckwhzx0/EW7AyUjXyESU=",
-    "h1:91AecK9dPa7Ve8OUTCnpWQ5ePjWy9yDG1XEh3zfQQII=",
-    "zh:148d2444165d7c3dd9e5d5c73fa170ca46bd2f866f399b7f92d49177ac19eec6",
-    "zh:17adedabbf9644bc6df3ee49b9e936c55ac98cfd0a40eb9573e748de8a9516e0",
-    "zh:5045ad3903fa0707dcd5dbedc83d746b3b3d49cdc8c23e26e8e2a695a9041c03",
-    "zh:60001fb5622a2c4d9edc159571ed25995afbab752b9f270f67a1df8fead55a24",
-    "zh:762f048306cbab396f2ffb1b47184e2dc4738168ce635a669fc524aaf174f617",
-    "zh:915bb0afd0a0b5d45e5b8fb45613a5431a7d0db7e5b9bb13f1c1c4deebab0d5a",
-    "zh:9429084eb1f9c52f9f07caf7f3ed1ef32d755edec858ce6cbe57c39512c87bde",
-    "zh:a22245471f10d6dc628f9c7b01a84132bd4baf0436b0560d0f00f215e4ae474f",
-    "zh:b73f1782c313ef1854803b3e39bc158f8d306e196daae2ed451e6f6a64d6eae6",
+    "h1:16UAfnePwxzb0Oc1rQ1XTZVfosjwDSNp7xWLkeVE2fo=",
+    "h1:QjQs5Xjj0NEKeJM1z/LnkTIqNeXD7FpIBKyPy7vcyIg=",
+    "zh:37e1ed82aab9bdf73b1602bd96f36371cdc0ee2c4ce017294f00b8fb7bc12a75",
+    "zh:47ad03fdf97b8fe38f0d67f852b9317b9b2d91bb8e6f028e7cc9d6f9867adcdf",
+    "zh:48e0bc6d356cdeac0bd6dc314fe8040c1cb40ad8fb4292317d178aba8b1dc15c",
+    "zh:570650b27234382610b60b8d64003189223462e00d29a79c039963797da34a7f",
+    "zh:90d60d7f8c81bb92d17878d5306e2b0d177e93431969f058f774e355fa22866c",
+    "zh:a5371ea76def48490921a205bc6e38090afaeaea21aa46bf69aebdc873ffd1de",
+    "zh:b2778d022c6a000fa826bc3c2664508ff30bd91295e23d0137f6b118355a0d24",
+    "zh:c713de0f18b256bcf7e86545efc6de7ae239b859fa9eec0a8ee23fd276b665fe",
+    "zh:c93ef198700bbf0851cda56905a07aa96d2448771ae7ca2ac16e97577c77bfab",
+    "zh:d56b1748de845eade386a93f1734e3b5b8f11692e255bb848c63fe6f52ac244e",
     "zh:f569b65999264a9416862bca5cd2a6177d94ccb0424f3a4ef424428912b9cb3c",
-    "zh:fa615f7533756efe505b6c019b61e76f3ba7560a4082529038c3286225da9566",
-    "zh:fd4fec813a5fa375dd435dd515d622b8179c3490af32e82604339e1e4928d3da",
+    "zh:ffd37527dae60e4fccce9e8ea42ac9e5fd4a9c59951009d9250d6bca24ec1ca2",
   ]
 }
