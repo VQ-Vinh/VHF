@@ -155,3 +155,185 @@ class EmptyState extends StatelessWidget {
     ),
   );
 }
+
+enum NoticeTone { error, info, success }
+
+/// Inline feedback box for forms and pages. Colours come from the colour
+/// scheme so it reads in light and dark mode; the text wraps instead of
+/// clipping, and actions wrap onto a new line on narrow screens.
+class NoticeCard extends StatelessWidget {
+  const NoticeCard({
+    super.key,
+    required this.message,
+    this.tone = NoticeTone.error,
+    this.actions = const [],
+    this.margin = const EdgeInsets.only(top: 14),
+  });
+
+  final String message;
+  final NoticeTone tone;
+  final List<Widget> actions;
+  final EdgeInsetsGeometry margin;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final (background, foreground, icon) = switch (tone) {
+      NoticeTone.error => (
+        colors.errorContainer,
+        colors.onErrorContainer,
+        Icons.error_outline,
+      ),
+      NoticeTone.info => (
+        colors.secondaryContainer,
+        colors.onSecondaryContainer,
+        Icons.info_outline,
+      ),
+      // The scheme has no success role; these pairs keep AA contrast.
+      NoticeTone.success => (
+        theme.brightness == Brightness.light
+            ? const Color(0xFFDDF3E6)
+            : const Color(0xFF173A2B),
+        theme.brightness == Brightness.light
+            ? const Color(0xFF1F5E43)
+            : const Color(0xFFB7E8CB),
+        Icons.check_circle_outline,
+      ),
+    };
+    // The icon grows with the text so it stays level with the first line.
+    final iconSize = MediaQuery.textScalerOf(context).scale(20).clamp(20, 32);
+    return Semantics(
+      container: true,
+      liveRegion: true,
+      child: Container(
+        width: double.infinity,
+        margin: margin,
+        padding: EdgeInsets.fromLTRB(12, 12, 12, actions.isEmpty ? 12 : 4),
+        decoration: BoxDecoration(
+          color: background,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 1),
+                  child: Icon(
+                    icon,
+                    size: iconSize.toDouble(),
+                    color: foreground,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    message,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: foreground,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (actions.isNotEmpty)
+              TextButtonTheme(
+                data: TextButtonThemeData(
+                  style: TextButton.styleFrom(
+                    foregroundColor: foreground,
+                    minimumSize: const Size(48, 48),
+                  ),
+                ),
+                child: Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: 4,
+                  children: actions,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Full-area state for content that failed to load. Width stays readable on
+/// tablets, and it scrolls rather than overflowing on short landscape screens.
+class ErrorState extends StatelessWidget {
+  const ErrorState({
+    super.key,
+    required this.title,
+    required this.message,
+    this.onRetry,
+    this.retryLabel,
+    this.retryKey,
+    this.icon = Icons.cloud_off_outlined,
+  });
+
+  final String title;
+  final String message;
+  final VoidCallback? onRetry;
+  final String? retryLabel;
+  final Key? retryKey;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: ContentWidth.auth),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: colors.errorContainer,
+                  shape: BoxShape.circle,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Icon(icon, size: 32, color: colors.onErrorContainer),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: colors.onSurfaceVariant,
+                  height: 1.4,
+                ),
+              ),
+              if (onRetry != null && retryLabel != null) ...[
+                const SizedBox(height: 20),
+                FilledButton.icon(
+                  key: retryKey,
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.refresh),
+                  label: Text(retryLabel!),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
