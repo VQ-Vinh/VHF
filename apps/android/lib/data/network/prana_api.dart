@@ -505,22 +505,40 @@ class PranaApiFailure implements Exception {
                 maxSeconds: (detail['max_seconds'] as num?)?.toInt(),
               );
             }
-            const codeKeys = {
-              'STATION_NOT_PAIRED': 'error_station_not_paired',
-              'STATION_REVOKED': 'error_station_revoked',
-              'STATION_LIMIT_REACHED': 'error_station_limit_reached',
-              'ACTIVATION_INVALID': 'error_activation_invalid',
-              'STATION_ALREADY_CLAIMED': 'error_station_already_claimed',
-            };
-            final key = codeKeys[code];
-            if (key != null) return PranaApiFailure(key, code: code);
-            if (detail['message'] is String) {
-              return PranaApiFailure(detail['message'] as String);
-            }
+            final mapped = PranaApiFailure.fromCode(code);
+            if (mapped != null) return mapped;
           }
         }
+        // `detail.message` is English developer text; it never reaches the UI.
         return const PranaApiFailure('error_request_failed');
     }
+  }
+
+  /// Server codes the app can explain; anything else becomes generic text.
+  static const _codeKeys = {
+    'STATION_NOT_PAIRED': 'error_station_not_paired',
+    'STATION_REVOKED': 'error_station_revoked',
+    'STATION_LIMIT_REACHED': 'error_station_limit_reached',
+    'ACTIVATION_INVALID': 'error_activation_invalid',
+    'STATION_ALREADY_CLAIMED': 'error_station_already_claimed',
+    'PAIRING_CODE_INVALID': 'error_pairing_invalid',
+    'PAIRING_NOT_FOUND': 'error_pairing_invalid',
+    'PAIRING_EXPIRED': 'error_pairing_expired',
+    'PAIRING_ALREADY_USED': 'error_pairing_used',
+    'RATE_LIMITED': 'error_rate_limited',
+    'STATION_OFFLINE': 'error_station_offline',
+    'CONTROL_LOST': 'rx_control_taken',
+    'AUDIO_DEVICE_UNAVAILABLE': 'error_audio_device_unavailable',
+    'SUBSCRIPTION_INACTIVE': 'error_subscription_inactive',
+    'EMAIL_NOT_VERIFIED': 'error_email_not_verified',
+    'PLAN_NOT_AVAILABLE': 'error_plan_unavailable',
+    'HISTORY_LOCKED': 'error_history_locked',
+    'SERVICE_USAGE_LIMIT_REACHED': 'error_service_unavailable',
+  };
+
+  static PranaApiFailure? fromCode(String? code) {
+    final key = _codeKeys[code];
+    return key == null ? null : PranaApiFailure(key, code: code);
   }
 
   @override

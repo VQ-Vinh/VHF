@@ -1,3 +1,4 @@
+import 'package:prana_mobile/core/service_messages.dart';
 import 'package:prana_mobile/l10n/app_localizations.dart';
 import 'package:prana_mobile/app/di/radio_providers.dart';
 import 'package:prana_mobile/domain/radio/results.dart';
@@ -75,11 +76,17 @@ class TranslationResultCard extends ConsumerWidget {
                   ),
               ],
             ),
-            if (result.error != null) ...[
+            if (result.error?.trim().isNotEmpty ?? false) ...[
               const SizedBox(height: 10),
               Text(
-                result.error!,
-                style: const TextStyle(color: Color(0xFFB12F40)),
+                localizedServiceMessage(
+                  context,
+                  stationErrorKey(
+                    result.error!,
+                    fallback: 'error_segment_failed',
+                  ),
+                ),
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             ],
             if (result.transcript.isNotEmpty) ...[

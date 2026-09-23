@@ -209,7 +209,12 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
       error:
           (error, _) => ResponsiveScaffold(
             appBar: ResponsiveHeader(),
-            body: Center(child: Text('$error')),
+            body: ErrorState(
+              title: AppLocalizations.of(context).loadFailedTitle,
+              message: localizedErrorMessage(context, error),
+              retryLabel: AppLocalizations.of(context).retry,
+              onRetry: () => ref.invalidate(stationProvider(widget.stationId)),
+            ),
           ),
       data: (station) {
         if (station == null) {
@@ -371,7 +376,7 @@ class _LiveScreenState extends ConsumerState<LiveScreen> {
                               _CommandErrorBanner(
                                 error: localizedServiceMessage(
                                   context,
-                                  station.lastError!,
+                                  stationErrorKey(station.lastError!),
                                 ),
                                 onDismiss:
                                     () => setState(

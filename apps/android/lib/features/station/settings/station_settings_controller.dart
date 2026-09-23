@@ -1,5 +1,6 @@
 import 'package:prana_mobile/core/cancellable_delay.dart';
 import 'package:flutter/foundation.dart';
+import 'package:prana_mobile/core/service_messages.dart';
 import 'package:prana_mobile/domain/station/station.dart';
 import 'package:prana_mobile/domain/station/station_repository.dart';
 
@@ -58,7 +59,7 @@ class StationSettingsController extends ChangeNotifier {
         await _delay.wait(const Duration(milliseconds: 250));
       }
     } catch (exception) {
-      if (!_disposed) error = exception.toString();
+      if (!_disposed) error = errorMessageKey(exception);
     } finally {
       saving = false;
       applying = false;
@@ -94,7 +95,7 @@ class StationSettingsController extends ChangeNotifier {
       }
       if (!_disposed) refreshResultKey = 'device_scan_timeout';
     } catch (exception) {
-      if (!_disposed) error = exception.toString();
+      if (!_disposed) error = errorMessageKey(exception);
     } finally {
       refreshing = false;
       _changed();

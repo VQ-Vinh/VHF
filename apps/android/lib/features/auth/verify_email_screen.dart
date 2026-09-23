@@ -1,4 +1,5 @@
 import 'package:prana_mobile/core/service_messages.dart';
+import 'package:prana_mobile/core/widgets.dart';
 import 'package:prana_mobile/l10n/app_localizations.dart';
 import 'package:prana_mobile/app/di/auth_providers.dart';
 import 'dart:async';
@@ -140,29 +141,18 @@ class _VerifyEmailScreenState extends ConsumerState<VerifyEmailScreen> {
                             ),
                           ),
                           if (messageKey != null)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 14),
-                              child: Text(
-                                localizedServiceMessage(context, messageKey!),
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  color: Color(0xFF267153),
-                                ),
+                            NoticeCard(
+                              message: localizedServiceMessage(
+                                context,
+                                messageKey!,
                               ),
+                              tone: NoticeTone.success,
                             ),
                           if (errorKey != null)
-                            Container(
-                              margin: const EdgeInsets.only(top: 14),
-                              padding: const EdgeInsets.all(11),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF9E1E5),
-                                borderRadius: BorderRadius.circular(9),
-                              ),
-                              child: Text(
-                                localizedServiceMessage(context, errorKey!),
-                                style: const TextStyle(
-                                  color: Color(0xFFA42A3A),
-                                ),
+                            NoticeCard(
+                              message: localizedServiceMessage(
+                                context,
+                                errorKey!,
                               ),
                             ),
                           const SizedBox(height: 20),

@@ -1,4 +1,5 @@
 import 'package:prana_mobile/core/service_messages.dart';
+import 'package:prana_mobile/core/widgets.dart';
 import 'package:prana_mobile/l10n/app_localizations.dart';
 import 'package:prana_mobile/app/di/auth_providers.dart';
 import 'package:flutter/material.dart';
@@ -358,23 +359,10 @@ class _SignInScreenState extends ConsumerState<SignInScreen>
                                       ),
                                     ],
                                     if (errorKey != null)
-                                      Container(
-                                        margin: const EdgeInsets.only(top: 14),
-                                        padding: const EdgeInsets.all(11),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFFF9E1E5),
-                                          borderRadius: BorderRadius.circular(
-                                            9,
-                                          ),
-                                        ),
-                                        child: Text(
-                                          localizedServiceMessage(
-                                            context,
-                                            errorKey!,
-                                          ),
-                                          style: const TextStyle(
-                                            color: Color(0xFFA42A3A),
-                                          ),
+                                      NoticeCard(
+                                        message: localizedServiceMessage(
+                                          context,
+                                          errorKey!,
                                         ),
                                       ),
                                     const SizedBox(height: 18),

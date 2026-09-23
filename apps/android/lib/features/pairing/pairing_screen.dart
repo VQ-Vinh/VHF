@@ -294,13 +294,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
             ),
           ),
           if (error != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Text(
-                error!,
-                style: const TextStyle(color: Color(0xFFB12F40)),
-              ),
-            ),
+            NoticeCard(message: error!, margin: const EdgeInsets.only(top: 12)),
           const SizedBox(height: 12),
           FilledButton(
             onPressed: loading ? null : claim,

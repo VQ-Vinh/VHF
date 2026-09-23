@@ -69,48 +69,17 @@ class _TranslationFeed extends StatelessWidget {
   Widget build(BuildContext context) => value.when(
     loading: () => const _ResultSkeleton(),
     error:
-        (error, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.cloud_off,
-                  size: 44,
-                  color: ConsolePalette.of(context).muted,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  AppLocalizations.of(context).realtimeError,
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  localizedServiceMessage(
-                    context,
-                    error is PranaApiFailure
-                        ? error.messageKey
-                        : 'error_api_unreachable',
-                  ),
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                FilledButton.icon(
-                  key: const ValueKey('live-results-retry'),
-                  onPressed: onRetry,
-                  icon: const Icon(Icons.refresh),
-                  label: Text(AppLocalizations.of(context).retry),
-                ),
-              ],
-            ),
+        (error, _) => ErrorState(
+          title: AppLocalizations.of(context).realtimeError,
+          message: localizedServiceMessage(
+            context,
+            error is PranaApiFailure
+                ? error.messageKey
+                : 'error_api_unreachable',
           ),
+          retryLabel: AppLocalizations.of(context).retry,
+          retryKey: const ValueKey('live-results-retry'),
+          onRetry: onRetry,
         ),
     data: (items) {
       if (items.isEmpty) return _WaitingForSpeech(listening: listening);
@@ -219,9 +188,9 @@ class _CommandErrorBanner extends StatelessWidget {
   final bool showDismiss;
 
   @override
-  Widget build(BuildContext context) => MaterialBanner(
-    content: Text(error),
-    leading: const Icon(Icons.error_outline, color: Color(0xFFB12F40)),
+  Widget build(BuildContext context) => NoticeCard(
+    message: error,
+    margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
     actions: [
       if (actionLabel != null && onAction != null)
         TextButton(onPressed: onAction, child: Text(actionLabel!)),
@@ -231,7 +200,10 @@ class _CommandErrorBanner extends StatelessWidget {
           child: Text(secondaryActionLabel!),
         ),
       if (showDismiss)
-        TextButton(onPressed: onDismiss, child: const Text('OK')),
+        TextButton(
+          onPressed: onDismiss,
+          child: Text(AppLocalizations.of(context).close),
+        ),
     ],
   );
 }

@@ -806,4 +806,66 @@ class AppLocalizationsVi extends AppLocalizations {
 
   @override
   String get sourceSimulated => 'Mô phỏng';
+
+  @override
+  String get errorPairingInvalid => 'Pairing ID hoặc mã tạm thời không đúng.';
+
+  @override
+  String get errorPairingExpired =>
+      'Mã ghép đã hết hạn. Hãy tạo mã mới trên Station.';
+
+  @override
+  String get errorPairingUsed => 'Mã ghép này đã được sử dụng.';
+
+  @override
+  String get errorRateLimited =>
+      'Bạn đã thử quá nhiều lần. Vui lòng đợi một lát rồi thử lại.';
+
+  @override
+  String get errorStationOffline =>
+      'Station đang offline. Hãy kiểm tra kết nối rồi thử lại.';
+
+  @override
+  String get errorAudioDeviceUnavailable =>
+      'Thiết bị âm thanh đã chọn không khả dụng trên Station.';
+
+  @override
+  String get errorSubscriptionInactive =>
+      'Gói dịch vụ chưa hoạt động. Hãy kiểm tra tài khoản.';
+
+  @override
+  String get errorEmailNotVerified => 'Hãy xác minh email trước khi tiếp tục.';
+
+  @override
+  String get errorPlanUnavailable => 'Gói này hiện chưa khả dụng.';
+
+  @override
+  String get errorHistoryLocked =>
+      'Ngày này nằm ngoài thời hạn lịch sử của gói.';
+
+  @override
+  String get errorServiceUnavailable =>
+      'Dịch vụ dịch tạm thời không khả dụng. Vui lòng thử lại sau.';
+
+  @override
+  String get errorStationProcessing =>
+      'Station không xử lý được đoạn âm thanh gần nhất.';
+
+  @override
+  String get errorSegmentFailed => 'Không dịch được đoạn này.';
+
+  @override
+  String get txStatusProcessing => 'Đang xử lý';
+
+  @override
+  String get txStatusReviewReady => 'Chờ xác nhận';
+
+  @override
+  String get txStatusCancelled => 'Đã hủy';
+
+  @override
+  String get txStatusUnknown => 'Không xác định';
+
+  @override
+  String get loadFailedTitle => 'Không tải được dữ liệu';
 }

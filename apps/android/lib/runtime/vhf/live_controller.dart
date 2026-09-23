@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:prana_mobile/core/service_messages.dart';
 
 import 'package:prana_mobile/domain/station/station.dart';
 
@@ -165,7 +166,7 @@ class LiveUxController extends ChangeNotifier {
         phase: LiveCommandPhase.failed,
         optimisticLanguage: state.previousLanguage,
         previousLanguage: state.previousLanguage,
-        error: error.toString(),
+        error: errorMessageKey(error),
         baselineGeneration: state.baselineGeneration,
       );
     }
@@ -206,7 +207,7 @@ class LiveUxController extends ChangeNotifier {
       if (_disposed) return;
       state = state.copyWith(
         phase: LiveCommandPhase.failed,
-        error: error.toString(),
+        error: errorMessageKey(error),
         clearPendingRunning: true,
       );
     }
