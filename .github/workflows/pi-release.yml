@@ -4,11 +4,6 @@ on:
   push:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
-    # TEMPORARY: proves the build path before this reaches main. Remove with the
-    # commit that opens the PR -- workflow_dispatch only works once the file is
-    # on the default branch, so there is no other way to exercise it first.
-    branches:
-      - 'ci/pi-release-arm64'
   # Dispatch builds the package and keeps it as an artifact but never publishes.
   # Releasing is the tag's job, so a dispatch on a branch cannot mint a tag.
   workflow_dispatch:
@@ -27,7 +22,10 @@ jobs:
     # A native arm64 runner, not QEMU: the build compiles pyaudio and lgpio and
     # runs PyInstaller, which emulation turns from tens of minutes into hours.
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 120
+    # A green run takes under three minutes: torch and torchaudio arrive as
+    # aarch64 wheels, so nothing heavy is compiled. The generous ceiling is for
+    # the day a dependency drops its wheel and builds from source instead.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
