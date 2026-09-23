@@ -1,3 +1,4 @@
+import 'package:prana_mobile/core/service_messages.dart';
 import 'package:prana_mobile/l10n/app_localizations.dart';
 import 'package:prana_mobile/core/responsive.dart';
 import 'package:prana_mobile/app/di/station_providers.dart';
@@ -39,10 +40,11 @@ class StationListScreen extends ConsumerWidget {
       body: stations.when(
         loading: () => const _StationSkeleton(),
         error:
-            (error, _) => EmptyState(
-              icon: Icons.cloud_off,
+            (error, _) => ErrorState(
               title: AppLocalizations.of(context).loadStationError,
-              subtitle: '$error',
+              message: localizedErrorMessage(context, error),
+              retryLabel: AppLocalizations.of(context).retry,
+              onRetry: () => ref.invalidate(stationsProvider),
             ),
         data:
             (items) =>

@@ -11,7 +11,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:prana_mobile/core/user_region.dart';
 import 'package:prana_mobile/core/widgets.dart';
-import 'package:prana_mobile/data/network/prana_api.dart';
 import 'package:prana_mobile/data/auth/authentication_service.dart';
 
 class AccountScreen extends ConsumerStatefulWidget {
@@ -25,6 +24,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
   bool busy = false;
   bool showPlans = false;
   String? message;
+  bool messageIsError = false;
   late Future<Map<String, dynamic>> _accountData;
 
   @override
@@ -111,18 +111,18 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
       if (mounted) {
         setState(() {
           message = AppLocalizations.of(context).done;
+          messageIsError = false;
           if (refreshData) _accountData = _load();
         });
       }
     } catch (error) {
       if (mounted) {
-        setState(
-          () =>
-              message =
-                  error is PranaApiFailure
-                      ? localizedServiceMessage(context, error.messageKey)
-                      : '$error',
-        );
+        final key = errorMessageKey(error);
+        // A cancelled Google picker is not an error worth reporting.
+        setState(() {
+          message = key.isEmpty ? null : localizedServiceMessage(context, key);
+          messageIsError = true;
+        });
       }
     } finally {
       if (mounted) setState(() => busy = false);
@@ -165,6 +165,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     } catch (error) {
       if (mounted) {
         setState(() {
+          messageIsError = true;
           message = localizedServiceMessage(
             context,
             authenticationErrorKey(error),
@@ -235,7 +236,12 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
             if (snapshot.hasError) {
-              return Center(child: Text('${snapshot.error}'));
+              return ErrorState(
+                title: AppLocalizations.of(context).loadFailedTitle,
+                message: localizedErrorMessage(context, snapshot.error),
+                retryLabel: AppLocalizations.of(context).retry,
+                onRetry: _refresh,
+              );
             }
             return const Center(child: CircularProgressIndicator());
           }
@@ -602,9 +608,11 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                   ],
                 ),
                 if (message != null)
-                  Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Text(message!),
+                  NoticeCard(
+                    message: message!,
+                    tone:
+                        messageIsError ? NoticeTone.error : NoticeTone.success,
+                    margin: const EdgeInsets.symmetric(vertical: 12),
                   ),
                 OutlinedButton.icon(
                   onPressed: busy ? null : _signOut,

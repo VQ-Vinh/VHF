@@ -144,7 +144,12 @@ class HistoryScreenState extends ConsumerState<HistoryScreen> {
               future: days,
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
-                  return Center(child: Text('${snapshot.error}'));
+                  return ErrorState(
+                    title: AppLocalizations.of(context).loadFailedTitle,
+                    message: localizedErrorMessage(context, snapshot.error),
+                    retryLabel: AppLocalizations.of(context).retry,
+                    onRetry: _refresh,
+                  );
                 }
                 if (!snapshot.hasData) {
                   return const Center(child: CircularProgressIndicator());
@@ -246,15 +251,17 @@ class _TxDayHistoryState extends ConsumerState<_TxDayHistory>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     player = ref.read(historyAudioEngineProvider)();
-    jobs = ref
-        .read(historyControllerProvider)
-        .txHistoryDayJobs(
-          widget.stationId,
-          widget.day.apiDate,
-          timezoneOffsetMinutes: widget.timezoneOffsetMinutes,
-          timezone: widget.timezoneName,
-        );
+    jobs = _loadJobs();
   }
+
+  Future<List<TxDraft>> _loadJobs() => ref
+      .read(historyControllerProvider)
+      .txHistoryDayJobs(
+        widget.stationId,
+        widget.day.apiDate,
+        timezoneOffsetMinutes: widget.timezoneOffsetMinutes,
+        timezone: widget.timezoneName,
+      );
 
   @override
   void dispose() {
@@ -300,9 +307,9 @@ class _TxDayHistoryState extends ConsumerState<_TxDayHistory>
       await player.play(widget.stationId, job.id);
     } catch (error) {
       if (mounted && widget.active && epoch == _playbackEpoch) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(error.toString())));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(localizedErrorMessage(context, error))),
+        );
       }
     } finally {
       if (mounted && epoch == _playbackEpoch) {
@@ -326,7 +333,12 @@ class _TxDayHistoryState extends ConsumerState<_TxDayHistory>
         future: jobs,
         builder: (context, snapshot) {
           if (snapshot.hasError) {
-            return Center(child: Text('${snapshot.error}'));
+            return ErrorState(
+              title: AppLocalizations.of(context).loadFailedTitle,
+              message: localizedErrorMessage(context, snapshot.error),
+              retryLabel: AppLocalizations.of(context).retry,
+              onRetry: () => setState(() => jobs = _loadJobs()),
+            );
           }
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
@@ -483,15 +495,17 @@ class _DayHistoryState extends ConsumerState<_DayHistory> {
   @override
   void initState() {
     super.initState();
-    results = ref
-        .read(historyControllerProvider)
-        .stationHistoryDayResults(
-          widget.stationId,
-          widget.day.apiDate,
-          timezoneOffsetMinutes: widget.timezoneOffsetMinutes,
-          timezone: widget.timezoneName,
-        );
+    results = _loadResults();
   }
+
+  Future<List<TranslationResult>> _loadResults() => ref
+      .read(historyControllerProvider)
+      .stationHistoryDayResults(
+        widget.stationId,
+        widget.day.apiDate,
+        timezoneOffsetMinutes: widget.timezoneOffsetMinutes,
+        timezone: widget.timezoneName,
+      );
 
   @override
   void dispose() {
@@ -517,7 +531,12 @@ class _DayHistoryState extends ConsumerState<_DayHistory> {
         future: results,
         builder: (context, snapshot) {
           if (snapshot.hasError) {
-            return Center(child: Text('${snapshot.error}'));
+            return ErrorState(
+              title: AppLocalizations.of(context).loadFailedTitle,
+              message: localizedErrorMessage(context, snapshot.error),
+              retryLabel: AppLocalizations.of(context).retry,
+              onRetry: () => setState(() => results = _loadResults()),
+            );
           }
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());

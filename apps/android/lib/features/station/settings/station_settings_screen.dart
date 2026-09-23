@@ -97,7 +97,15 @@ class _StationSettingsScreenState extends ConsumerState<StationSettingsScreen> {
           () => _baseScaffold(
             body: const Center(child: CircularProgressIndicator()),
           ),
-      error: (error, _) => _baseScaffold(body: Center(child: Text('$error'))),
+      error:
+          (error, _) => _baseScaffold(
+            body: ErrorState(
+              title: AppLocalizations.of(context).loadFailedTitle,
+              message: localizedErrorMessage(context, error),
+              retryLabel: AppLocalizations.of(context).retry,
+              onRetry: () => ref.invalidate(stationProvider(widget.stationId)),
+            ),
+          ),
       data: (station) {
         if (station == null) {
           return _baseScaffold(
@@ -382,19 +390,16 @@ class _StationSettingsScreenState extends ConsumerState<StationSettingsScreen> {
             ),
           ),
           if (controller.error != null)
-            _InlineMessage(
-              text: localizedServiceMessage(context, controller.error!),
-              color: Theme.of(context).colorScheme.error,
-              icon: Icons.error_outline,
+            NoticeCard(
+              message: localizedServiceMessage(context, controller.error!),
             ),
           if (controller.refreshResultKey != null)
-            _InlineMessage(
-              text: localizedServiceMessage(
+            NoticeCard(
+              message: localizedServiceMessage(
                 context,
                 controller.refreshResultKey!,
               ),
-              color: PranaTheme.brandBlue,
-              icon: Icons.info_outline,
+              tone: NoticeTone.info,
             ),
         ],
       ),
@@ -522,31 +527,6 @@ class _Notice extends StatelessWidget {
       color: const Color(0xFFFFF1D6),
       borderRadius: BorderRadius.circular(12),
       child: Padding(padding: const EdgeInsets.all(12), child: Text(text)),
-    ),
-  );
-}
-
-class _InlineMessage extends StatelessWidget {
-  const _InlineMessage({
-    required this.text,
-    required this.color,
-    required this.icon,
-  });
-
-  final String text;
-  final Color color;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(top: 14),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 19, color: color),
-        const SizedBox(width: 8),
-        Expanded(child: Text(text, style: TextStyle(color: color))),
-      ],
     ),
   );
 }
