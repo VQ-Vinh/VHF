@@ -818,4 +818,67 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get sourceSimulated => 'Simulated';
+
+  @override
+  String get errorPairingInvalid =>
+      'The Pairing ID or temporary code is incorrect.';
+
+  @override
+  String get errorPairingExpired =>
+      'This pairing code has expired. Create a new one on the Station.';
+
+  @override
+  String get errorPairingUsed => 'This pairing code has already been used.';
+
+  @override
+  String get errorRateLimited =>
+      'Too many attempts. Please wait a moment and try again.';
+
+  @override
+  String get errorStationOffline =>
+      'The Station is offline. Check its connection and try again.';
+
+  @override
+  String get errorAudioDeviceUnavailable =>
+      'The selected audio device is not available on the Station.';
+
+  @override
+  String get errorSubscriptionInactive =>
+      'Your plan is not active. Check your account.';
+
+  @override
+  String get errorEmailNotVerified => 'Verify your email before continuing.';
+
+  @override
+  String get errorPlanUnavailable => 'This plan is not available yet.';
+
+  @override
+  String get errorHistoryLocked =>
+      'This day is outside your plan\'s history window.';
+
+  @override
+  String get errorServiceUnavailable =>
+      'The translation service is temporarily unavailable. Try again later.';
+
+  @override
+  String get errorStationProcessing =>
+      'The Station could not process the latest audio.';
+
+  @override
+  String get errorSegmentFailed => 'This segment could not be translated.';
+
+  @override
+  String get txStatusProcessing => 'Processing';
+
+  @override
+  String get txStatusReviewReady => 'Awaiting review';
+
+  @override
+  String get txStatusCancelled => 'Cancelled';
+
+  @override
+  String get txStatusUnknown => 'Unknown';
+
+  @override
+  String get loadFailedTitle => 'Couldn\'t load data';
 }

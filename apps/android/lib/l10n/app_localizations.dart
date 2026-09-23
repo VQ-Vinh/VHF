@@ -1579,6 +1579,114 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Simulated'**
   String get sourceSimulated;
+
+  /// No description provided for @errorPairingInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'The Pairing ID or temporary code is incorrect.'**
+  String get errorPairingInvalid;
+
+  /// No description provided for @errorPairingExpired.
+  ///
+  /// In en, this message translates to:
+  /// **'This pairing code has expired. Create a new one on the Station.'**
+  String get errorPairingExpired;
+
+  /// No description provided for @errorPairingUsed.
+  ///
+  /// In en, this message translates to:
+  /// **'This pairing code has already been used.'**
+  String get errorPairingUsed;
+
+  /// No description provided for @errorRateLimited.
+  ///
+  /// In en, this message translates to:
+  /// **'Too many attempts. Please wait a moment and try again.'**
+  String get errorRateLimited;
+
+  /// No description provided for @errorStationOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'The Station is offline. Check its connection and try again.'**
+  String get errorStationOffline;
+
+  /// No description provided for @errorAudioDeviceUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'The selected audio device is not available on the Station.'**
+  String get errorAudioDeviceUnavailable;
+
+  /// No description provided for @errorSubscriptionInactive.
+  ///
+  /// In en, this message translates to:
+  /// **'Your plan is not active. Check your account.'**
+  String get errorSubscriptionInactive;
+
+  /// No description provided for @errorEmailNotVerified.
+  ///
+  /// In en, this message translates to:
+  /// **'Verify your email before continuing.'**
+  String get errorEmailNotVerified;
+
+  /// No description provided for @errorPlanUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'This plan is not available yet.'**
+  String get errorPlanUnavailable;
+
+  /// No description provided for @errorHistoryLocked.
+  ///
+  /// In en, this message translates to:
+  /// **'This day is outside your plan\'s history window.'**
+  String get errorHistoryLocked;
+
+  /// No description provided for @errorServiceUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'The translation service is temporarily unavailable. Try again later.'**
+  String get errorServiceUnavailable;
+
+  /// No description provided for @errorStationProcessing.
+  ///
+  /// In en, this message translates to:
+  /// **'The Station could not process the latest audio.'**
+  String get errorStationProcessing;
+
+  /// No description provided for @errorSegmentFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'This segment could not be translated.'**
+  String get errorSegmentFailed;
+
+  /// No description provided for @txStatusProcessing.
+  ///
+  /// In en, this message translates to:
+  /// **'Processing'**
+  String get txStatusProcessing;
+
+  /// No description provided for @txStatusReviewReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Awaiting review'**
+  String get txStatusReviewReady;
+
+  /// No description provided for @txStatusCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelled'**
+  String get txStatusCancelled;
+
+  /// No description provided for @txStatusUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown'**
+  String get txStatusUnknown;
+
+  /// No description provided for @loadFailedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load data'**
+  String get loadFailedTitle;
 }
 
 class _AppLocalizationsDelegate

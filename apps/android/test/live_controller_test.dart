@@ -84,7 +84,7 @@ void main() {
 
     expect(controller.state.phase, LiveCommandPhase.failed);
     expect(controller.state.optimisticLanguage, 'en');
-    expect(controller.state.error, contains('network'));
+    expect(controller.state.error, 'error_request_failed');
   });
 
   test('offline state is reflected in the UX controller', () {
