@@ -151,8 +151,14 @@ else
     # Must run exactly as the service does. Provisioning as root would write the
     # identity to /root/.config and the printed QR would belong to a station the
     # service never uses -- pairing would silently never complete.
-    sudo -u "$SERVICE_USER" env "XDG_CONFIG_HOME=$SERVICE_CONFIG_HOME" \
-        /usr/bin/prana-station-provision --output "$LABEL_DIR" \
+    #
+    # That includes the working directory. The config resolves data_dir "."
+    # against the caller's cwd, so running this from a home directory sent the
+    # service user at a folder it cannot write; the unit sets WorkingDirectory
+    # for the same reason.
+    ( cd "$SERVICE_HOME" \
+        && sudo -u "$SERVICE_USER" env "XDG_CONFIG_HOME=$SERVICE_CONFIG_HOME" \
+            /usr/bin/prana-station-provision --output "$LABEL_DIR" ) \
         || fail "Provision that bai. Kiem tra mang roi chay lai script nay."
     echo
 fi
