@@ -16,7 +16,7 @@ LABEL_DIR="/var/lib/prana-elex/label"
 MIC_GAIN=18
 
 DEB_PATH=""
-VERSION=""
+RELEASE_TAG=""
 SKIP_PROVISION=0
 SKIP_AUDIO_GAIN=0
 
@@ -39,7 +39,7 @@ USAGE
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --deb) DEB_PATH="${2:-}"; shift 2 ;;
-        --version) VERSION="${2:-}"; shift 2 ;;
+        --version) RELEASE_TAG="${2:-}"; shift 2 ;;
         --skip-provision) SKIP_PROVISION=1; shift ;;
         --skip-audio-gain) SKIP_AUDIO_GAIN=1; shift ;;
         -h|--help) usage; exit 0 ;;
@@ -53,11 +53,14 @@ done
 ARCH="$(uname -m)"
 [[ "$ARCH" == "aarch64" ]] || fail "Can Raspberry Pi OS 64-bit (aarch64), dang chay: $ARCH."
 if [[ -r /etc/os-release ]]; then
-    # shellcheck disable=SC1091
-    . /etc/os-release
-    case "${VERSION_CODENAME:-}" in
+    # Read the codename in a subshell. /etc/os-release also defines VERSION,
+    # NAME and ID; sourcing it here overwrites this script's own variables, and
+    # VERSION="13 (trixie)" landing in the release tag is what sent every
+    # install at a GitHub URL that does not exist.
+    codename="$(. /etc/os-release && printf '%s' "${VERSION_CODENAME:-}")"
+    case "$codename" in
         bookworm|trixie) ;;
-        *) warn "Da kiem thu tren Raspberry Pi OS Bookworm va Trixie; dang chay '${VERSION_CODENAME:-unknown}'." ;;
+        *) warn "Da kiem thu tren Raspberry Pi OS Bookworm va Trixie; dang chay '${codename:-unknown}'." ;;
     esac
 fi
 command -v curl >/dev/null || fail "Thieu curl. Chay: apt-get install -y curl"
@@ -83,8 +86,8 @@ if [[ -n "$DEB_PATH" ]]; then
     fi
 else
     WORK_DIR="$(mktemp -d)"
-    if [[ -n "$VERSION" ]]; then
-        api="https://api.github.com/repos/$REPO/releases/tags/$VERSION"
+    if [[ -n "$RELEASE_TAG" ]]; then
+        api="https://api.github.com/repos/$REPO/releases/tags/$RELEASE_TAG"
     else
         api="https://api.github.com/repos/$REPO/releases/latest"
     fi
