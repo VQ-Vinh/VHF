@@ -87,3 +87,6 @@ apps/android/android/app/google-services.json
 apps/android/android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
 apps/android/config/*.json
 !apps/android/config/*.example.json
+
+# Claude Code local config and skills
+.claude/
