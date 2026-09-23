@@ -91,6 +91,12 @@ def _validate_linux_dependencies(files: dict[str, Path]) -> list[str]:
         "libc10_cuda",
         "libtorch_cuda",
     )
+    # libsox is the same story in a different coat. torchaudio 2.8 ships
+    # libtorchaudio_sox.so, which dlopens libsox only when a caller asks for the
+    # sox backend; nothing in this project imports torchaudio at all. Installing
+    # libsox on the build host would make the check pass by bundling a codec
+    # library no code calls, so name it optional instead of shipping it.
+    optional = optional_gpu + ("libsox",)
     for relative, path in files.items():
         if _elf_machine(path) is None:
             continue
@@ -105,7 +111,7 @@ def _validate_linux_dependencies(files: dict[str, Path]) -> list[str]:
                 if "not found" not in line:
                     continue
                 soname = line.strip().split(" =>", 1)[0].strip()
-                if soname in bundled or soname.startswith(optional_gpu):
+                if soname in bundled or soname.startswith(optional):
                     continue
                 errors.append(f"{relative}: {line.strip()}")
     return errors
