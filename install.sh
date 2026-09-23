@@ -94,9 +94,12 @@ else
     say "Tim ban phat hanh moi nhat..."
     release="$(curl -fsSL "$api")" \
         || fail "Khong doc duoc thong tin phat hanh tu GitHub. Kiem tra mang, hoac dung --deb."
+    # grep exits 1 when a release carries no .deb, and pipefail turns that
+    # into a dead script right here -- before the check below can say what
+    # went wrong. Let it come back empty and let that check speak.
     deb_url="$(printf '%s' "$release" \
         | grep -o '"browser_download_url": *"[^"]*_arm64\.deb"' \
-        | head -n 1 | sed 's/.*"\(https[^"]*\)"/\1/')"
+        | head -n 1 | sed 's/.*"\(https[^"]*\)"/\1/' || true)"
     [[ -n "$deb_url" ]] || fail "Ban phat hanh nay khong co file _arm64.deb."
     DEB_PATH="$WORK_DIR/$(basename "$deb_url")"
     say "Tai $(basename "$deb_url")..."
@@ -122,7 +125,10 @@ apt-get install -y "$DEB_PATH"
 # The verified USB SoundCard setting is Mic Capture +15 dB (18/28). Left manual,
 # it gets forgotten and RX comes through too quiet to transcribe.
 if [[ "$SKIP_AUDIO_GAIN" -eq 0 ]]; then
-    card="$(arecord -l 2>/dev/null | grep -i 'USB' | head -n 1 | sed 's/^card \([0-9]*\):.*/\1/')"
+    # Same trap. No USB capture device means grep exits 1, which ended the
+    # install after apt and before provisioning, without printing anything.
+    # The warning further down could never be reached.
+    card="$(arecord -l 2>/dev/null | grep -i 'USB' | head -n 1 | sed 's/^card \([0-9]*\):.*/\1/' || true)"
     if [[ -n "$card" ]]; then
         if amixer -c "$card" cset name='Mic Capture Volume' "$MIC_GAIN" >/dev/null 2>&1; then
             alsactl store "$card" >/dev/null 2>&1 || warn "Khong luu duoc cau hinh ALSA."
@@ -145,8 +151,14 @@ else
     # Must run exactly as the service does. Provisioning as root would write the
     # identity to /root/.config and the printed QR would belong to a station the
     # service never uses -- pairing would silently never complete.
-    sudo -u "$SERVICE_USER" env "XDG_CONFIG_HOME=$SERVICE_CONFIG_HOME" \
-        /usr/bin/prana-station-provision --output "$LABEL_DIR" \
+    #
+    # That includes the working directory. The config resolves data_dir "."
+    # against the caller's cwd, so running this from a home directory sent the
+    # service user at a folder it cannot write; the unit sets WorkingDirectory
+    # for the same reason.
+    ( cd "$SERVICE_HOME" \
+        && sudo -u "$SERVICE_USER" env "XDG_CONFIG_HOME=$SERVICE_CONFIG_HOME" \
+            /usr/bin/prana-station-provision --output "$LABEL_DIR" ) \
         || fail "Provision that bai. Kiem tra mang roi chay lai script nay."
     echo
 fi
