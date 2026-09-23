@@ -18,9 +18,15 @@ fail() {
 # All platform checks deliberately happen before any clean operation.
 [[ "$(uname -s)" == "Linux" ]] || fail "buildlinux can only run on Linux."
 [[ "$(uname -m)" == "aarch64" ]] || fail "Expected aarch64, found $(uname -m)."
-[[ -r /proc/device-tree/model ]] || fail "Raspberry Pi model information is unavailable."
-MODEL="$(tr -d '\0' </proc/device-tree/model)"
-[[ "$MODEL" == *"Raspberry Pi 4 Model B"* ]] || fail "Expected Raspberry Pi 4B, found: $MODEL"
+# CI builds inside a Raspberry Pi OS userspace on an arm64 runner, which has no
+# device tree to read. Nothing about the board shapes the bundle -- the codename
+# check below picks the glibc, and that is what decides where the package runs.
+# The opt-out stays explicit so a hand build on the wrong board still fails.
+if [[ "${PRANA_BUILD_ALLOW_NON_PI:-0}" != "1" ]]; then
+    [[ -r /proc/device-tree/model ]] || fail "Raspberry Pi model information is unavailable."
+    MODEL="$(tr -d '\0' </proc/device-tree/model)"
+    [[ "$MODEL" == *"Raspberry Pi 4 Model B"* ]] || fail "Expected Raspberry Pi 4B, found: $MODEL"
+fi
 [[ -r /etc/os-release ]] || fail "Cannot identify the operating system."
 # shellcheck disable=SC1091
 source /etc/os-release
@@ -117,7 +123,10 @@ echo "[7/7] Building .deb..."
 DEB="$INSTALLER_DIR/prana-elex_${VERSION}_arm64.deb"
 dpkg-deb --build --root-owner-group "$STAGE" "$DEB"
 dpkg-deb --info "$DEB" >/dev/null
-sha256sum "$DEB" >"$DEB.sha256"
+# Record the bare filename, not this machine's path. The checksum travels to
+# the release as a sibling asset and gets checked next to the .deb, where a
+# build-machine path makes "sha256sum --check" fail on a file that is fine.
+( cd "$INSTALLER_DIR" && sha256sum "$(basename "$DEB")" >"$(basename "$DEB").sha256" )
 
 echo "[OK] Bundle: $BUNDLE"
 echo "[OK] Package: $DEB"
