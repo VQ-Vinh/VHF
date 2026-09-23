@@ -123,7 +123,10 @@ echo "[7/7] Building .deb..."
 DEB="$INSTALLER_DIR/prana-elex_${VERSION}_arm64.deb"
 dpkg-deb --build --root-owner-group "$STAGE" "$DEB"
 dpkg-deb --info "$DEB" >/dev/null
-sha256sum "$DEB" >"$DEB.sha256"
+# Record the bare filename, not this machine's path. The checksum travels to
+# the release as a sibling asset and gets checked next to the .deb, where a
+# build-machine path makes "sha256sum --check" fail on a file that is fine.
+( cd "$INSTALLER_DIR" && sha256sum "$(basename "$DEB")" >"$(basename "$DEB").sha256" )
 
 echo "[OK] Bundle: $BUNDLE"
 echo "[OK] Package: $DEB"
