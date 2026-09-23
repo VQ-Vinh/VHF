@@ -1,0 +1,119 @@
+name: Raspberry Pi release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+    # TEMPORARY: proves the build path before this reaches main. Remove with the
+    # commit that opens the PR -- workflow_dispatch only works once the file is
+    # on the default branch, so there is no other way to exercise it first.
+    branches:
+      - 'ci/pi-release-arm64'
+  # Dispatch builds the package and keeps it as an artifact but never publishes.
+  # Releasing is the tag's job, so a dispatch on a branch cannot mint a tag.
+  workflow_dispatch:
+
+permissions:
+  checks: read
+  contents: write
+
+concurrency:
+  group: pi-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Raspberry Pi .deb (arm64)
+    # A native arm64 runner, not QEMU: the build compiles pyaudio and lgpio and
+    # runs PyInstaller, which emulation turns from tens of minutes into hours.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Resolve the version to build
+        shell: bash
+        run: |
+          set -euo pipefail
+          core_version="$(tr -d '[:space:]' < packages/prana_core/src/prana_core/VERSION)"
+          [[ "$core_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            # A tag that disagrees with VERSION would publish a .deb whose
+            # filename and control field name a release nobody can install.
+            [[ "$version" == "$core_version" ]]
+          else
+            version="$core_version"
+          fi
+          echo "RELEASE_VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Require protected main ancestry and successful CI gate
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          checks="$(gh api \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "/repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs?per_page=100")"
+          jq -e 'any(.check_runs[]; .name == "gate" and .conclusion == "success")' \
+            <<<"$checks" >/dev/null
+
+      - name: Build the package in a Bookworm container
+        shell: bash
+        env:
+          # debian:bookworm, pinned by index digest. Bookworm carries glibc 2.36,
+          # the oldest Raspberry Pi OS release still supported; PyInstaller links
+          # the bundle against it, so the package installs on Bookworm and
+          # Trixie alike. Building on the runner's own Ubuntu 24.04 would raise
+          # the floor to glibc 2.39 and break every Bookworm station.
+          BASE_IMAGE: debian@sha256:f37a335e82bca302e955fa39f9dfe28f1be618f016f8a2b56318e5a5111afc26
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/src" \
+            --workdir /src \
+            "$BASE_IMAGE" \
+            /src/apps/linux/packaging/ci-build.sh
+
+      - name: Verify the package
+        shell: bash
+        run: |
+          set -euo pipefail
+          deb="installers/linux/prana-elex_${RELEASE_VERSION}_arm64.deb"
+          # install.sh downloads "<deb>.sha256" as a sibling asset and refuses to
+          # install without a match, so both files have to reach the release.
+          test -s "$deb"
+          test -s "$deb.sha256"
+          sudo chown "$(id -u):$(id -g)" "$deb" "$deb.sha256"
+          ( cd installers/linux && sha256sum --check "$(basename "$deb").sha256" )
+          dpkg-deb --info "$deb"
+          [[ "$(dpkg-deb --field "$deb" Architecture)" == "arm64" ]]
+          [[ "$(dpkg-deb --field "$deb" Version)" == "$RELEASE_VERSION" ]]
+          echo "DEB_PATH=$deb" >> "$GITHUB_ENV"
+
+      - name: Upload the package for inspection
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: prana-elex-${{ env.RELEASE_VERSION }}-arm64-deb
+          path: |
+            ${{ env.DEB_PATH }}
+            ${{ env.DEB_PATH }}.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish GitHub Release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            ${{ env.DEB_PATH }}
+            ${{ env.DEB_PATH }}.sha256
