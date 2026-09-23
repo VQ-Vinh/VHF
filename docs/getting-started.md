@@ -332,7 +332,21 @@ Build trực tiếp trên Raspberry Pi 4B Bookworm ARM64:
 ./buildlinux
 ```
 
-Để build và publish `.deb` từ Pi bằng GitHub CLI:
+Cách phát hành thông thường là đẩy tag: workflow `Raspberry Pi release` build
+`.deb` trên runner `ubuntu-24.04-arm`, bên trong container Debian Bookworm, rồi
+đính kèm package và checksum vào GitHub Release. Không cần Pi, không cần build
+tay.
+
+```bash
+git tag v1.2.0 && git push origin v1.2.0
+```
+
+Container phải là Bookworm chứ không phải Ubuntu của runner: PyInstaller link
+bundle vào glibc của máy build, nên build trên glibc mới hơn sẽ tạo ra gói
+không cài được trên Raspberry Pi OS Bookworm.
+
+Để build và publish `.deb` thủ công từ Pi bằng GitHub CLI (chỉ dùng khi CI
+không khả dụng):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/VQ-Vinh/VHF/main/release-pi.sh | bash
