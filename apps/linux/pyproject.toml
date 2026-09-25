@@ -4,7 +4,7 @@ dynamic = ["version"]
 description = "PRANA ELEX headless Raspberry Pi station"
 requires-python = ">=3.11"
 dependencies = [
-    "prana-elex-core==1.2.0",
+    "prana-elex-core==1.2.1",
     "pyaudio>=0.2.14",
     "gpiozero>=2.0.1",
     "lgpio>=0.2.2.0; platform_machine == 'aarch64'",
