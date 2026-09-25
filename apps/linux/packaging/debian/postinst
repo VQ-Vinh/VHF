@@ -8,6 +8,13 @@ if ! getent passwd prana-elex >/dev/null; then
     adduser --system --ingroup prana-elex --home /var/lib/prana-elex --no-create-home prana-elex
 fi
 install -d -o prana-elex -g prana-elex -m 0750 /var/lib/prana-elex
+# systemd refuses to start a unit whose SupplementaryGroups name a group that
+# does not exist -- it fails with 216/GROUP. Raspberry Pi OS ships "gpio";
+# Ubuntu does not, and the usermod below swallows its own failure, so the
+# package installed cleanly and the station then never ran.
+for group in audio gpio; do
+    getent group "$group" >/dev/null || addgroup --system "$group"
+done
 usermod -a -G audio,gpio prana-elex || true
 systemctl daemon-reload || true
 systemctl enable prana-station.service || true
