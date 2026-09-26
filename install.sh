@@ -117,7 +117,29 @@ else
 fi
 
 # --- Install -----------------------------------------------------------------
+# apt will not start while another process holds the dpkg lock, and the error
+# it prints reads like a broken package manager rather than a busy one. A fresh
+# Ubuntu runs unattended-upgrades on boot, and an operator may be part-way
+# through installing something large, so this is ordinary rather than rare.
+# Wait it out instead of failing after the download already succeeded.
+wait_for_dpkg_lock() {
+    command -v fuser >/dev/null || return 0
+    local waited=0 limit=900
+    while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
+        if [[ "$waited" -eq 0 ]]; then
+            warn "Tien trinh khac dang giu dpkg lock. Cho toi $((limit / 60)) phut..."
+            fuser -v /var/lib/dpkg/lock-frontend 2>&1 | tail -n +2 >&2 || true
+        fi
+        [[ "$waited" -lt "$limit" ]] \
+            || fail "Sau $((limit / 60)) phut van con tien trinh giu dpkg lock. Doi no xong roi chay lai script nay."
+        sleep 10
+        waited=$((waited + 10))
+    done
+    [[ "$waited" -eq 0 ]] || say "dpkg lock da duoc nha sau ${waited}s."
+}
+
 say "Cai goi (apt tu giai phu thuoc)..."
+wait_for_dpkg_lock
 apt-get update -qq || warn "apt-get update that bai; van thu cai tiep."
 apt-get install -y "$DEB_PATH"
 
