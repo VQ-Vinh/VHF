@@ -91,7 +91,7 @@ provision thiết bị và in QR trên terminal. Quét QR đó bằng PRANA ELEX
 Nếu chưa publish release, cài từ file build tay:
 
 ```bash
-sudo ./install.sh --deb prana-elex_1.2.1_arm64.deb
+sudo ./install.sh --deb prana-elex_1.2.2_arm64.deb
 ```
 
 Các tùy chọn:
