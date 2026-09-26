@@ -7,7 +7,11 @@ Wants=network-online.target
 Type=simple
 User=prana-elex
 Group=prana-elex
-SupplementaryGroups=audio gpio
+# Raspberry Pi OS gives /dev/gpiochip* to the gpio group; Ubuntu's own
+# 60-gpio.rules gives it to dialout. Join both rather than overriding a
+# distro's udev rule, which would take the device away from whoever the
+# distro meant to have it.
+SupplementaryGroups=audio gpio dialout
 WorkingDirectory=/var/lib/prana-elex
 Environment=XDG_CONFIG_HOME=/var/lib/prana-elex/.config
 ExecStart=/usr/bin/prana-station

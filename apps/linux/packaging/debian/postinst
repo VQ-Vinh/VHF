@@ -12,10 +12,10 @@ install -d -o prana-elex -g prana-elex -m 0750 /var/lib/prana-elex
 # does not exist -- it fails with 216/GROUP. Raspberry Pi OS ships "gpio";
 # Ubuntu does not, and the usermod below swallows its own failure, so the
 # package installed cleanly and the station then never ran.
-for group in audio gpio; do
+for group in audio gpio dialout; do
     getent group "$group" >/dev/null || addgroup --system "$group"
 done
-usermod -a -G audio,gpio prana-elex || true
+usermod -a -G audio,gpio,dialout prana-elex || true
 systemctl daemon-reload || true
 systemctl enable prana-station.service || true
 systemctl restart prana-station.service || true
